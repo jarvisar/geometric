@@ -1,0 +1,15 @@
+{
+  "name": "geometric-web-app",
+  "version": "1.0.0",
+  "description": "A web application that allows users to dynamically create geometric shapes using adjustable sliders.",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "live-server src"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "live-server": "^1.2.1"
+  },
+  "author": "",
+  "license": "ISC"
+}
