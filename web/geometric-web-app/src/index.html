@@ -3,58 +3,105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Geometric Flower Generator</title>
+    <title>Geometric Pattern Generator</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="controls">
-        <label for="modeToggle">Mode:</label>
-        <select id="modeToggle">
-            <option value="flower">Flower</option>
-            <option value="spirograph">Spirograph</option>
-        </select>
-
-        <span id="spiroControls" style="display:none;">
-            <label for="R">Outer Radius (R):</label>
-            <input type="range" id="R" min="50" max="400" value="200">
-            <input type="number" id="R_num" min="50" max="400" value="200" style="width:60px;">
-            <label for="r">Inner Radius (r):</label>
-            <input type="range" id="r" min="10" max="200" value="80">
-            <input type="number" id="r_num" min="10" max="200" value="80" style="width:60px;">
-            <label for="d">Pen Offset (d):</label>
-            <input type="range" id="d" min="10" max="400" value="120">
-            <input type="number" id="d_num" min="10" max="400" value="120" style="width:60px;">
-            <label for="spiroSmoothness">Smoothness:</label>
-            <input type="range" id="spiroSmoothness" min="100" max="2000" value="500">
-            <input type="number" id="spiroSmoothness_num" min="100" max="2000" value="500" style="width:60px;">
-            <label for="spiroLayers">Repeats:</label>
-            <input type="range" id="spiroLayers" min="1" max="12" value="6">
-            <input type="number" id="spiroLayers_num" min="1" max="12" value="6" style="width:60px;">
-        </span>
+    <div class="container">
+        <h1>Geometric Pattern Generator</h1>
         
-        <span id="flowerControls" style="display:none;">
-            <label for="petalCount">Number of Petals:</label>
-            <input type="range" id="petalCount" min="1" max="20" value="12">
-            <input type="number" id="petalCount_num" min="1" max="20" value="12" style="width:60px;">
-            <label for="lineDensity">Line Density:</label>
-            <input type="range" id="lineDensity" min="1" max="100" value="40">
-            <input type="number" id="lineDensity_num" min="1" max="100" value="40" style="width:60px;">
-            <label for="flowerRadius">Flower Radius:</label>
-            <input type="range" id="flowerRadius" min="50" max="300" value="140">
-            <input type="number" id="flowerRadius_num" min="50" max="300" value="140" style="width:60px;">
-        </span>
+        <div class="controls">
+            <div class="control-group">
+                <label for="modeToggle">Mode:</label>
+                <select id="modeToggle">
+                    <option value="flower">Flower</option>
+                    <option value="spirograph">Spirograph</option>
+                </select>
+            </div>
 
-        <label for="pointsPerLine">Points Per Line:</label>
-        <input type="range" id="pointsPerLine" min="10" max="500" value="100">
-        <input type="number" id="pointsPerLine_num" min="10" max="200" value="100" style="width:60px;">
-        <label for="lineThickness">Line Thickness:</label>
-        <input type="range" id="lineThickness" min="0.1" max="5" step="0.1" value="0.5">
-        <input type="number" id="lineThickness_num" min="0.1" max="5" step="0.1" value="0.5" style="width:60px;">
-        <label for="lineColor">Line Color:</label>
-        <input type="color" id="lineColor" value="#000000">
+            <div class="control-group">
+                <button id="exportSVG" class="export-btn">Export SVG</button>
+                <button id="randomize" class="action-btn">Randomize</button>
+            </div>
+
+            <div id="spiroControls" class="mode-controls" style="display:none;">
+                <div class="control-group">
+                    <label for="R">Outer Radius:</label>
+                    <input type="range" id="R" min="30" max="350" value="200">
+                    <input type="number" id="R_num" min="30" max="350" value="200">
+                </div>
+                <div class="control-group">
+                    <label for="r">Inner Radius:</label>
+                    <input type="range" id="r" min="5" max="150" value="80">
+                    <input type="number" id="r_num" min="5" max="150" value="80">
+                </div>
+                <div class="control-group">
+                    <label for="d">Pen Offset:</label>
+                    <input type="range" id="d" min="5" max="300" value="120">
+                    <input type="number" id="d_num" min="5" max="300" value="120">
+                </div>
+                <div class="control-group">
+                    <label for="spiroSmoothness">Smoothness:</label>
+                    <input type="range" id="spiroSmoothness" min="50" max="1500" value="500">
+                    <input type="number" id="spiroSmoothness_num" min="50" max="1500" value="500">
+                </div>
+                <div class="control-group">
+                    <label for="spiroLayers">Layers:</label>
+                    <input type="range" id="spiroLayers" min="1" max="15" value="6">
+                    <input type="number" id="spiroLayers_num" min="1" max="15" value="6">
+                </div>
+                <div class="control-group">
+                    <label for="layerOffset">Layer Offset:</label>
+                    <input type="range" id="layerOffset" min="0" max="80" value="30">
+                    <input type="number" id="layerOffset_num" min="0" max="80" value="30">
+                </div>
+                <div class="control-group">
+                    <label for="rotationStep">Rotation:</label>
+                    <input type="range" id="rotationStep" min="0" max="60" value="15">
+                    <input type="number" id="rotationStep_num" min="0" max="60" value="15">
+                </div>
+            </div>
+            
+            <div id="flowerControls" class="mode-controls" style="display:none;">
+                <div class="control-group">
+                    <label for="petalCount">Petals:</label>
+                    <input type="range" id="petalCount" min="3" max="24" value="12">
+                    <input type="number" id="petalCount_num" min="3" max="24" value="12">
+                </div>
+                <div class="control-group">
+                    <label for="lineDensity">Line Density:</label>
+                    <input type="range" id="lineDensity" min="5" max="80" value="40">
+                    <input type="number" id="lineDensity_num" min="5" max="80" value="40">
+                </div>
+                <div class="control-group">
+                    <label for="flowerRadius">Radius:</label>
+                    <input type="range" id="flowerRadius" min="50" max="350" value="140">
+                    <input type="number" id="flowerRadius_num" min="50" max="350" value="140">
+                </div>
+            </div>
+
+            <div class="universal-controls">
+                <div class="control-group">
+                    <label for="pointsPerLine">Points/Line:</label>
+                    <input type="range" id="pointsPerLine" min="20" max="300" value="100">
+                    <input type="number" id="pointsPerLine_num" min="20" max="300" value="100">
+                </div>
+                <div class="control-group">
+                    <label for="lineThickness">Thickness:</label>
+                    <input type="range" id="lineThickness" min="0.1" max="3" step="0.1" value="0.5">
+                    <input type="number" id="lineThickness_num" min="0.1" max="3" step="0.1" value="0.5">
+                </div>
+                <div class="control-group">
+                    <label for="lineColor">Color:</label>
+                    <input type="color" id="lineColor" value="#000000">
+                </div>
+            </div>
+        </div>
+        
+        <div class="canvas-container">
+            <svg id="flowerCanvas" width="800" height="800" viewBox="0 0 800 800"></svg>
+        </div>
     </div>
-    
-    <svg id="flowerCanvas" width="800" height="800"></svg>
 
     <script src="app.js"></script>
 </body>
