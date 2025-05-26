@@ -17,31 +17,41 @@
         <span id="spiroControls" style="display:none;">
             <label for="R">Outer Radius (R):</label>
             <input type="range" id="R" min="50" max="400" value="200">
+            <input type="number" id="R_num" min="50" max="400" value="200" style="width:60px;">
             <label for="r">Inner Radius (r):</label>
             <input type="range" id="r" min="10" max="200" value="80">
+            <input type="number" id="r_num" min="10" max="200" value="80" style="width:60px;">
             <label for="d">Pen Offset (d):</label>
             <input type="range" id="d" min="10" max="400" value="120">
+            <input type="number" id="d_num" min="10" max="400" value="120" style="width:60px;">
+            <label for="spiroSmoothness">Smoothness:</label>
+            <input type="range" id="spiroSmoothness" min="100" max="2000" value="500">
+            <input type="number" id="spiroSmoothness_num" min="100" max="2000" value="500" style="width:60px;">
+            <label for="spiroLayers">Repeats:</label>
+            <input type="range" id="spiroLayers" min="1" max="12" value="6">
+            <input type="number" id="spiroLayers_num" min="1" max="12" value="6" style="width:60px;">
         </span>
         
         <span id="flowerControls" style="display:none;">
             <label for="petalCount">Number of Petals:</label>
             <input type="range" id="petalCount" min="1" max="20" value="12">
-            
+            <input type="number" id="petalCount_num" min="1" max="20" value="12" style="width:60px;">
             <label for="lineDensity">Line Density:</label>
             <input type="range" id="lineDensity" min="1" max="100" value="40">
-            
-            <label for="pointsPerLine">Points Per Line:</label>
-            <input type="range" id="pointsPerLine" min="10" max="200" value="100">
-            
+            <input type="number" id="lineDensity_num" min="1" max="100" value="40" style="width:60px;">
             <label for="flowerRadius">Flower Radius:</label>
             <input type="range" id="flowerRadius" min="50" max="300" value="140">
-            
-            <label for="lineThickness">Line Thickness:</label>
-            <input type="range" id="lineThickness" min="0.1" max="5" step="0.1" value="0.5">
-            
-            <label for="lineColor">Line Color:</label>
-            <input type="color" id="lineColor" value="#000000">
+            <input type="number" id="flowerRadius_num" min="50" max="300" value="140" style="width:60px;">
         </span>
+
+        <label for="pointsPerLine">Points Per Line:</label>
+        <input type="range" id="pointsPerLine" min="10" max="500" value="100">
+        <input type="number" id="pointsPerLine_num" min="10" max="200" value="100" style="width:60px;">
+        <label for="lineThickness">Line Thickness:</label>
+        <input type="range" id="lineThickness" min="0.1" max="5" step="0.1" value="0.5">
+        <input type="number" id="lineThickness_num" min="0.1" max="5" step="0.1" value="0.5" style="width:60px;">
+        <label for="lineColor">Line Color:</label>
+        <input type="color" id="lineColor" value="#000000">
     </div>
     
     <svg id="flowerCanvas" width="800" height="800"></svg>

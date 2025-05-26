@@ -10,6 +10,8 @@ let lineColor = "black";
 let R = 200;
 let r = 80;
 let d = 120;
+let spiroSmoothness = 500; // Default value
+let spiroLayers = 5; // Number of layers for spirograph
 
 let mode = "flower";
 
@@ -57,18 +59,23 @@ function drawFlower() {
 function drawSpirograph() {
     svgElement.innerHTML = "";
     const center = canvasSize / 2;
-    const points = [];
-    // Greatest common divisor
     function gcd(a, b) { return b === 0 ? a : gcd(b, a % b); }
     const revolutions = R / gcd(R, r);
+    const maxPoints = 20000;
+    const totalPoints = Math.min(spiroSmoothness * revolutions, maxPoints);
 
-    for (let t = 0; t <= pointsPerLine * revolutions; t++) {
-        const theta = (2 * Math.PI * t) / pointsPerLine;
-        const x = center + (R - r) * Math.cos(theta) + d * Math.cos(((R - r) / r) * theta);
-        const y = center + (R - r) * Math.sin(theta) - d * Math.sin(((R - r) / r) * theta);
-        points.push([x, y]);
+    for (let layer = 0; layer < spiroLayers; layer++) {
+        const points = [];
+        // Vary the phase for each layer to create overlapping patterns
+        const phase = (2 * Math.PI * layer) / spiroLayers;
+        for (let t = 0; t <= totalPoints; t++) {
+            const theta = (2 * Math.PI * t) / spiroSmoothness + phase;
+            const x = center + (R - r) * Math.cos(theta) + d * Math.cos(((R - r) / r) * theta);
+            const y = center + (R - r) * Math.sin(theta) - d * Math.sin(((R - r) / r) * theta);
+            points.push([x, y]);
+        }
+        addPolyline(points);
     }
-    addPolyline(points);
 }
 
 function updateParameters() {
@@ -80,7 +87,9 @@ function updateParameters() {
     lineThickness = parseFloat(document.getElementById("lineThickness").value);
     lineColor = document.getElementById("lineColor").value;
 
-    // Spirograph parameters
+    if (document.getElementById("spiroSmoothness")) {
+        spiroSmoothness = parseInt(document.getElementById("spiroSmoothness").value);
+    }
     if (document.getElementById("R")) R = parseInt(document.getElementById("R").value);
     if (document.getElementById("r")) r = parseInt(document.getElementById("r").value);
     if (document.getElementById("d")) d = parseInt(document.getElementById("d").value);
@@ -108,7 +117,29 @@ document.addEventListener("DOMContentLoaded", () => {
         updateParameters();
     });
 
-    document.querySelectorAll("input[type='range'], input[type='color'], select").forEach(input => {
+    // Sync range and number inputs
+    document.querySelectorAll("input[type='range']").forEach(range => {
+        const num = document.getElementById(range.id + "_num");
+        if (num) {
+            range.addEventListener("input", () => {
+                num.value = range.value;
+                updateParameters();
+            });
+            num.addEventListener("input", () => {
+                range.value = num.value;
+                updateParameters();
+            });
+        } else {
+            range.addEventListener("input", updateParameters);
+        }
+    });
+
+    document.querySelectorAll("input[type='number']").forEach(num => {
+        const range = document.getElementById(num.id.replace("_num", ""));
+        if (!range) num.addEventListener("input", updateParameters);
+    });
+
+    document.querySelectorAll("input[type='color'], select").forEach(input => {
         input.addEventListener("input", updateParameters);
     });
 

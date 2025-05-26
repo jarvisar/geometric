@@ -35,3 +35,44 @@ h1 {
     border-radius: 4px;
     background-color: #fff;
 }
+
+.controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    background: #fff;
+    padding: 12px 16px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+}
+
+.controls label {
+    margin-right: 4px;
+    font-size: 0.98em;
+    color: #333;
+}
+
+.controls input[type="range"] {
+    margin: 0 4px;
+    vertical-align: middle;
+}
+
+.controls input[type="number"] {
+    margin: 0 8px 0 0;
+    padding: 2px 4px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    font-size: 1em;
+    width: 60px;
+}
+
+.controls input[type="color"] {
+    margin-left: 8px;
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: none;
+    padding: 0;
+}
