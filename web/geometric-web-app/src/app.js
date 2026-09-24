@@ -1105,6 +1105,7 @@
             return;
         }
         if (kind === 'link') { copyLink(); return; }
+        if (kind === 'install') { installApp(); return; }
         const res = visibleResult();
         if (!res || !res.layers.length) { toast('Nothing to export', true); return; }
         const paper = { w: state.paper.w, h: state.paper.h };
@@ -1160,6 +1161,82 @@
             }
         };
         reader.readAsText(file);
+    }
+
+    // ------------------------------------------------------------------ install prompt
+
+    // Chrome / Edge / Android hand us their install prompt (beforeinstallprompt),
+    // which the first-visit toast and the "Install app" menu item both use. iOS
+    // Safari has no prompt, so there we explain Add to Home Screen instead.
+    const INSTALL_KEY = 'plotter-geometry:install-offered:v1';
+    const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    let installEvent = null;
+    let installToast = null;
+
+    function setupInstallPrompt() {
+        let offered = !!storageGet(INSTALL_KEY) || isStandalone();
+        const offer = () => {
+            if (offered) return;
+            offered = true;
+            setTimeout(showInstallToast, 2500); // let the first drawing land first
+        };
+        window.addEventListener('beforeinstallprompt', e => {
+            e.preventDefault();
+            installEvent = e;
+            offer();
+        });
+        window.addEventListener('appinstalled', () => {
+            installEvent = null;
+            storageSet(INSTALL_KEY, true);
+            hideInstallToast();
+            syncInstallItem();
+        });
+        if (isIOS() && /^https?:$/.test(location.protocol)) offer();
+    }
+
+    // The permanent entry in the export menu; hidden once running as the installed app.
+    function syncInstallItem() {
+        const item = $('#installItem');
+        if (item) item.hidden = isStandalone();
+    }
+
+    function installApp() {
+        hideInstallToast();
+        if (installEvent) {
+            installEvent.prompt();
+            installEvent = null; // each prompt can only be shown once
+        } else if (!/^https?:$/.test(location.protocol)) {
+            toast('Installing needs the web version of the app', true);
+        } else if (isIOS()) {
+            toast('To install: tap Share, then Add to Home Screen');
+        } else {
+            toast('To install, use your browser menu: Install app or Add to Home Screen');
+        }
+    }
+
+    function showInstallToast() {
+        storageSet(INSTALL_KEY, true);
+        const logo = $('.brand .logo').cloneNode(true);
+        logo.setAttribute('class', 'install-logo');
+        const text = el('div', { class: 'install-text' },
+            el('b', { text: 'Install Plotter Geometry' }),
+            el('span', { text: installEvent ? 'Works offline, in its own window.' : 'Tap Share, then Add to Home Screen.' }));
+        installToast = el('div', { class: 'toast install', role: 'status' }, el('span', { class: 'install-icon' }, logo), text);
+        if (installEvent) {
+            const install = el('button', { class: 'btn accent', type: 'button', text: 'Install' });
+            install.addEventListener('click', installApp);
+            installToast.append(install);
+        }
+        const close = el('button', { class: 'icon-btn', type: 'button', title: 'Not now', 'aria-label': 'Not now' }, icon('x'));
+        close.addEventListener('click', hideInstallToast);
+        installToast.append(close);
+        $('#toasts').append(installToast);
+        setTimeout(hideInstallToast, 20000);
+    }
+
+    function hideInstallToast() {
+        if (installToast) { installToast.remove(); installToast = null; }
     }
 
     // ------------------------------------------------------------------ wiring
@@ -1304,12 +1381,17 @@
         bindKeys();
         bindCanvas();
         rebuildAll();
+        syncInstallItem();
         // phones open on the drawing; wider screens always show it
         const phone = window.matchMedia('(max-width: 720px)').matches;
         setTab(phone ? 'preview' : state.ui.tab === 'output' ? 'output' : 'design');
         resizeCanvas();
         regenerate();
         pushUndo();
+        // offline use and "install app"; needs http(s), so opening index.html from disk skips it
+        if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+            navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service worker not registered:', err));
+        }
     }
 
     // Handle for scripted checks (scripts/drive.js) and console tinkering.
@@ -1319,5 +1401,6 @@
         select: selectGenerator, randomize, newSeed, undo, redo, exportAs: doExport, regenerate,
     };
 
+    setupInstallPrompt(); // before init: the browser's install event can arrive while designs load
     init();
 })();

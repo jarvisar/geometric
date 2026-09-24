@@ -624,6 +624,23 @@ select:focus, .text-input:focus, textarea:focus, .num:focus { outline: none; bor
     animation: toast-in 0.18s ease-out;
 }
 .toast.error { border-color: #5b2a2a; color: #ffb3b3; }
+.toast.install { display: flex; align-items: center; gap: 12px; padding: 10px; max-width: min(400px, calc(100vw - 36px)); }
+.install-icon {
+    width: 38px; height: 38px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border-radius: 9px;
+    background: #171a1e;
+    border: 1px solid var(--line-2);
+}
+.install-logo { width: 26px; height: 26px; color: var(--accent); }
+.install-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.install-text b { font-size: 13px; font-weight: 600; color: var(--text); }
+.install-text span { font-size: 12px; color: var(--muted); }
+.toast.install .btn { height: 30px; padding: 0 12px; }
+.toast.install .icon-btn { width: 30px; height: 30px; border-color: transparent; background: transparent; color: var(--muted); }
+.toast.install .icon-btn:hover { background: var(--panel-2); color: var(--text); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(6px); } }
 
 /* ------------------------------------------------------------------ responsive */

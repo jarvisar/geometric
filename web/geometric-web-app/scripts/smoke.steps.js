@@ -87,4 +87,25 @@ await key('Escape', { code: 'Escape' });
 await evaluate(`document.querySelectorAll('.out-section').forEach(d => d.open = true)`);
 await sleep(200);
 await shot('04-output.png');
+
+// Install prompt: a stand-in for the browser's beforeinstallprompt event
+await evaluate(`document.querySelectorAll('.out-section').forEach(d => d.open = false)`);
+await evaluate(`(() => {
+    const e = new Event('beforeinstallprompt');
+    e.prompt = () => { window.__prompted = (window.__prompted || 0) + 1; };
+    window.dispatchEvent(e);
+})()`);
+await sleep(3000);
+if (!(await evaluate(`!!document.querySelector('.toast.install .btn.accent')`))) throw new Error('install toast did not appear');
+await shot('05-install-toast.png');
+await click('.toast.install .btn.accent');
+if ((await evaluate(`[window.__prompted, !!document.querySelector('.toast.install')]`)).join() !== '1,false') throw new Error('Install button did not open the prompt');
+// the permanent menu entry; the one-shot prompt is used up, so it explains instead
+await click('#exportMenuBtn');
+if (await evaluate(`document.getElementById('installItem').hidden`)) throw new Error('install menu item hidden');
+await shot('06-install-menu.png');
+await click('[data-export="install"]');
+if (!(await evaluate(`[...document.querySelectorAll('.toast')].some(t => /install/i.test(t.textContent))`))) throw new Error('install menu item did nothing');
+log('install prompt ok');
+
 log('smoke test finished');
