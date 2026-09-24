@@ -18,7 +18,7 @@
 
     const PRESETS = {
         hilbert: { name: 'Hilbert curve', axiom: 'X', rules: { X: '+YF-XFX-FY+', Y: '-XF+YFY+FX-' }, angle: 90, iter: 6 },
-        moore: { name: 'Moore curve', axiom: 'LFL+F+LFL', rules: { L: '-RF+LFL+FR-', R: '+LF-RFR-FL+' }, angle: 90, iter: 5 },
+        moore: { name: 'Moore curve', axiom: 'LFL+F+LFL+F', rules: { L: '-RF+LFL+FR-', R: '+LF-RFR-FL+' }, angle: 90, iter: 5 },
         peano: { name: 'Peano curve', axiom: 'X', rules: { X: 'XFYFX+F+YFXFY-F-XFYFX', Y: 'YFXFY-F-XFYFX+F+YFXFY' }, angle: 90, iter: 4 },
         sierpinskiCurve: { name: 'Sierpiński curve', axiom: 'F+XF+F+XF', rules: { X: 'XF-F+F-XF+F+XF-F+F-X' }, angle: 90, iter: 4 },
         gosper: { name: 'Gosper flowsnake', axiom: 'A', rules: { A: 'A-B--B+A++AA+B-', B: '+A-BB--B-A++A+B' }, angle: 60, iter: 4 },
@@ -51,8 +51,8 @@
     function parseRules(text) {
         const rules = {};
         for (const part of String(text || '').split(/[;,\n]+/)) {
-            const m = part.match(/^\s*(\S)\s*(?:=|->|:|→)\s*(\S*)\s*$/);
-            if (m) rules[m[1]] = m[2];
+            const m = part.match(/^\s*(\S)\s*(?:=|->|:|→)(.*)$/);
+            if (m) rules[m[1]] = m[2].replace(/\s+/g, ''); // 'F = F + F - F' works too
         }
         return rules;
     }

@@ -24,7 +24,7 @@
             for (let i = 0; i <= M; i++) {
                 const th = (TAU * i) / M;
                 const u = o.N * th + ph;
-                const rin = o.ri + o.ai * Math.sin(o.mi * th);
+                const rin = Math.max(0, o.ri + o.ai * Math.sin(o.mi * th)); // an inner band dipping below the centre would flip through it
                 const rout = o.ro + o.ao * Math.sin(o.mo * th);
                 const r = rin + (rout - rin) * (0.5 + 0.5 * shaped(Math.sin(u), o.pw));
                 const a = th + o.rot + (o.loop * Math.cos(u)) / o.N;
@@ -74,7 +74,7 @@
             const lobes = rng.pick([0, 6, 8, 10, 12, 12, 16, 18]);
             const out = {
                 bands: rng.weighted([[1, 1], [3, 2], [4, 3], [2, 4]]),
-                lobesOut: lobes, lobesIn: rng.chance(0.7) ? lobes : rng.pick([0, lobes / 2 | 0, lobes * 2]),
+                lobesOut: lobes, lobesIn: rng.chance(0.7) ? lobes : rng.pick([0, lobes / 2 | 0, Math.min(24, lobes * 2)]),
                 twist: rng.pick([0, 0, 180, 90]),
                 loop: rng.chance(0.25) ? +rng.range(1.1, 2) : 0,
             };
@@ -86,7 +86,7 @@
             for (let b = 0; b < out.bands; b++) wsum += Math.pow(p.taper, b);
             const w0 = Math.max(0.05, (1 - core - out.bands * p.gap) / wsum);
             let N = Math.round((rng.range(0.6, 1.4) * TAU * (1 - w0 / 2)) / w0);
-            if (lobes) N = lobes * Math.max(1, Math.round(N / lobes));
+            if (lobes) N = lobes * geo.clamp(Math.round(N / lobes), 1, Math.floor(60 / lobes));
             out.waves = geo.clamp(N, 6, 60);
             // lines × waves sets the mesh density: keep it plottable with a 0.35 mm pen
             out.lines = geo.clamp(Math.round(rng.range(140, 260) / out.waves), 4, 16);

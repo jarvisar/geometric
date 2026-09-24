@@ -49,7 +49,8 @@
             { id: 'noiseScale', label: 'Region size (mm)', type: 'range', min: 15, max: 300, step: 1, value: 80, random: [30, 160],
                 show: p => p.structure > 0 },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false },
+            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false,
+                show: p => p.type !== 'triangles' }, // triangles: 'Hatch other half' picks pen 2
             { id: 'penMode', label: 'Split pens by', type: 'select', value: 'curve', show: p => p.pens > 1 && p.type !== 'triangles',
                 options: [['curve', 'Whole curves'], ['band', 'Band'], ['orient', 'Tile orientation']] },
         ],

@@ -155,7 +155,8 @@
                 let poly = cell.poly;
                 if (geo.polygonArea(poly) < 0) poly = poly.slice().reverse();
                 const flip = p.layout === 'single' ? false
-                    : p.chirality === 'alternate' ? cell.cls % 2 === 1
+                    // every trihex edge joins a hexagon (class 0) to a triangle (classes 1, 2)
+                    : p.chirality === 'alternate' ? (p.layout === 'trihex' ? cell.cls > 0 : cell.cls % 2 === 1)
                         : p.chirality === 'random' ? rng.chance(0.5) : false;
                 if (flip) poly = poly.slice().reverse();
                 const n = poly.length;

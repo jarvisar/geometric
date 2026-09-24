@@ -108,7 +108,7 @@
 
     function rectMaze(p, ctx) {
         const { width: W, height: H, rng } = ctx;
-        let c = p.cell;
+        let c = Math.min(p.cell, W / 2, H / 2); // at least 2 Ã— 2 cells, all inside the area
         let cols = Math.max(2, Math.floor(W / c)), rows = Math.max(2, Math.floor(H / c));
         if (cols * rows > 60000) { c *= Math.sqrt((cols * rows) / 60000); cols = Math.floor(W / c); rows = Math.floor(H / c); }
         const ox = (W - cols * c) / 2, oy = (H - rows * c) / 2;
@@ -153,7 +153,7 @@
         const { width: W, height: H, rng } = ctx;
         // largest circle about the centre inside the clip shape (rotation enlarges W × H)
         const R = Math.min(W / 2, H / 2, ctx.shape ? Math.max(1, ctx.shape.dist(W / 2, H / 2)) : Infinity);
-        const c = Math.max(p.cell, R / 120);
+        const c = Math.min(Math.max(p.cell, R / 120), R / 2); // at least 2 rings, all inside the circle
         const rings = Math.max(2, Math.floor(R / c));
         const cx = W / 2, cy = H / 2;
         // cells per ring: 1 in the centre, 6 in ring 1, doubling when cells get wider than √2·c

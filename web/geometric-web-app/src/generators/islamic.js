@@ -171,6 +171,23 @@
         return out;
     }
 
+    // Closed strands start at a contact point, which is usually a crossing; start
+    // them at a real corner instead, so no crossing sits on the seam.
+    function startAtCorner(s) {
+        if (!(s.length > 3 && geo.dist(s[0], s[s.length - 1]) < 1e-6)) return s;
+        const q = s.slice(0, -1), n = q.length;
+        for (let i = 0; i < n; i++) {
+            const a = q[(i + n - 1) % n], b = q[i], c = q[(i + 1) % n];
+            const cr = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+            if (Math.abs(cr) > 1e-6 * geo.dist(a, b) * geo.dist(b, c)) {
+                const r = q.slice(i).concat(q.slice(0, i));
+                r.push(r[0]);
+                return r;
+            }
+        }
+        return s;
+    }
+
     // Offset a polyline sideways by o (mitred joins, bevelled past a limit).
     // Returns the points and, per centreline segment, the index of its first offset point.
     function offsetPath(path, o, closed) {
@@ -240,7 +257,7 @@
     // over/under with a gap), 'flat' (outline of the union), 'overlap'.
     // Returns the strap lines grouped per input strand.
     function straps(strands, w, gap, mode) {
-        const S = strands.map(straighten);
+        const S = strands.map(startAtCorner).map(straighten);
         const segs = [];
         S.forEach((s, si) => {
             for (let i = 0; i + 1 < s.length; i++) segs.push({ si, i, a: s[i], b: s[i + 1] });
@@ -340,6 +357,12 @@
                         const q = off.pts[off.segStart[me.i]];
                         const base = cum[off.segStart[me.i]] + (c.p[0] + o * nU[0] - q[0]) * dU[0] + (c.p[1] + o * nU[1] - q[1]) * dU[1];
                         cuts.push([base + t0, base + t1]);
+                        if (closed) {
+                            // a gap straddling the seam of a closed strand wraps round to its other end
+                            const T = cum[cum.length - 1];
+                            if (base + t0 < 0) cuts.push([base + t0 + T, T]);
+                            if (base + t1 > T) cuts.push([0, base + t1 - T]);
+                        }
                     }
                 }
                 for (const piece of cutPath(off.pts, cuts)) if (geo.pathLength(piece) > 0.4) out[si].push(piece);

@@ -1,5 +1,5 @@
 // UI smoke test for scripts/drive.js:  node scripts/drive.js scripts/smoke.steps.js shots
-// Loads the app, visits every design, exercises exports, undo, simulation and the gallery.
+// Loads the app, visits every design, exercises exports, undo, zoom and the gallery.
 
 await open('index.html');
 await sleep(600);
@@ -70,16 +70,12 @@ const redone = await evaluate(`JSON.stringify(plotterApp.state.params.spirograph
 if (redone !== after) throw new Error('redo did not re-apply');
 log('randomize / undo / redo ok');
 
-// Zoom + pan, then the plot simulation
+// Zoom + pan
 await wheel(700, 450, -400);
 await drag(700, 450, 640, 420);
-await key('p');
-await sleep(1500);
-const simInfo = await evaluate(`({ active: plotterApp.sim.active, elapsed: plotterApp.sim.elapsed })`);
-if (!simInfo.active || !(simInfo.elapsed > 0)) throw new Error('simulation did not run');
-await shot('02-sim.png');
+await sleep(300);
+await shot('02-zoom.png');
 await key('f');
-await key('p');
 
 // Gallery
 await click('#designBtn');

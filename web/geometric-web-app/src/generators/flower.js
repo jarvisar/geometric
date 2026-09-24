@@ -23,7 +23,7 @@
             for (let j = 1; j <= L; j++) {
                 const ratio = j / L;
                 const twist = geo.rad(p.twist) * ratio;
-                let cur = null;
+                let cur = null, prev = null;
                 for (let k = 0; k <= M; k++) {
                     const t = k / M;
                     const ang = a0 + t * sector + twist;
@@ -33,7 +33,16 @@
                     const organic = 1 + p.organic * Math.sin(3 * pa + t * Math.PI);
                     const r = scale * ratio * rose * fall * organic;
                     // keep the centre disc clear so the lines don't pile up in one spot
-                    if (clearR > 0 && Math.abs(r) < clearR) { cur = null; continue; }
+                    const inside = clearR > 0 && Math.abs(r) < clearR;
+                    if (prev && inside !== prev.inside) {
+                        // end or start the line exactly on the centre circle, not at the nearest sample
+                        const f = (clearR - Math.abs(prev.r)) / (Math.abs(r) - Math.abs(prev.r));
+                        const er = geo.lerp(prev.r, r, f), ea = geo.lerp(prev.ang, ang, f);
+                        const edge = [er * Math.cos(ea), er * Math.sin(ea)];
+                        if (inside) { if (cur) cur.push(edge); } else { cur = [edge]; paths.push(cur); }
+                    }
+                    prev = { r, ang, inside };
+                    if (inside) { cur = null; continue; }
                     if (!cur) { cur = []; paths.push(cur); }
                     cur.push([r * Math.cos(ang), r * Math.sin(ang)]);
                 }

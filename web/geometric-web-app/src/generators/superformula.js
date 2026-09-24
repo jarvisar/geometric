@@ -25,7 +25,10 @@
         const logR = phi => -Math.log(Math.pow(Math.abs(Math.cos(q * phi)), n2) + Math.pow(Math.abs(Math.sin(q * phi)), n3)) / n1;
 
         // dense enough for sharp spikes (small n1) and many lobes
-        const N = Math.min(24000, Math.ceil(turns * (300 + 90 * Math.abs(m)) * (n1 < 1 ? 2 : 1) * quality));
+        let N = Math.min(24000, Math.ceil(turns * (300 + 90 * Math.abs(m)) * (n1 < 1 ? 2 : 1) * quality));
+        // a multiple of the lobe count puts a sample exactly on every spike tip
+        const per = Math.max(1, Math.abs(k) * turns);
+        N = Math.ceil(N / per) * per;
         const L = new Float64Array(N + 1);
         let top = -Infinity;
         for (let i = 0; i <= N; i++) {

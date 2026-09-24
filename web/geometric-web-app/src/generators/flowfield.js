@@ -20,8 +20,9 @@
             { id: 'field', label: 'Field', type: 'select', value: 'noise', random: ['noise', 'curl', 'vortex', 'waves', 'spiral'],
                 options: [['noise', 'Noise angle'], ['curl', 'Curl noise'], ['vortex', 'Vortices'], ['waves', 'Sine waves'], ['spiral', 'Spiral']] },
             { id: 'scale', label: 'Feature size (mm)', type: 'range', min: 15, max: 400, step: 1, value: 140 },
-            { id: 'turbulence', label: 'Turbulence', type: 'range', min: 0, max: 4, step: 0.05, value: 1.4 },
-            { id: 'octaves', label: 'Octaves', type: 'range', min: 1, max: 5, step: 1, value: 2 },
+            { id: 'turbulence', label: 'Turbulence', type: 'range', min: 0, max: 4, step: 0.05, value: 1.4, show: p => p.field !== 'curl' },
+            { id: 'octaves', label: 'Octaves', type: 'range', min: 1, max: 5, step: 1, value: 2,
+                show: p => p.field === 'noise' || p.field === 'curl' || p.field === 'spiral' },
             { id: 'vortices', label: 'Vortices', type: 'range', min: 1, max: 14, step: 1, value: 5, show: p => p.field === 'vortex' },
             { id: 'twist', label: 'Spiral twist°', type: 'range', min: -90, max: 90, step: 1, value: 35, show: p => p.field === 'spiral' },
             { type: 'section', label: 'Lines' },
@@ -170,7 +171,7 @@
             }
 
             const h = p.step;
-            const maxSteps = Math.ceil(p.maxLen / h);
+            const maxSteps = Math.ceil(p.maxLen / 2 / h); // per direction: a line grows both ways from its seed
             const inBounds = (x, y) => x >= 0 && y >= 0 && x <= W && y <= H && ctx.shape.dist(x, y) > -h;
 
             function integrate(x, y, dir) {
@@ -206,7 +207,7 @@
                 const fwd = integrate(x, y, 1);
                 const back = integrate(x, y, -1);
                 const pts = back.reverse().concat([[x, y]], fwd);
-                if (pts.length < 2 || geo.pathLength(pts) < Math.max(p.minLen, h * 2)) return;
+                if (pts.length < 2 || geo.pathLength(pts) < Math.max(Math.min(p.minLen, p.maxLen), h * 2)) return;
                 for (const q of pts) addPoint(q[0], q[1]);
                 lines.push(pts);
                 // seed candidates one spacing to either side

@@ -60,14 +60,10 @@ Any design can also be laid out as a **grid** on one sheet. Each cell gets its o
    Set pen widths to match your pens: the preview draws true-to-scale
    line widths, so you can judge ink density before committing. Hide a pen to
    leave it out of the preview and the export.
-4. **Optimize**: joins strokes that touch, simplifies points below a tolerance,
-   and reorders strokes (reversing them where that helps) to cut pen-up
-   travel. The status bar shows the saving, the ink length, stroke count and an
-   estimated plot time.
-5. **Preview the plot**: the ▶ button simulates the plotter in real time or faster,
-   including pen lifts and travel. The dashed-line button shows every pen-up
-   move.
-6. **Export**:
+4. **Optimize**: joins strokes that touch and simplifies points below a
+   tolerance, for smaller, cleaner files. The status bar shows the path and
+   point counts.
+5. **Export**:
    * **SVG**: `width`/`height` in mm, one Inkscape layer per pen (`1 Pen 1`,
      `2 Pen 2`…), so AxiDraw's Inkscape extension, `vpype`, `saxi` and
      friends plot pens as separate layers. "One file per pen" is also available.

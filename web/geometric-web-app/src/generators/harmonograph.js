@@ -67,7 +67,7 @@
                 // phases 90° apart) or another near-rational pair
                 out.a2 = +rng.range(0.25, 0.7).toFixed(2);
                 if (rng.chance(0.5)) {
-                    out.fx2 = out.fy2 = rng.int(Math.max(a, b) + 1, Math.max(a, b) + 4);
+                    out.fx2 = out.fy2 = rng.int(Math.max(a, b) + 1, Math.min(8, Math.max(a, b) + 4));
                     out.px2 = rng.int(0, 359); out.py2 = (out.px2 + rng.pick([90, 270])) % 360;
                 } else {
                     const [c, d] = rng.pick(RATIOS);
@@ -106,7 +106,7 @@
             let fmax = Math.max(fx, fy);
             if (a2) fmax = Math.max(fmax, fx2, fy2);
             if (ar) fmax = Math.max(fmax, Math.abs(fr));
-            const N = Math.min(150000, Math.ceil(p.cycles * fmax * 48 * p.quality));
+            const N = Math.min(150000, Math.ceil(p.cycles * fmax * 128 * p.quality));
             const path = new Array(N + 1);
             for (let i = 0; i <= N; i++) {
                 const t = (T * i) / N;

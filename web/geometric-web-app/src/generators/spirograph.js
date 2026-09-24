@@ -52,9 +52,16 @@
             const base = epi ? R + r : R - r;
             const innerTurns = Math.abs(epi ? P + Q : P - Q) + Q;
             const layers = Array.from({ length: p.pens }, () => []);
+            if (!epi && r === R) {
+                // a gear as big as the ring can't roll: the pen just circles the centre
+                layers[0].push(geo.circle(0, 0, r * p.hole, 360));
+                return { layers };
+            }
 
             for (let ring = 0; ring < p.rings; ring++) {
-                const d = r * Math.max(0.01, p.hole + ring * p.holeStep);
+                const hole = p.hole + ring * p.holeStep;
+                if (hole < 0.01) break; // further rings would overdraw the same tiny curve
+                const d = r * hole;
                 const N = Math.min(250000, Math.ceil(innerTurns * 90 * p.quality * Math.max(1, d / r)));
                 const rot = geo.rad(ring * p.ringRotate);
                 const c = Math.cos(rot), s = Math.sin(rot);

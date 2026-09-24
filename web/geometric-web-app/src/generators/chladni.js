@@ -36,9 +36,9 @@
                 hint: 'Weight of the swapped (m, n) mode; ±1 are the classic figures' },
             { type: 'section', label: 'Sand' },
             { id: 'bands', label: 'Bands', type: 'range', min: 0, max: 12, step: 1, value: 4, random: [2, 6] },
-            { id: 'spacing', label: 'Band spacing (mm)', type: 'range', min: 0.6, max: 6, step: 0.05, value: 0.9, random: [0.8, 1.6],
+            { id: 'spacing', label: 'Band spacing (mm)', type: 'range', min: 0.6, max: 6, step: 0.05, value: 0.9, random: [0.8, 1.6], show: p => p.bands > 0,
                 hint: 'Gap between the nodal line and the first band, along typical stretches of the node' },
-            { id: 'spread', label: 'Band spread', type: 'range', min: 1, max: 2.5, step: 0.01, value: 1.3, random: [1, 1.8],
+            { id: 'spread', label: 'Band spread', type: 'range', min: 1, max: 2.5, step: 0.01, value: 1.3, random: [1, 1.8], show: p => p.bands > 0,
                 hint: 'Bands k sit at δ·k^spread: >1 thins the sand away from the node' },
             { id: 'cell', label: 'Grid resolution (mm)', type: 'range', min: 0.3, max: 2, step: 0.05, value: 0.6, random: false },
             { type: 'section', label: 'Pens' },
@@ -67,6 +67,8 @@
             const { width: W, height: H } = ctx;
             const n = Math.round(p.n), m = Math.round(p.m);
             const circle = p.plate === 'circle';
+            // with n = m the swapped mode is the same mode, and mix = âˆ’1 would cancel everything
+            const mix = n === m ? 0 : p.mix;
             let fn, x0 = 0, y0 = 0, w = W, h = H, R = 0, cx = W / 2, cy = H / 2;
 
             if (circle) {
@@ -74,12 +76,12 @@
                 R = Math.max(1, ctx.shape.dist(cx, cy)) || Math.min(W, H) / 2;
                 const k1 = besselZero(n, Math.max(1, m)), n2 = Math.max(1, m), k2 = besselZero(n2, Math.max(1, n));
                 const kMax = Math.max(k1, k2) * 1.02;
-                const J1 = besselTable(n, kMax), J2 = p.mix ? besselTable(n2, kMax) : null;
+                const J1 = besselTable(n, kMax), J2 = mix ? besselTable(n2, kMax) : null;
                 fn = (x, y) => {
                     const dx = (x - cx) / R, dy = (y - cy) / R;
                     const r = Math.min(1.01, Math.hypot(dx, dy)), th = Math.atan2(dy, dx);
                     let v = J1(k1 * r) * Math.cos(n * th);
-                    if (J2) v += p.mix * J2(k2 * r) * Math.cos(n2 * th);
+                    if (J2) v += mix * J2(k2 * r) * Math.cos(n2 * th);
                     return v;
                 };
                 x0 = cx - R; y0 = cy - R; w = h = 2 * R;
@@ -87,7 +89,7 @@
                 const PI = Math.PI;
                 fn = (x, y) => {
                     const u = x / W, v = y / H;
-                    return Math.cos(n * PI * u) * Math.cos(m * PI * v) + p.mix * Math.cos(m * PI * u) * Math.cos(n * PI * v);
+                    return Math.cos(n * PI * u) * Math.cos(m * PI * v) + mix * Math.cos(m * PI * u) * Math.cos(n * PI * v);
                 };
             }
 
@@ -100,8 +102,23 @@
             field.min /= amp; field.max /= amp;
 
             const clip = circle ? paths => PG.clipPaths(paths, PG.shapes.circle(cx, cy, R)) : paths => paths;
-            const nodal = clip(PG.isolines(field, 0));
-            if (circle) nodal.push(geo.circle(cx, cy, R));
+            let nodal = clip(PG.isolines(field, 0));
+            if (circle) {
+                // The rim is itself a zero of the field. Trace it once as a clean circle:
+                // drop the traced copy and run the nodal lines that reach it out onto it.
+                const inner = R - 0.5 * cell;
+                nodal = PG.clipPaths(nodal, PG.shapes.circle(cx, cy, inner)).filter(q => geo.pathLength(q) > cell);
+                const toRim = q => {
+                    const d = Math.hypot(q[0] - cx, q[1] - cy);
+                    return d > inner - 1e-6 ? [cx + ((q[0] - cx) * R) / d, cy + ((q[1] - cy) * R) / d] : null;
+                };
+                for (const q of nodal) {
+                    const a = toRim(q[0]), b = toRim(q[q.length - 1]);
+                    if (a) q.unshift(a);
+                    if (b) q.push(b);
+                }
+                nodal.push(geo.circle(cx, cy, R));
+            }
 
             // Bands are level sets of S = f / sqrt(|∇f|² + ε²), roughly the signed
             // distance (mm) to the nodal line. Plain levels of f would crowd

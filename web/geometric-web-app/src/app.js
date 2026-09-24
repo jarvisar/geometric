@@ -2,7 +2,7 @@
  * Plotter Geometry — application UI.
  *
  * state (persisted) -> PG.run (generate + place + clip + optimise) -> result
- * result -> canvas preview / plot simulation / SVG and PNG export
+ * result -> canvas preview / SVG and PNG export
  */
 (function () {
     'use strict';
@@ -45,27 +45,11 @@
     const fmtNum = (v, step) => (+v).toFixed(Math.min(4, decimalsOf(step || 1)));
     const fmtMM = v => (Math.round(v * 10) / 10).toString();
 
-    function fmtLength(mm) {
-        if (mm >= 1000) return `${(mm / 1000).toFixed(mm >= 100000 ? 0 : 1)} m`;
-        return `${Math.round(mm / 10)} cm`;
-    }
     function fmtCount(n) {
         if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
         if (n >= 1e4) return `${Math.round(n / 1000)}k`;
         if (n >= 1e3) return `${(n / 1000).toFixed(1)}k`;
         return String(n);
-    }
-    function fmtTime(s) {
-        s = Math.round(s);
-        const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
-        if (h) return `${h} h ${m} min`;
-        if (m) return `${m} min ${String(sec).padStart(2, '0')} s`;
-        return `${sec} s`;
-    }
-    function fmtClock(s) {
-        s = Math.max(0, Math.floor(s));
-        const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
-        return (h ? `${h}:${String(m).padStart(2, '0')}` : `${m}`) + `:${String(sec).padStart(2, '0')}`;
     }
 
     const getPath = (obj, path) => path.split('.').reduce((o, k) => (o ? o[k] : undefined), obj);
@@ -145,8 +129,7 @@
             },
             pens: PEN_SETS.fineliner.colors.map((color, i) => ({ name: `Pen ${i + 1}`, color, width: 0.35, visible: true })),
             opt: { merge: true, mergeTol: 0.1, simplify: true, simplifyTol: 0.02, sort: true, minLength: 0 },
-            plot: { drawSpeed: 60, travelSpeed: 150, liftTime: 0.25 },
-            view: { travel: false, margin: false, penWidth: true, simSpeed: 16 },
+            view: { margin: false, penWidth: true },
             ui: { tab: 'design', open: { paper: true, comp: true, pens: true } },
         };
     }
@@ -220,7 +203,7 @@
         if (!obj || typeof obj !== 'object') throw new Error('Not a settings file');
         const next = mergeInto(JSON.parse(JSON.stringify(state)), {
             seed: obj.seed, paper: obj.paper, comp: obj.comp, pens: obj.pens,
-            opt: obj.opt, plot: obj.plot,
+            opt: obj.opt,
         });
         if (obj.gen && PG.byId[obj.gen]) next.gen = obj.gen;
         if (obj.params) for (const [id, p] of Object.entries(obj.params)) next.params[id] = Object.assign({}, next.params[id] || {}, p);
@@ -281,7 +264,6 @@
     let genTimer = 0;
 
     function requestGenerate(live) {
-        stopSim(false);
         clearTimeout(genTimer);
         const slow = lastGenMs > 90;
         if (slow) setBusy(true);
@@ -331,34 +313,19 @@
         if (!result) return;
         const vis = visibleResult();
         const st = PG.optimize.stats(vis.layers);
-        const time = PG.optimize.estimateTime(st, state.plot);
-        const raw = result.rawStats, all = result.stats;
-        const saved = raw.travel > 0 ? 1 - all.travel / raw.travel : 0;
-
         const stat = (cls, ...kids) => el('span', { class: 'stat ' + (cls || '') }, ...kids);
-        const ink = stat(st.draw > 120000 ? 'warn' : '', el('b', { text: fmtLength(st.draw) }), 'ink');
-        if (st.draw > 120000) ink.title = 'That is a lot of ink — consider larger spacing or a smaller paper';
         const items = [
-            ink,
-            stat('', el('b', { text: fmtLength(st.travel) }), 'travel',
-                saved > 0.05 && state.opt.sort ? el('span', { class: 'delta', text: `−${Math.round(saved * 100)}%` }) : null),
-            stat('', el('b', { text: fmtCount(st.lifts) }), st.lifts === 1 ? 'stroke' : 'strokes'),
+            stat('', el('b', { text: fmtCount(st.paths) }), st.paths === 1 ? 'path' : 'paths'),
             stat('', el('b', { text: fmtCount(st.points) }), 'points'),
-            stat('', '≈', el('b', { text: fmtTime(time) }), 'to plot'),
             vis.layers.length > 1 ? stat('', el('b', { text: vis.layers.length }), 'pens') : null,
             stat('dim', `${Math.round(lastGenMs)} ms`),
         ];
         bar.append(...items.filter(Boolean));
-        const note = $('#optNote');
-        if (note) {
-            note.textContent = `Pen-up travel ${fmtLength(raw.travel)} → ${fmtLength(all.travel)}, strokes ${fmtCount(raw.lifts)} → ${fmtCount(all.lifts)}, points ${fmtCount(raw.points)} → ${fmtCount(all.points)}.`;
-        }
     }
 
     // ------------------------------------------------------------------ canvas view
 
     const canvas = $('#view');
-    const overlay = $('#overlay');
     const stage = $('#stage');
     const view = { zoom: 1, panX: 0, panY: 0 };
     let dpr = 1, cw = 0, ch = 0;
@@ -368,10 +335,8 @@
         if (!r.width || !r.height) return;
         dpr = window.devicePixelRatio || 1;
         cw = r.width; ch = r.height;
-        for (const c of [canvas, overlay]) {
-            c.width = Math.round(cw * dpr);
-            c.height = Math.round(ch * dpr);
-        }
+        canvas.width = Math.round(cw * dpr);
+        canvas.height = Math.round(ch * dpr);
         draw();
     }
 
@@ -403,7 +368,6 @@
 
     function draw() {
         if (!cw) return;
-        if (sim.active) { redrawSim(); return; }
         const ctx = canvas.getContext('2d');
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -413,14 +377,12 @@
             PG.drawResult(ctx, result, v, {
                 paper: { w: state.paper.w, h: state.paper.h },
                 pens: state.pens,
-                showTravel: state.view.travel,
                 showMargin: state.view.margin,
                 hidden: hiddenPens(),
                 minLinePx: 0.8 * dpr,
                 hairline: !state.view.penWidth,
             });
         }
-        overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height);
         $('#zoomLabel').textContent = `${Math.round(v.css.s * MM_PER_CSS_PX * 100)}%`;
     }
 
@@ -517,179 +479,6 @@
             if (q) loadImageFile(file, def.id, q.id);
             else toast('This design does not use images', true);
         }
-    }
-
-    // ------------------------------------------------------------------ plot simulation
-
-    const sim = { active: false, playing: false, raf: 0, last: 0, layers: [], li: 0, pi: 0, k: 0, phase: 'travel', pos: [0, 0], wait: 0, elapsed: 0, total: 0, done: false };
-
-    function simToggle() {
-        if (!result || !visibleResult().layers.length) return;
-        if (sim.active && !sim.done) {
-            sim.playing = !sim.playing;
-            if (sim.playing) { sim.last = performance.now(); sim.raf = requestAnimationFrame(simFrame); }
-            updateSimUI();
-            return;
-        }
-        const layers = visibleResult().layers;
-        Object.assign(sim, {
-            active: true, playing: true, layers, li: 0, pi: 0, k: 0, phase: 'travel', pos: [0, 0], wait: 0,
-            elapsed: 0, done: false, total: PG.optimize.estimateTime(PG.optimize.stats(layers), state.plot),
-        });
-        redrawSim();
-        sim.last = performance.now();
-        sim.raf = requestAnimationFrame(simFrame);
-        updateSimUI();
-    }
-
-    function stopSim(redraw = true) {
-        if (!sim.active) return;
-        cancelAnimationFrame(sim.raf);
-        sim.active = false;
-        sim.playing = false;
-        updateSimUI();
-        if (redraw) draw();
-    }
-
-    function simFrame(now) {
-        if (!sim.playing) return;
-        const dt = Math.min(0.1, (now - sim.last) / 1000);
-        sim.last = now;
-        simAdvance(dt * state.view.simSpeed);
-        drawSimHead();
-        updateSimUI();
-        if (sim.done) { sim.playing = false; updateSimUI(); return; }
-        sim.raf = requestAnimationFrame(simFrame);
-    }
-
-    function penStyle(ctx, pen, v) {
-        const p = state.pens[pen] || { color: '#111', width: 0.3 };
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = Math.max((0.8 * dpr) / v.scale, state.view.penWidth ? p.width : 0);
-    }
-
-    // Advance the virtual plotter by `budget` seconds, inking completed motion.
-    function simAdvance(budget) {
-        const P = state.plot;
-        const ctx = canvas.getContext('2d');
-        const v = viewTransform();
-        ctx.save();
-        ctx.setTransform(v.scale, 0, 0, v.scale, v.ox, v.oy);
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        let open = false, openLayer = -1;
-        const flush = () => { if (open) { ctx.stroke(); open = false; } };
-        const travelTo = (target, speed) => {
-            const d = Math.hypot(target[0] - sim.pos[0], target[1] - sim.pos[1]);
-            const t = d / Math.max(1, speed);
-            if (t <= budget) { budget -= t; sim.elapsed += t; sim.pos = target; return true; }
-            const f = (budget * speed) / d;
-            sim.pos = [sim.pos[0] + (target[0] - sim.pos[0]) * f, sim.pos[1] + (target[1] - sim.pos[1]) * f];
-            sim.elapsed += budget;
-            budget = 0;
-            return false;
-        };
-        while (budget > 0 && !sim.done) {
-            const layer = sim.layers[sim.li];
-            if (!layer) {
-                sim.phase = 'home';
-                if (travelTo([0, 0], P.travelSpeed)) sim.done = true;
-                break;
-            }
-            const path = layer.paths[sim.pi];
-            if (sim.phase === 'travel') {
-                if (travelTo(path[0], P.travelSpeed)) { sim.phase = 'down'; sim.wait = P.liftTime / 2; }
-            } else if (sim.phase === 'down' || sim.phase === 'up') {
-                const t = Math.min(budget, sim.wait);
-                sim.wait -= t; budget -= t; sim.elapsed += t;
-                if (sim.wait <= 1e-9) {
-                    if (sim.phase === 'down') { sim.phase = 'draw'; sim.k = 0; }
-                    else {
-                        sim.phase = 'travel';
-                        if (++sim.pi >= layer.paths.length) { sim.pi = 0; sim.li++; }
-                    }
-                }
-            } else {
-                const next = path[sim.k + 1];
-                if (!next) { sim.phase = 'up'; sim.wait = P.liftTime / 2; continue; }
-                if (openLayer !== sim.li) { flush(); penStyle(ctx, layer.pen, v); ctx.beginPath(); open = true; openLayer = sim.li; }
-                ctx.moveTo(sim.pos[0], sim.pos[1]);
-                const arrived = travelTo(next, P.drawSpeed);
-                ctx.lineTo(sim.pos[0], sim.pos[1]);
-                if (arrived) sim.k++;
-            }
-        }
-        flush();
-        ctx.restore();
-    }
-
-    // Full redraw of everything the simulated plotter has drawn so far.
-    function redrawSim() {
-        const ctx = canvas.getContext('2d');
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        const v = viewTransform();
-        drawPaper(ctx, v);
-        ctx.save();
-        ctx.setTransform(v.scale, 0, 0, v.scale, v.ox, v.oy);
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        for (let li = 0; li <= Math.min(sim.li, sim.layers.length - 1); li++) {
-            const layer = sim.layers[li];
-            penStyle(ctx, layer.pen, v);
-            if (li < sim.li) { ctx.stroke(PG.layerPath(layer)); continue; }
-            ctx.beginPath();
-            for (let pi = 0; pi <= sim.pi && pi < layer.paths.length; pi++) {
-                const p = layer.paths[pi];
-                if (pi === sim.pi && sim.phase !== 'draw' && sim.phase !== 'up') break;
-                const n = pi < sim.pi ? p.length : sim.k + 1;
-                ctx.moveTo(p[0][0], p[0][1]);
-                for (let i = 1; i < n; i++) ctx.lineTo(p[i][0], p[i][1]);
-                if (pi === sim.pi && sim.phase === 'draw') ctx.lineTo(sim.pos[0], sim.pos[1]);
-            }
-            ctx.stroke();
-        }
-        ctx.restore();
-        drawSimHead();
-        $('#zoomLabel').textContent = `${Math.round(v.css.s * MM_PER_CSS_PX * 100)}%`;
-    }
-
-    function drawSimHead() {
-        const ctx = overlay.getContext('2d');
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, overlay.width, overlay.height);
-        if (!sim.active) return;
-        const v = viewTransform();
-        const x = v.ox + sim.pos[0] * v.scale, y = v.oy + sim.pos[1] * v.scale;
-        const P = state.paper;
-        // gantry
-        ctx.strokeStyle = 'rgba(90, 162, 255, 0.35)';
-        ctx.lineWidth = 1 * dpr;
-        ctx.beginPath();
-        ctx.moveTo(v.ox, y); ctx.lineTo(v.ox + P.w * v.scale, y);
-        ctx.moveTo(x, v.oy); ctx.lineTo(x, v.oy + P.h * v.scale);
-        ctx.stroke();
-        const layer = sim.layers[sim.li];
-        const pen = state.pens[layer ? layer.pen : 0];
-        const down = sim.phase === 'draw';
-        ctx.beginPath();
-        ctx.arc(x, y, (down ? 4.5 : 6) * dpr, 0, Math.PI * 2);
-        ctx.fillStyle = down ? pen.color : 'rgba(255,255,255,0.15)';
-        ctx.fill();
-        ctx.lineWidth = 1.5 * dpr;
-        ctx.strokeStyle = down ? '#ffffff' : '#5aa2ff';
-        ctx.stroke();
-    }
-
-    function updateSimUI() {
-        const play = $('#simPlay');
-        play.replaceChildren(icon(sim.playing ? 'pause' : 'play'));
-        play.classList.toggle('on', sim.active);
-        play.title = sim.playing ? 'Pause simulation (P)' : 'Simulate plotting (P)';
-        $('#simStop').hidden = !sim.active;
-        const info = $('#simInfo');
-        info.hidden = !sim.active;
-        if (sim.active) info.textContent = `${fmtClock(sim.elapsed)} / ${fmtClock(sim.total)}${sim.done ? ' ✓' : ''}`;
     }
 
     // ------------------------------------------------------------------ controls
@@ -965,20 +754,10 @@
                 id: 'opt', title: 'Optimize', controls: [
                     { key: 'opt.merge', label: 'Join touching strokes', type: 'checkbox' },
                     { key: 'opt.mergeTol', label: 'Join tolerance (mm)', type: 'range', min: 0.01, max: 1, step: 0.01, show: s => s.opt.merge },
-                    { key: 'opt.sort', label: 'Minimise pen-up travel', type: 'checkbox' },
                     { key: 'opt.simplify', label: 'Simplify points', type: 'checkbox' },
                     { key: 'opt.simplifyTol', label: 'Simplify tolerance (mm)', type: 'range', min: 0.005, max: 0.5, step: 0.005, show: s => s.opt.simplify },
                     { key: 'opt.minLength', label: 'Drop strokes shorter than (mm)', type: 'range', min: 0, max: 5, step: 0.1 },
                 ],
-                note: el('p', { class: 'out-note', id: 'optNote' }),
-            },
-            {
-                id: 'plot', title: 'Plotter', controls: [
-                    { key: 'plot.drawSpeed', label: 'Drawing speed (mm/s)', type: 'range', min: 5, max: 300, step: 1, effect: 'stats' },
-                    { key: 'plot.travelSpeed', label: 'Travel speed (mm/s)', type: 'range', min: 10, max: 600, step: 5, effect: 'stats' },
-                    { key: 'plot.liftTime', label: 'Pen lift + drop (s)', type: 'range', min: 0, max: 1.5, step: 0.05, effect: 'stats' },
-                ],
-                note: el('p', { class: 'out-note', text: 'Used for the time estimate and the plot simulation. Home is the top-left corner.' }),
             },
             { id: 'snaps', title: 'Snapshots', custom: buildSnapshotsSection },
         ];
@@ -1021,8 +800,7 @@
 
     function applyEffect(effect, live) {
         if (effect === 'generate') requestGenerate(live);
-        else if (effect === 'draw') { stopSim(false); draw(); }
-        else if (effect === 'stats') renderStats();
+        else if (effect === 'draw') draw();
         scheduleSave();
     }
 
@@ -1051,13 +829,12 @@
                 pen.visible = !pen.visible;
                 eye.classList.toggle('off', !pen.visible);
                 eye.replaceChildren(icon(pen.visible ? 'eye' : 'eye-off'));
-                stopSim(false);
                 draw();
                 renderStats();
                 scheduleSave();
             });
             const color = el('input', { type: 'color', class: 'color-input', value: pen.color, title: 'Pen colour' });
-            color.addEventListener('input', () => { pen.color = color.value; stopSim(false); draw(); });
+            color.addEventListener('input', () => { pen.color = color.value; draw(); });
             color.addEventListener('change', () => { thumbCache.clear(); commit(); });
             const name = el('input', { class: 'pen-name', value: pen.name, spellcheck: 'false', title: 'Pen name (used for SVG layer names)' });
             name.addEventListener('change', () => { pen.name = name.value || `Pen ${i + 1}`; commit(); });
@@ -1085,7 +862,7 @@
             const i = +row.dataset.pen;
             const u = usage[i];
             row.classList.toggle('unused', !u);
-            row.querySelector('.pen-meta').textContent = u ? `${fmtLength(u.draw)} · ${fmtCount(u.lifts)} strokes` : 'not used by this design';
+            row.querySelector('.pen-meta').textContent = u ? `${fmtCount(u.paths)} ${u.paths === 1 ? 'path' : 'paths'}` : 'not used by this design';
         });
     }
 
@@ -1303,15 +1080,12 @@
     function toggleView(key) {
         state.view[key] = !state.view[key];
         syncViewButtons();
-        stopSim(false);
         draw();
         scheduleSave();
     }
     function syncViewButtons() {
-        $('#toggleTravel').classList.toggle('on', state.view.travel);
         $('#toggleMargin').classList.toggle('on', state.view.margin);
         $('#togglePenWidth').classList.toggle('on', state.view.penWidth);
-        $('#simSpeed').value = String(state.view.simSpeed);
     }
 
     // ------------------------------------------------------------------ export
@@ -1326,7 +1100,7 @@
         $('#exportMenu').hidden = true;
         if (kind === 'load') { $('#settingsFile').value = ''; $('#settingsFile').click(); return; }
         if (kind === 'json') {
-            const data = Object.assign(shareable(), { opt: state.opt, plot: state.plot });
+            const data = Object.assign(shareable(), { opt: state.opt });
             download(`${fileBase()}.json`, JSON.stringify(data, null, 2), 'application/json');
             return;
         }
@@ -1433,12 +1207,8 @@
         });
 
         $('#fitView').addEventListener('click', fitView);
-        $('#toggleTravel').addEventListener('click', () => toggleView('travel'));
         $('#toggleMargin').addEventListener('click', () => toggleView('margin'));
         $('#togglePenWidth').addEventListener('click', () => toggleView('penWidth'));
-        $('#simPlay').addEventListener('click', simToggle);
-        $('#simStop').addEventListener('click', () => stopSim(true));
-        $('#simSpeed').addEventListener('change', e => { state.view.simSpeed = +e.target.value; scheduleSave(); });
 
         $('#gallerySearch').addEventListener('input', e => filterGallery(e.target.value));
         $('#gallerySearch').addEventListener('keydown', e => {
@@ -1490,8 +1260,6 @@
                 case 'g': case 'G': openGallery(); break;
                 case 'e': case 'E': doExport('svg'); break;
                 case 's': case 'S': saveSnapshot(); break;
-                case 'p': case 'P': simToggle(); break;
-                case 't': case 'T': toggleView('travel'); break;
                 case 'f': case 'F': fitView(); break;
                 case '?': $('#keysDialog').hidden = false; break;
                 default: return;
@@ -1542,14 +1310,12 @@
         resizeCanvas();
         regenerate();
         pushUndo();
-        updateSimUI();
     }
 
     // Handle for scripted checks (scripts/drive.js) and console tinkering.
     window.plotterApp = {
         get state() { return state; },
         get result() { return result; },
-        get sim() { return sim; },
         select: selectGenerator, randomize, newSeed, undo, redo, exportAs: doExport, regenerate,
     };
 

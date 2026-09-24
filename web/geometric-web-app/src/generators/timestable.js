@@ -86,7 +86,7 @@
             if (style === 'wide') {
                 // k near N/2: every other chord flips across the circle, overlaying
                 // two small-multiplier patterns turned by half a turn
-                out.N = 2 * rng.int(75, 180);
+                out.N = 2 * rng.int(75, 96); // keeps k within the slider (max 100)
                 out.k = out.N / 2 + rng.pick([2, 3, 4]);
                 out.layers = 1;
             } else {

@@ -94,7 +94,7 @@
                 const sides = p.shape === 'circle' ? 0 : Math.max(3, Math.round(p.sides));
                 const R = Math.max(1, Math.round(p.rings));
                 for (let k = 0; k < N; k++) {
-                    const s = 0.5 * p.size * gap(k) * Math.pow((k + 1) / N, p.growth);
+                    const s = 0.5 * p.size * gap(k) * Math.pow(Math.max((k + 1) / N, 0.15), p.growth);
                     for (let j = 0; j < R; j++) {
                         const r = (s * (R - j)) / R;
                         if (r <= 1e-6) continue;

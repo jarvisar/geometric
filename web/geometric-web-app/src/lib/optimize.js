@@ -1,6 +1,6 @@
 /*
  * Plot optimisation: point simplification, path merging and pen-up travel
- * ordering, plus length / time statistics. Operates on paper coordinates (mm).
+ * ordering, plus length statistics. Operates on paper coordinates (mm).
  */
 (function () {
     'use strict';
@@ -236,10 +236,5 @@
             if (layer.paths.length) travel += Math.hypot(home[0] - cur[0], home[1] - cur[1]);
         }
         return { draw, travel, lifts, points, paths };
-    };
-
-    opt.estimateTime = function (stats, plot) {
-        const down = Math.max(1, plot.drawSpeed), up = Math.max(1, plot.travelSpeed);
-        return stats.draw / down + stats.travel / up + stats.lifts * Math.max(0, plot.liftTime);
     };
 })();

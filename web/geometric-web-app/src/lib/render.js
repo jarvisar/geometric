@@ -19,7 +19,7 @@
     };
 
     // Draw a result onto ctx. view = { scale (px per mm), ox, oy (px) }.
-    // opts = { paper: {w,h}, paperColor, pens, showTravel, showMargin, minLinePx, hidden: Set }
+    // opts = { paper: {w,h}, paperColor, pens, showMargin, minLinePx, hidden: Set }
     PG.drawResult = function (ctx, result, view, opts) {
         const { paper } = opts;
         ctx.save();
@@ -53,23 +53,6 @@
             ctx.stroke(PG.layerPath(layer));
         }
         ctx.globalAlpha = 1;
-        if (opts.showTravel) {
-            ctx.strokeStyle = 'rgba(230, 60, 60, 0.55)';
-            ctx.lineWidth = 1 / view.scale;
-            ctx.setLineDash([3 / view.scale, 3 / view.scale]);
-            ctx.beginPath();
-            for (const layer of result.layers) {
-                if (opts.hidden && opts.hidden.has(layer.pen)) continue;
-                let cur = [0, 0];
-                for (const p of layer.paths) {
-                    ctx.moveTo(cur[0], cur[1]);
-                    ctx.lineTo(p[0][0], p[0][1]);
-                    cur = p[p.length - 1];
-                }
-            }
-            ctx.stroke();
-            ctx.setLineDash([]);
-        }
         ctx.restore();
     };
 })();

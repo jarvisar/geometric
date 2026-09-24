@@ -69,7 +69,7 @@
         fourwing: [[0, 0, 0], [30, 30, 0], [-45, 20, 0]],
     };
 
-    function integrate(sys, steps, dt, jitter) {
+    function integrate(sys, steps, dt, transient, jitter) {
         const f = sys.f;
         let x = sys.start[0] + jitter[0], y = sys.start[1] + jitter[1], z = sys.start[2] + jitter[2];
         const step = () => {
@@ -82,7 +82,6 @@
             z += (dt / 6) * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]);
             return isFinite(x) && isFinite(y) && isFinite(z) && Math.abs(x) + Math.abs(y) + Math.abs(z) < 1e5;
         };
-        const transient = Math.round(steps * 0.08);
         for (let i = 0; i < transient; i++) if (!step()) return [];
         const pts = [[x, y, z]];
         for (let i = 0; i < steps; i++) {
@@ -105,7 +104,7 @@
             { id: 'length', label: 'Length', type: 'range', min: 0.1, max: 4, step: 0.05, value: 1, random: [0.6, 1.4],
                 hint: 'Multiplies the number of integration steps the system starts with' },
             { id: 'dtScale', label: 'Step size ×', type: 'range', min: 0.25, max: 2, step: 0.05, value: 1, random: false,
-                hint: 'Larger steps travel further along the attractor but are less exact' },
+                hint: 'Smaller steps give a smoother, more exact line; the length drawn stays the same' },
             { type: 'section', label: 'View' },
             { id: 'rotX', label: 'Rotate X°', type: 'range', min: -180, max: 180, step: 1, value: 45 },
             { id: 'rotY', label: 'Rotate Y°', type: 'range', min: -180, max: 180, step: 1, value: -35 },
@@ -126,9 +125,12 @@
 
         generate(p, ctx) {
             const sys = SYSTEMS[p.system] || SYSTEMS.lorenz;
-            const steps = Math.min(200000, Math.max(100, Math.round(sys.steps * p.length / p.dtScale)));
+            const want = Math.max(100, Math.round(sys.steps * p.length / p.dtScale));
+            const steps = Math.min(200000, want);
+            const dt = sys.dt * p.dtScale * (want / steps); // past the step cap, take longer steps rather than a shorter line
+            const transient = Math.round((sys.steps * 0.08 * sys.dt) / dt); // a fixed stretch of time, whatever the length
             const jitter = [ctx.rng.gauss(0, 1e-3), ctx.rng.gauss(0, 1e-3), ctx.rng.gauss(0, 1e-3)];
-            const raw = integrate(sys, steps, sys.dt * p.dtScale, jitter);
+            const raw = integrate(sys, steps, dt, transient, jitter);
             if (raw.length < 2) return [];
 
             // classic view axes, centred on the bounding box and scaled to unit size
@@ -140,7 +142,8 @@
 
             const rx = geo.rad(p.rotX), ry = geo.rad(p.rotY), rz = geo.rad(p.rotZ);
             const cx = Math.cos(rx), sx = Math.sin(rx), cy = Math.cos(ry), sy = Math.sin(ry), cz = Math.cos(rz), sz = Math.sin(rz);
-            const cam = 1.5 + 8 * (1 - p.persp) * (1 - p.persp); // camera distance in unit radii
+            // camera distance in unit radii, kept outside the √3 sphere the rotated points can reach
+            const cam = Math.max(2.5, 1.5 + 8 * (1 - p.persp) * (1 - p.persp));
             const pts = new Array(raw.length), depth = new Float64Array(raw.length);
             for (let i = 0; i < raw.length; i++) {
                 const q = raw[i];

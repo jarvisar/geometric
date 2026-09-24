@@ -33,7 +33,7 @@
             { type: 'section', label: 'Symmetry' },
             { id: 's', label: 'Symmetry', type: 'range', min: 2, max: 12, step: 1, value: 5 },
             { id: 'm', label: 'Residue', type: 'range', min: 1, max: 11, step: 1, value: 1,
-                hint: 'Every frequency ≡ residue (mod symmetry). Values ≥ symmetry wrap around.' },
+                hint: 'Every frequency ≡ residue (mod symmetry). Values ≥ symmetry wrap around. A residue sharing a factor with symmetry lowers the symmetry (e.g. 6 and 2 give 3-fold).' },
             ...wheelParams(1, 0, 1, 0, 'Wheel 1'),
             ...wheelParams(2, 1, 0.5, 0, 'Wheel 2'),
             ...wheelParams(3, -3, 0.33, 90, 'Wheel 3'),

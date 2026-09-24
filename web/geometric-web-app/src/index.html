@@ -25,11 +25,7 @@
             <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
             <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m-4.5-4.5L12 15l4.5-4.5M5 19.5h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
             <symbol id="i-chev" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-            <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></symbol>
-            <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6.5" y="5.5" width="4" height="13" rx="1" fill="currentColor"/><rect x="13.5" y="5.5" width="4" height="13" rx="1" fill="currentColor"/></symbol>
-            <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="currentColor"/></symbol>
             <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9m6 0h3.5A1.5 1.5 0 0 1 20 5.5V9m0 6v3.5a1.5 1.5 0 0 1-1.5 1.5H15m-6 0H5.5A1.5 1.5 0 0 1 4 18.5V15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
-            <symbol id="i-travel" viewBox="0 0 24 24"><path d="M4 18c3-9 6 0 9-8s5-3 7-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2.5 2.5" stroke-linecap="round"/><circle cx="4" cy="18" r="2" fill="currentColor"/><circle cx="20" cy="5" r="2" fill="currentColor"/></symbol>
             <symbol id="i-margin" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="7.5" y="6.5" width="9" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2 2"/></symbol>
             <symbol id="i-pen" viewBox="0 0 24 24"><path d="M14.5 5.5l4 4L9 19H5v-4z M12.5 7.5l4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
             <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></symbol>
@@ -104,26 +100,13 @@
 
         <section class="stage" id="stage">
             <canvas id="view"></canvas>
-            <canvas id="overlay"></canvas>
 
             <div class="stage-tools">
                 <button id="fitView" class="tool" title="Fit to screen (F)"><svg class="ic"><use href="#i-fit"/></svg></button>
                 <span id="zoomLabel" class="zoom-label">100%</span>
                 <span class="sep"></span>
-                <button id="toggleTravel" class="tool" title="Show pen-up travel (T)"><svg class="ic"><use href="#i-travel"/></svg></button>
                 <button id="toggleMargin" class="tool" title="Show drawing area"><svg class="ic"><use href="#i-margin"/></svg></button>
                 <button id="togglePenWidth" class="tool" title="True pen width (off = hairlines)"><svg class="ic"><use href="#i-pen"/></svg></button>
-                <span class="sep"></span>
-                <button id="simPlay" class="tool" title="Simulate plotting (P)"><svg class="ic"><use href="#i-play"/></svg></button>
-                <button id="simStop" class="tool" title="Stop simulation" hidden><svg class="ic"><use href="#i-stop"/></svg></button>
-                <select id="simSpeed" title="Simulation speed">
-                    <option value="1">1×</option>
-                    <option value="4">4×</option>
-                    <option value="16" selected>16×</option>
-                    <option value="64">64×</option>
-                    <option value="256">256×</option>
-                </select>
-                <span id="simInfo" class="sim-info" hidden></span>
             </div>
 
             <div class="stage-msg" id="busy" hidden>Generating…</div>
@@ -160,8 +143,6 @@
                 <dt><kbd>G</kbd></dt><dd>Browse designs</dd>
                 <dt><kbd>E</kbd></dt><dd>Export SVG</dd>
                 <dt><kbd>S</kbd></dt><dd>Save snapshot</dd>
-                <dt><kbd>P</kbd></dt><dd>Play / pause plot simulation</dd>
-                <dt><kbd>T</kbd></dt><dd>Toggle pen-up travel lines</dd>
                 <dt><kbd>F</kbd></dt><dd>Fit preview to screen</dd>
                 <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></dt><dd>Undo / redo</dd>
                 <dt>Scroll · drag · double-click</dt><dd>Zoom · pan · fit the preview</dd>

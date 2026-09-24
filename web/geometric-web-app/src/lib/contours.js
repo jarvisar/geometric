@@ -28,6 +28,8 @@
     // Iso-lines of a sampled field at `level`. Returns an array of polylines.
     PG.isolines = function (field, level) {
         const { values: v, nx, ny, x0, y0, dx, dy } = field;
+        // a sample exactly on the level gives zero-length and doubled segments: nudge the level off it
+        for (let i = 0; i < v.length; i++) if (v[i] === level) { level += 1e-9 * (Math.abs(level) || 1); break; }
         const H = (nx - 1) * ny; // horizontal edge count; vertical edges follow
         const hEdge = (i, j) => j * (nx - 1) + i;
         const vEdge = (i, j) => H + j * nx + i;

@@ -31,7 +31,7 @@
                 hint: 'Width of the active band, relative to the line length' },
             { id: 'jitter', label: 'Fine jitter', type: 'range', min: 0, max: 0.1, step: 0.005, value: 0.02, random: [0, 0.04],
                 hint: 'Tiny high-frequency wobble along every line (fraction of amplitude)' },
-            { id: 'coherence', label: 'Line coherence', type: 'range', min: 0, max: 1, step: 0.01, value: 0.55,
+            { id: 'coherence', label: 'Line coherence', type: 'range', min: 0, max: 1, step: 0.01, value: 0.55, show: p => p.mode !== 'terrain',
                 hint: 'How similar neighbouring lines are' },
             { type: 'section', label: 'Layout' },
             { id: 'lines', label: 'Lines', type: 'range', min: 5, max: 250, step: 1, value: 80, random: [40, 120] },
@@ -85,8 +85,10 @@
 
             // Baselines: line 0 is the front (bottom). With perspective the gaps
             // shrink towards the back and so do amplitude and horizontal scale.
-            const yFront = H - Math.min(p.padY, H / 3);
-            const yBack = Math.min(p.padY, H / 3) + A * 0.85;
+            const top = Math.min(p.padY, H / 3);
+            const yFront = H - top;
+            // leave room for the back row's peaks, but never let the back pass the front
+            const yBack = Math.min(top + A * 0.85, yFront - 0.3 * (yFront - top));
             const depthPos = z => (k > 0 ? ((1 - 1 / (1 + k * z)) * (1 + k)) / k : z);
             const depthScale = z => 1 / (1 + k * z);
 
@@ -145,10 +147,10 @@
                         h = Math.pow(geo.clamp(0.5 + 0.65 * n, 0, 1), p.sharpness) *
                             envelope(xw - cx - lineShift[i]) * lineGain[i];
                     }
-                    hz[j] = h * s;
+                    hz[j] = h;
                 }
                 heights.push(hz);
-                lineMax.push(Math.max(...hz) / s);
+                lineMax.push(Math.max(...hz));
             }
             lineMax.sort((a, b) => a - b);
             const hMax = Math.max(1e-9, lineMax[Math.floor((lineMax.length - 1) * 0.9)]);

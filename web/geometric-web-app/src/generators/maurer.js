@@ -15,9 +15,8 @@
     }
 
     // The web for step d: one polyline, broken wherever it would repeat a chord.
-    function web(n, d, count) {
+    function web(n, d, count, seen = new Set()) {
         const paths = [];
-        const seen = new Set();
         const key = p => `${Math.round(p[0] * 1e6)},${Math.round(p[1] * 1e6)}`;
         let cur = null, prev = rosePt(n, 0), prevKey = key(prev);
         for (let k = 1; k < count; k++) {
@@ -93,9 +92,10 @@
             const n = Math.max(1, Math.round(p.n));
             const d = p.d + (p.fine ? p.dFine : 0);
             const count = Math.max(2, Math.round(p.count));
-            const layers = [web(n, d, count).paths];
-            if (p.showRose) layers.push([rose(n)]);
-            if (p.overlay) layers.push(web(n, p.d2, count).paths);
+            const seen = new Set();
+            const layers = [web(n, d, count, seen).paths];
+            layers.push(p.showRose ? [rose(n)] : []);
+            if (p.overlay) layers.push(web(n, p.d2, count, seen).paths); // skips chords already drawn
             return { layers };
         },
     });
