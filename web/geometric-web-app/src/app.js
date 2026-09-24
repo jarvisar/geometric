@@ -329,12 +329,17 @@
     const stage = $('#stage');
     const view = { zoom: 1, panX: 0, panY: 0 };
     let dpr = 1, cw = 0, ch = 0;
+    let padTop = 62, padBottom = 72;
 
     function resizeCanvas() {
         const r = stage.getBoundingClientRect();
         if (!r.width || !r.height) return;
         dpr = window.devicePixelRatio || 1;
         cw = r.width; ch = r.height;
+        // Keep the paper clear of the floating toolbar and stats (the layout hides them on small screens).
+        const tools = $('.stage-tools');
+        padTop = tools.offsetParent ? tools.getBoundingClientRect().bottom - r.top + 16 : 16;
+        padBottom = $('#stats').offsetParent ? 72 : 30;
         canvas.width = Math.round(cw * dpr);
         canvas.height = Math.round(ch * dpr);
         draw();
@@ -342,10 +347,11 @@
 
     function viewTransform() {
         const P = state.paper;
-        const fit = Math.max(0.05, Math.min((cw - 48) / P.w, (ch - 150) / P.h));
+        const availH = ch - padTop - padBottom;
+        const fit = Math.max(0.05, Math.min((cw - 48) / P.w, availH / P.h));
         const s = fit * view.zoom;
         const ox = cw / 2 - (P.w / 2) * s + view.panX;
-        const oy = ch / 2 + 2 - (P.h / 2) * s + view.panY;
+        const oy = padTop + availH / 2 - (P.h / 2) * s + view.panY;
         return { scale: s * dpr, ox: ox * dpr, oy: oy * dpr, css: { s, ox, oy } };
     }
 
@@ -1312,6 +1318,20 @@
         scheduleSave();
     }
 
+    // The phone top bar has no room for the seed and reset controls, so they move to the top of the Design panel.
+    const PHONE = window.matchMedia('(max-width: 720px)');
+    function placeSeedControls() {
+        const seed = $('.seed-box'), reset = $('#resetParams');
+        if (PHONE.matches) {
+            $('#phoneTools').append(seed, reset);
+        } else {
+            $('#randomize').before(seed);
+            $('#randomize').after(reset);
+            // only phones have a Preview tab (e.g. rotating to landscape)
+            if (state.ui.tab === 'preview') setTab('design');
+        }
+    }
+
     function bindKeys() {
         document.addEventListener('keydown', e => {
             const t = e.target;
@@ -1382,9 +1402,10 @@
         bindCanvas();
         rebuildAll();
         syncInstallItem();
-        // phones open on the drawing; wider screens always show it
-        const phone = window.matchMedia('(max-width: 720px)').matches;
-        setTab(phone ? 'preview' : state.ui.tab === 'output' ? 'output' : 'design');
+        placeSeedControls();
+        PHONE.addEventListener('change', placeSeedControls);
+        // phones open on the full-size drawing; wider screens always show it
+        setTab(PHONE.matches ? 'preview' : state.ui.tab === 'output' ? 'output' : 'design');
         resizeCanvas();
         regenerate();
         pushUndo();
