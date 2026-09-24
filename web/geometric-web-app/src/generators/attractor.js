@@ -17,7 +17,7 @@
             f: (x, y, z) => [10 * (y - x), x * (28 - z) - y, x * y - (8 / 3) * z],
         },
         aizawa: {
-            name: 'Aizawa', dt: 0.01, steps: 24000, start: [0.1, 0, 0], view: [0, 2, 1],
+            name: 'Aizawa', dt: 0.01, steps: 16000, start: [0.1, 0, 0], view: [0, 2, 1],
             f: (x, y, z) => {
                 const a = 0.95, b = 0.7, c = 0.6, d = 3.5, e = 0.25, f = 0.1;
                 return [(z - b) * x - d * y, d * x + (z - b) * y,
@@ -58,15 +58,15 @@
     };
     // Rotations (degrees about X, Y, Z) that show each system off.
     const VIEWS = {
-        lorenz: [[0, 0, 0], [0, 35, 0], [20, -30, 0], [-15, 60, 0]],
-        aizawa: [[0, 0, 0], [15, 30, 0], [-20, 0, 0], [30, 45, 0]],
-        thomas: [[45, -35, 0], [45, -35, 0], [35, 45, 0], [0, 0, 0], [55, 35, 0]],   // (1,1,1) is its 3-fold axis
-        halvorsen: [[45, -35, 0], [45, -35, 0], [35, 45, 0], [0, 0, 0], [55, 20, 0]],
+        lorenz: [[0, 0, 0], [0, 35, 0], [-20, 20, 0], [-15, 60, 0]],                 // turning the other way shows the wings edge-on
+        aizawa: [[-15, 0, 0], [-25, 20, 0], [-50, 20, 0], [15, 30, 0]],               // tilted to show the tube through the sphere
+        thomas: [[45, -35, 0], [45, -35, 0], [0, 0, 0], [-45, 35, 0]],                 // (1,1,1) is its 3-fold axis
+        halvorsen: [[45, -35, 0], [45, -35, 0], [0, 0, 0]],
         rossler: [[0, 0, 0], [-60, 0, 0], [-35, 20, 0], [-75, 30, 0]],
-        dadras: [[0, 0, 0], [30, 30, 0], [-30, 20, 0], [60, 0, 0]],
-        chen: [[0, 0, 0], [0, 35, 0], [20, -40, 0]],
-        sprott: [[0, 0, 0], [40, 30, 0], [-30, 60, 0], [80, 0, 0]],
-        fourwing: [[0, 0, 0], [30, 30, 0], [-45, 20, 0]],
+        dadras: [[0, 0, 0], [30, 30, 0], [-30, 20, 0]],
+        chen: [[0, 0, 0], [0, 35, 0], [-20, 0, 0]],
+        sprott: [[0, 0, 0], [-30, 0, 0], [-60, 20, 0]],
+        fourwing: [[0, 0, 0], [-45, 20, 0], [0, 40, 0]],
     };
 
     function integrate(sys, steps, dt, transient, jitter) {
@@ -120,7 +120,7 @@
             const system = rng.pick(Object.keys(SYSTEMS));
             const v = rng.pick(VIEWS[system]);
             const j = () => Math.round(rng.range(-10, 10));
-            return { system, rotX: v[0] + j(), rotY: v[1] + j(), rotZ: v[2] + rng.int(-60, 60) };
+            return { system, rotX: v[0] + j(), rotY: v[1] + j(), rotZ: v[2] + rng.int(-30, 30) };
         },
 
         generate(p, ctx) {

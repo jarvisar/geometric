@@ -53,7 +53,8 @@
                 mix = rng.chance(0.3) ? 0 : +(rng.sign() * rng.range(0.25, 1)).toFixed(2);
                 cellSize = 180 / Math.max(n + 1, 2 * m);
             } else {
-                do { n = rng.int(2, 13); m = rng.int(1, 11); } while (n === m || n + m < 6 || n + m > 19);
+                // |n − m| = 1 collapses into plain diagonal stripes
+                do { n = rng.int(2, 13); m = rng.int(1, 11); } while (Math.abs(n - m) < 2 || n + m < 6 || n + m > 19);
                 mix = rng.weighted([[3, 1], [3, -1], [2, +(rng.sign() * rng.range(0.3, 0.95)).toFixed(2)]]);
                 cellSize = 180 / Math.max(n, m);
             }
@@ -67,7 +68,7 @@
             const { width: W, height: H } = ctx;
             const n = Math.round(p.n), m = Math.round(p.m);
             const circle = p.plate === 'circle';
-            // with n = m the swapped mode is the same mode, and mix = âˆ’1 would cancel everything
+            // with n = m the swapped mode is the same mode, and mix = −1 would cancel everything
             const mix = n === m ? 0 : p.mix;
             let fn, x0 = 0, y0 = 0, w = W, h = H, R = 0, cx = W / 2, cy = H / 2;
 

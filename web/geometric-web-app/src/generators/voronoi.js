@@ -28,11 +28,11 @@
         params: [
             { type: 'section', label: 'Cells' },
             { id: 'cells', label: 'Cells', type: 'range', min: 5, max: 600, step: 1, value: 90, random: [25, 220] },
-            { id: 'relax', label: 'Relaxation', type: 'range', min: 0, max: 30, step: 1, value: 8, random: [0, 12],
+            { id: 'relax', label: 'Relaxation', type: 'range', min: 0, max: 30, step: 1, value: 8, random: [3, 12],
                 hint: 'Lloyd iterations — moves seeds to their cell centroids for even cells' },
             { id: 'dist', label: 'Seeds', type: 'select', value: 'uniform', random: true,
                 options: [['uniform', 'Uniform'], ['noise', 'Noise clusters'], ['radial', 'Dense centre']] },
-            { id: 'contrast', label: 'Density contrast', type: 'range', min: 0, max: 1, step: 0.01, value: 0.85, random: [0.5, 1],
+            { id: 'contrast', label: 'Density contrast', type: 'range', min: 0, max: 1, step: 0.01, value: 0.85, random: [0.5, 0.92],
                 show: p => p.dist !== 'uniform' },
             { id: 'scale', label: 'Cluster size (mm)', type: 'range', min: 20, max: 400, step: 1, value: 90, random: [50, 200],
                 show: p => p.dist === 'noise' },
@@ -51,9 +51,13 @@
                 options: [['random', 'Random cell'], ['region', 'Region'], ['style', 'Style']] },
         ],
 
-        randomize(rng) {
+        randomize(rng, p) {
             // rounding is either off or clearly visible
-            return { round: rng.chance(0.55) ? 0 : +rng.range(0.5, 1).toFixed(2) };
+            const out = { round: rng.chance(0.55) ? 0 : +rng.range(0.5, 1).toFixed(2) };
+            // a density gradient only reads with enough cells; with few, the
+            // sparse side becomes a handful of page-sized cells
+            if (p.dist !== 'uniform') out.cells = Math.max(p.cells, rng.int(90, 220));
+            return out;
         },
 
         generate(p, ctx) {

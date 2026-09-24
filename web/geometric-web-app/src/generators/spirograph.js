@@ -15,14 +15,14 @@
         fit: true,
         params: [
             { type: 'section', label: 'Gears' },
-            { id: 'type', label: 'Gear position', type: 'select', value: 'hypo', random: ['hypo', 'hypo', 'epi'],
+            { id: 'type', label: 'Gear position', type: 'select', value: 'hypo',
                 options: [['hypo', 'Inside ring (hypotrochoid)'], ['epi', 'Outside ring (epitrochoid)']] },
             { id: 'R', label: 'Ring teeth', type: 'range', min: 24, max: 160, step: 1, value: 96 },
             { id: 'r', label: 'Gear teeth', type: 'range', min: 5, max: 120, step: 1, value: 52 },
             { id: 'hole', label: 'Pen hole', type: 'range', min: 0.05, max: 1.6, step: 0.01, value: 0.82,
                 hint: 'Distance of the pen from the gear centre, relative to gear radius' },
             { type: 'section', label: 'Rings' },
-            { id: 'rings', label: 'Rings', type: 'range', min: 1, max: 16, step: 1, value: 3, random: [1, 8] },
+            { id: 'rings', label: 'Rings', type: 'range', min: 1, max: 16, step: 1, value: 3 },
             { id: 'holeStep', label: 'Hole change', type: 'range', min: -0.3, max: 0.3, step: 0.01, value: -0.14,
                 show: p => p.rings > 1 },
             { id: 'ringRotate', label: 'Ring rotation°', type: 'range', min: 0, max: 90, step: 0.5, value: 0,
@@ -32,15 +32,41 @@
         ],
 
         randomize(rng) {
-            const R = rng.int(60, 150);
-            let r = 0;
-            for (let tries = 0; tries < 200; tries++) {
-                const c = rng.int(12, Math.min(120, R - 4));
-                const q = c / geo.gcd(R, c);
-                if (q >= 3 && q <= 30) { r = c; break; }
+            // Pick the look first: P lobes, Q trips around the ring (coprime,
+            // so the curve really has P lobes), then scale both to real tooth
+            // counts. The band the pen sweeps (pen offset over the radius of
+            // the gear centre's path) must be wide enough to read as
+            // interlaced loops rather than a thin ring.
+            let epi = false, P = 7, Q = 3, hole = 0.8;
+            for (let tries = 0; tries < 300; tries++) {
+                const e = rng.chance(0.3);
+                const p = rng.weighted([[3, rng.int(5, 12)], [3, rng.int(13, 24)], [1, rng.int(25, 40)]]);
+                const q = rng.int(1, Math.min(16, p - 1));
+                const f = q / p, h = rng.range(e ? 0.7 : 0.45, e ? 1.5 : 1.3);
+                const band = e ? f * h / (1 + f) : f * h / (1 - f);
+                if (geo.gcd(p, q) === 1 && band >= 0.4 && band <= 2 && f >= (e ? 0.25 : 0.15)) {
+                    epi = e; P = p; Q = q; hole = +h.toFixed(2);
+                    break;
+                }
             }
-            if (!r) r = Math.round(R * 0.4);
-            return { R, r, hole: +rng.range(0.4, 1.3).toFixed(2), holeStep: +rng.range(-0.2, 0.1).toFixed(2) };
+            const mMin = Math.max(1, Math.ceil(24 / P), Math.ceil(5 / Q)), mMax = Math.max(mMin, Math.floor(Math.min(150 / P, 120 / Q)));
+            const mult = rng.int(mMin, mMax);
+            const R = P * mult, r = Q * mult;
+            // ink per ring ≈ curve length / figure diameter (fit to ≈ 180 mm)
+            const base = epi ? R + r : R - r, d = r * hole, k = base / r;
+            let L = 0, px = base + (epi ? -d : d), py = 0;
+            for (let i = 1; i <= 4000; i++) {
+                const t = (TAU * Q * i) / 4000;
+                const x = base * Math.cos(t) + (epi ? -d : d) * Math.cos(k * t), y = base * Math.sin(t) - d * Math.sin(k * t);
+                L += Math.hypot(x - px, y - py); px = x; py = y;
+            }
+            const perRing = (L / (2 * (base + d))) * 180;
+            const rings = geo.clamp(Math.round(rng.range(8000, 24000) / perRing), 1, 7);
+            const holeStep = rings > 1 ? +Math.max(-0.3, -rng.range(0.4, 0.8) * hole / rings).toFixed(2) : -0.1;
+            return {
+                type: epi ? 'epi' : 'hypo', R, r, hole, rings, holeStep,
+                ringRotate: rings > 1 ? PG.snap(rng.pick([0, 0, 0.5, 0.25]) * 360 / P, 0.5) : 0,
+            };
         },
 
         generate(p) {

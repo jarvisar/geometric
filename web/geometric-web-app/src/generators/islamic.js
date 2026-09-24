@@ -406,17 +406,21 @@
         ],
 
         randomize(rng) {
-            const tiling = rng.pick(Object.keys(TILINGS));
+            // the plain square and triangle grids give the simplest figures: rarer
+            const tiling = rng.weighted([[1, 'square'], [1, 'triangular'], [2, 'hexagonal'], [2, 'trihex'], [2, 'octagon'],
+                [2, 'dodecagon'], [2, '4.6.12'], [2, '3.4.6.4']]);
             const t = TILINGS[tiling];
             const size = Math.round(rng.range(t.sizes[0], t.sizes[1]));
             const edge = size / Math.hypot(t.a[0], t.a[1]);
             const theta = rng.pick(t.angles);
+            const strap = rng.chance(0.2) ? 0 : +geo.clamp(edge * rng.range(0.14, 0.24), 1, 3.2).toFixed(1);
             return {
-                tiling, theta, size,
-                // positive offsets break strands into loops around the vertices; keep to small negative ones
-                delta: rng.chance(0.8) ? 0 : -rng.range(0.04, 0.15).toFixed(2),
+                tiling, theta, size, strap,
+                // Positive offsets break strands into loops around the vertices; small
+                // negative ones double the lines through each contact point. Straps
+                // crossing at such shallow angles shred into crumbs, so plain lines only.
+                delta: strap || rng.chance(0.6) ? 0 : -rng.range(0.04, 0.15).toFixed(2),
                 theta2: rng.chance(0.12) ? rng.pick(t.angles.filter(a => a !== theta)) : 0,
-                strap: rng.chance(0.2) ? 0 : +geo.clamp(edge * rng.range(0.14, 0.24), 1, 3.2).toFixed(1),
             };
         },
 

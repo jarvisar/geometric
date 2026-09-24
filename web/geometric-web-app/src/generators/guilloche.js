@@ -92,10 +92,14 @@
             out.lines = geo.clamp(Math.round(rng.range(140, 260) / out.waves), 4, 16);
             out.ampOut = lobes ? p.ampOut : 0;
             out.ampIn = out.lobesIn ? p.ampIn : 0;
-            // twisted bands put crest against trough: keep the scallops inside the gap
+            // Neighbouring bands must not cross. Matching scallops that aren't
+            // twisted run parallel, so only their difference eats into the gap;
+            // otherwise crest can meet trough and the sum must fit inside it.
             const room = p.gap * 0.9;
-            if (out.twist && out.ampOut + out.ampIn > room) {
-                const k = room / (out.ampOut + out.ampIn);
+            const parallel = !out.twist && out.lobesIn === lobes;
+            const need = parallel ? Math.abs(out.ampOut - out.ampIn) : out.ampOut + out.ampIn;
+            if (need > room) {
+                const k = room / need;
                 out.ampOut = +(out.ampOut * k).toFixed(3); out.ampIn = +(out.ampIn * k).toFixed(3);
             }
             if (out.loop) out.loop = +out.loop.toFixed(2);

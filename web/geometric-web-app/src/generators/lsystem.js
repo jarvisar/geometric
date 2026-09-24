@@ -20,20 +20,20 @@
         hilbert: { name: 'Hilbert curve', axiom: 'X', rules: { X: '+YF-XFX-FY+', Y: '-XF+YFY+FX-' }, angle: 90, iter: 6 },
         moore: { name: 'Moore curve', axiom: 'LFL+F+LFL+F', rules: { L: '-RF+LFL+FR-', R: '+LF-RFR-FL+' }, angle: 90, iter: 5 },
         peano: { name: 'Peano curve', axiom: 'X', rules: { X: 'XFYFX+F+YFXFY-F-XFYFX', Y: 'YFXFY-F-XFYFX+F+YFXFY' }, angle: 90, iter: 4 },
-        sierpinskiCurve: { name: 'Sierpiński curve', axiom: 'F+XF+F+XF', rules: { X: 'XF-F+F-XF+F+XF-F+F-X' }, angle: 90, iter: 4 },
+        sierpinskiCurve: { name: 'Sierpiński curve', axiom: 'F+XF+F+XF', rules: { X: 'XF-F+F-XF+F+XF-F+F-X' }, angle: 90, iter: 5 },
         gosper: { name: 'Gosper flowsnake', axiom: 'A', rules: { A: 'A-B--B+A++AA+B-', B: '+A-BB--B-A++A+B' }, angle: 60, iter: 4 },
         koch: { name: 'Koch snowflake', axiom: 'F--F--F', rules: { F: 'F+F--F+F' }, angle: 60, iter: 5 },
-        kochIsland: { name: 'Quadratic Koch island', axiom: 'F-F-F-F', rules: { F: 'F-F+F+FF-F-F+F' }, angle: 90, iter: 3 },
+        kochIsland: { name: 'Quadratic Koch island', axiom: 'F-F-F-F', rules: { F: 'F-F+F+FF-F-F+F' }, angle: 90, iter: 4 },
         pentigree: { name: 'Pentigree', axiom: 'F-F-F-F-F', rules: { F: 'F-F++F+F-F-F' }, angle: 72, iter: 4 },
         kolam: { name: 'Kolam (Anklets of Krishna)', axiom: '-X--X', rules: { X: 'XFX--XFX' }, angle: 45, iter: 5 },
         quadGosper: {
-            name: 'Quadratic Gosper', axiom: '-YF', angle: 90, iter: 2,
+            name: 'Quadratic Gosper', axiom: '-YF', angle: 90, iter: 3,
             rules: {
                 X: 'XFX-YF-YF+FX+FX-YF-YFFX+YF+FXFXYF-FX+YF+FXFX+YF-FXYF-YF-FX+FX+YFYF-',
                 Y: '+FXFX-YF-YF+FX+FXYF+FX-YFYF-FX-YF+FXYFYF-FX-YFFX+FX+YF-YF-FX+FX+YFY',
             },
         },
-        arrowhead: { name: 'Sierpiński arrowhead', axiom: 'A', rules: { A: 'B-A-B', B: 'A+B+A' }, angle: 60, iter: 7 },
+        arrowhead: { name: 'Sierpiński arrowhead', axiom: 'A', rules: { A: 'B-A-B', B: 'A+B+A' }, angle: 60, iter: 8 },
         sierpinski: { name: 'Sierpiński triangle', axiom: 'F-G-G', rules: { F: 'F-G+F+G-F', G: 'GG' }, angle: 120, iter: 6 },
         dragon: { name: 'Heighway dragon', axiom: 'FX', rules: { X: 'X+YF+', Y: '-FX-Y' }, angle: 90, iter: 13 },
         levy: { name: 'Lévy C curve', axiom: 'F', rules: { F: '+F--F+' }, angle: 45, iter: 13, dedupe: true }, // self-overlapping
@@ -45,6 +45,7 @@
             rules: { M: 'OF++PF----NF[-OF----MF]++', N: '+OF--PF[---MF--NF]+', O: '-MF++NF[+++OF++PF]-', P: '--OF++++MF[+PF++++NF]--NF', F: '' },
         },
     };
+    const TWEAKABLE = ['dragon', 'levy', 'terdragon', 'koch', 'pentigree', 'arrowhead'];
     const DRAW = { F: 1, G: 1, A: 1, B: 1 };
     const MAX_LEN = 2e6, MAX_DRAW = 4e5;
 
@@ -139,10 +140,13 @@
             const pr = PRESETS[p.preset];
             const branching = pr && /\[/.test(Object.values(pr.rules).join('') + pr.axiom);
             return {
-                iterations: rng.chance(0.75) || !pr ? 0 : Math.max(1, pr.iter - 1),
+                iterations: 0, // each preset's own depth
                 round: branching ? 0 : rng.pick([0, 0.2, 0.35, 0.5, 0.5]),
-                tweak: rng.chance(0.75) || p.preset === 'penrose' ? 0 : +(rng.sign() * rng.range(0.5, 3.5)).toFixed(1),
-                jitter: branching && rng.chance(0.6) ? +rng.range(2, 8).toFixed(1) : 0,
+                // a tweaked angle curls dragons and snowflakes nicely, but tangles
+                // the space-filling curves and tilings into knots
+                tweak: TWEAKABLE.includes(p.preset) && rng.chance(0.3) ? +(rng.sign() * rng.range(0.5, 3)).toFixed(1) : 0,
+                // jitter suits plants; on the Penrose tiling it breaks the de-duplication of shared edges
+                jitter: branching && p.preset !== 'penrose' && rng.chance(0.6) ? +rng.range(2, 8).toFixed(1) : 0,
             };
         },
 

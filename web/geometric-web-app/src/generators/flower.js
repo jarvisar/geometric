@@ -1,8 +1,9 @@
 /*
  * Flower — the original design of this app. Every petal owns an equal sector
- * of the circle and is filled with nested copies of one curve, scaled from
- * the centre outwards. Along a petal (t = 0..1 across its sector):
- *   r = R · (j / lines) · rose · sin(πt)^sharpness · (1 + organic·sin(3·nθ + πt))
+ * of the circle and is filled with nested copies of one curve, growing out of
+ * the centre circle (radius c, 0 when the centre isn't kept clear). Along a
+ * petal (t = 0..1 across its sector):
+ *   r = c + (R − c) · (j / lines) · rose · sin(πt)^sharpness · (1 + organic·sin(3·nθ + πt))
  * where rose = (1 − width) + width·cos(nθ) dips in the middle of the sector,
  * which splits each petal into two lobes (and past width 0.5 pushes the
  * middle through the centre). Extras: a twist that turns the outer lines,
@@ -13,7 +14,7 @@
     const { geo, TAU } = PG;
 
     // One ring of petals. Angles in radians, rotated by `offset`.
-    function ring(p, n, scale, offset, clearR) {
+    function ring(p, n, scale, offset, clearR, base = 0) {
         const paths = [];
         const L = Math.max(1, Math.round(p.lines));
         const M = Math.max(4, Math.round(p.points));
@@ -31,7 +32,7 @@
                     const rose = (1 - p.width) + p.width * Math.cos(pa);
                     const fall = Math.pow(Math.sin(Math.PI * t), p.sharpness);
                     const organic = 1 + p.organic * Math.sin(3 * pa + t * Math.PI);
-                    const r = scale * ratio * rose * fall * organic;
+                    const r = base + (scale - base) * ratio * rose * fall * organic;
                     // keep the centre disc clear so the lines don't pile up in one spot
                     const inside = clearR > 0 && Math.abs(r) < clearR;
                     if (prev && inside !== prev.inside) {
@@ -112,10 +113,10 @@
             const n = Math.max(1, Math.round(p.petals));
             const cr = Math.max(0, p.centre);
             const clearR = p.clear ? cr : 0;
-            const layers = [ring(p, n, 1, 0, clearR)];
+            const layers = [ring(p, n, 1, 0, clearR, p.clear ? cr : 0)];
             if (p.ring2) {
                 const q = Object.assign({}, p, { lines: p.ring2Lines });
-                layers.push(ring(q, n, p.ring2Scale, Math.PI / n, clearR));
+                layers.push(ring(q, n, p.ring2Scale, Math.PI / n, clearR, p.clear ? cr : 0));
             }
             if (cr > 0) layers[0].push(geo.circle(0, 0, cr, 180));
             return { layers };

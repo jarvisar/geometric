@@ -12,7 +12,8 @@
     'use strict';
     const { geo, TAU } = PG;
 
-    const RATIOS = [[1, 1], [1, 2], [2, 3], [3, 4], [3, 5], [2, 5], [1, 3], [4, 5], [3, 7], [5, 6]];
+    // [weight, [a, b]]: simple ratios read as clear figures, busier ones are rarer
+    const RATIOS = [[3, [1, 1]], [4, [1, 2]], [4, [2, 3]], [2, [3, 4]], [2, [1, 3]], [1, [3, 5]], [0.5, [2, 5]], [0.5, [4, 5]]];
 
     PG.register({
         id: 'harmonograph',
@@ -42,7 +43,7 @@
             { id: 'pr', label: 'Phase°', type: 'range', min: 0, max: 360, step: 1, value: 0, show: p => p.rotary },
             { type: 'section', label: 'Decay' },
             { id: 'cycles', label: 'Duration (cycles)', type: 'range', min: 5, max: 300, step: 1, value: 36 },
-            { id: 'damping', label: 'Damping', type: 'range', min: 0, max: 6, step: 0.05, value: 1.2,
+            { id: 'damping', label: 'Damping', type: 'range', min: 0, max: 6, step: 0.05, value: 1.6,
                 hint: 'How far the swing dies away over the drawing (e-folds)' },
             { id: 'skew', label: 'Damping skew', type: 'range', min: -0.9, max: 0.9, step: 0.01, value: 0, random: [-0.4, 0.4],
                 hint: 'Positive: X dies away faster than Y' },
@@ -53,42 +54,47 @@
         ],
 
         randomize(rng) {
-            const [a, b] = rng.pick(RATIOS);
+            const [a, b] = rng.weighted(RATIOS);
             const swap = rng.chance(0.5);
             const out = {
                 fx: swap ? b : a, fy: swap ? a : b,
-                detune: +rng.range(0.002, 0.02).toFixed(3),
                 px: rng.int(0, 359), py: rng.int(0, 359),
                 a2: 0, rotary: false,
             };
-            const plain = a === b;
+            const plain = a === b, top = Math.max(a, b);
             if (rng.chance(plain ? 0.7 : 0.4)) {
-                // a faster second pendulum: either circular (equal frequencies,
-                // phases 90° apart) or another near-rational pair
-                out.a2 = +rng.range(0.25, 0.7).toFixed(2);
-                if (rng.chance(0.5)) {
-                    out.fx2 = out.fy2 = rng.int(Math.max(a, b) + 1, Math.min(8, Math.max(a, b) + 4));
+                // a second pendulum: either circular (equal frequencies, phases
+                // 90° apart) or a near-rational pair on the same beat as the first
+                out.a2 = +rng.range(0.25, 0.65).toFixed(2);
+                if (rng.chance(0.55)) {
+                    out.fx2 = out.fy2 = rng.int(top + 1, Math.min(7, top + 3));
                     out.px2 = rng.int(0, 359); out.py2 = (out.px2 + rng.pick([90, 270])) % 360;
                 } else {
-                    const [c, d] = rng.pick(RATIOS);
-                    out.fx2 = rng.chance(0.5) ? c : d; out.fy2 = out.fx2 === c ? d : c;
+                    const k = rng.pick([2, 3]);
+                    out.fx2 = out.fx * k; out.fy2 = out.fy * k;
+                    if (Math.max(out.fx2, out.fy2) > 8) { out.fx2 = out.fx + 1; out.fy2 = out.fy + 1; }
                     out.px2 = rng.int(0, 359); out.py2 = rng.int(0, 359);
                 }
             }
-            if (rng.chance(plain && !out.a2 ? 1 : 0.35)) {
+            if (rng.chance(plain && !out.a2 ? 1 : 0.3)) {
                 out.rotary = true;
-                out.ar = +rng.range(0.25, 0.9).toFixed(2);
+                out.ar = +rng.range(0.25, 0.8).toFixed(2);
                 out.fr = rng.pick([out.fx, out.fy, Math.min(out.fx, out.fy)]);
-                out.rdetune = +(rng.sign() * rng.range(0.002, 0.012)).toFixed(3);
                 out.pr = rng.int(0, 359);
             }
             // choose the duration for roughly 12-26 m of ink on A4
-            out.damping = +rng.range(0.8, 2).toFixed(2);
+            out.damping = +rng.range(1.2, 2.5).toFixed(2);
             let v2 = (out.fx * out.fx + out.fy * out.fy) / 2, ext = 1;
             if (out.a2) { v2 += out.a2 * out.a2 * (out.fx2 * out.fx2 + out.fy2 * out.fy2) / 2; ext += out.a2; }
             if (out.rotary) { v2 += out.ar * out.ar * out.fr * out.fr; ext += out.ar; }
             const perCycle = TAU * Math.sqrt(v2) * 0.9 * (95 / ext) * (1 - Math.exp(-out.damping)) / out.damping;
             out.cycles = Math.round(geo.clamp(rng.range(12000, 26000) / perCycle, 15, 250));
+            // Detune from the total drift it causes: the figure should turn by
+            // a fraction of a revolution to a couple of turns while it decays,
+            // however long the drawing is.
+            const T = TAU * out.cycles;
+            out.detune = +geo.clamp(rng.range(0.25, 2) * Math.PI / T, 0.001, 0.05).toFixed(3);
+            if (out.rotary) out.rdetune = +(rng.sign() * geo.clamp(rng.range(0.25, 1.5) * Math.PI / T, 0.001, 0.05)).toFixed(3);
             return out;
         },
 

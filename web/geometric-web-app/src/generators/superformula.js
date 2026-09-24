@@ -65,7 +65,7 @@
             { id: 'n2b', label: 'n2', type: 'range', min: 0.1, max: 40, step: 0.05, value: 0.4 },
             { id: 'n3b', label: 'n3', type: 'range', min: 0.1, max: 40, step: 0.05, value: 0.4 },
             { type: 'section', label: 'Stack' },
-            { id: 'count', label: 'Shapes', type: 'range', min: 1, max: 80, step: 1, value: 36, random: [12, 50] },
+            { id: 'count', label: 'Shapes', type: 'range', min: 1, max: 80, step: 1, value: 36 },
             { id: 'inner', label: 'Inner scale', type: 'range', min: 0, max: 0.95, step: 0.01, value: 0.06, random: [0, 0.4] },
             { id: 'twist', label: 'Twist per step°', type: 'range', min: -20, max: 20, step: 0.1, value: 2, random: [-4, 4] },
             { id: 'ease', label: 'Morph ease', type: 'range', min: 0.2, max: 4, step: 0.05, value: 1, random: [0.5, 2],
@@ -81,19 +81,20 @@
             // (two overlapping sweeps) only with n2 = n3 so it stays light.
             const half = rng.chance(0.12);
             const m = rng.weighted([[3, rng.int(3, 8)], [1, rng.int(9, 14)]]) + (half ? 0.5 : 0);
-            const m2 = rng.chance(0.7) ? m : Math.max(1, m + rng.pick([-2, -1, 1, 2]));
             const set = () => {
                 const style = rng.weighted([[3, 'star'], [1, 'round'], [3, 'spiky'], [2, 'petal'], [3, 'bourke']]);
                 if (style === 'star') return [rng.range(1, 4), rng.range(4, 12)];
                 if (style === 'round') return [rng.range(4, 20), rng.range(2, 8)];
-                if (style === 'spiky') return [rng.range(0.2, 0.6), rng.range(0.3, 1.5)];
+                if (style === 'spiky') return [rng.range(0.25, 0.6), rng.range(0.5, 1.5)];
                 if (style === 'bourke') return [rng.range(0.8, 1.5), rng.range(5, 9)];
-                return [rng.range(0.6, 2), rng.range(0.3, 1)];
+                return [rng.range(0.6, 2), rng.range(0.5, 1)];
             };
             const [a1, a2] = set(), [b1, b2] = set();
             const asym = () => (half || rng.chance(0.7) ? 1 : rng.range(0.7, 1.4));
             const r2 = v => +v.toFixed(2);
-            const out = { m, m2: half ? m : m2, n1: r2(a1), n2: r2(a2), n3: r2(a2 * asym()), n1b: r2(b1), n2b: r2(b2), n3b: r2(b2 * asym()) };
+            // m stays fixed along the stack: a changing m jumps between rounded
+            // symmetries and breaks the smooth morph
+            const out = { m, m2: m, n1: r2(a1), n2: r2(a2), n3: r2(a2 * asym()), n1b: r2(b1), n2b: r2(b2), n3b: r2(b2 * asym()) };
             // keep the ink to roughly 25 m on A4 (a unit radius ends up ≈ 90 mm):
             // measure a few shapes along the stack
             let avg = 0;
@@ -103,7 +104,7 @@
                 avg += geo.pathLength(shape(mm, L(out.n1, out.n1b), L(out.n2, out.n2b), L(out.n3, out.n3b), 0.5)) *
                     geo.lerp(1, p.inner, f) * 90 / 5;
             }
-            out.count = Math.max(6, Math.min(p.count, Math.floor(25000 / avg)));
+            out.count = geo.clamp(Math.floor(rng.range(14000, 24000) / avg), 8, 60);
             return out;
         },
 
