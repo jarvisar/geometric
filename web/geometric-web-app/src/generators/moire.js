@@ -24,7 +24,7 @@
             { type: 'section', label: 'Pattern' },
             { id: 'pattern', label: 'Pattern', type: 'select', value: 'circles', random: ['circles', 'circles', 'lines', 'spirals', 'rays'],
                 options: [['circles', 'Concentric circles'], ['lines', 'Parallel lines'], ['spirals', 'Archimedean spirals'], ['rays', 'Radial rays']] },
-            { id: 'spacing', label: 'Spacing (mm)', type: 'range', min: 1, max: 10, step: 0.05, value: 2.6, random: [2.2, 4],
+            { id: 'spacing', label: 'Spacing (mm)', type: 'range', min: 1, max: 10, step: 0.05, value: 2.6, random: [2.6, 4.2],
                 hint: 'Rays: gap at a quarter of the page width from the hub' },
             { id: 'sets', label: 'Sets', type: 'range', min: 2, max: 3, step: 1, value: 2 },
             { id: 'offset', label: 'Offset (mm)', type: 'range', min: 0, max: 150, step: 0.5, value: 12, random: [6, 30],

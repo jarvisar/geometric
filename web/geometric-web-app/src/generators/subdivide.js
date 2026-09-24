@@ -48,12 +48,17 @@
             { id: 'wBlank', label: 'Blank', type: 'range', min: 0, max: 1, step: 0.01, value: 0.25, random: [0, 0.5] },
             { id: 'angles', label: 'Hatch angles', type: 'select', value: 'four', random: ['four', 'four', 'diag', 'free'],
                 options: [['four', '0° / 45° / 90° / 135°'], ['diag', 'Diagonals'], ['free', 'Any']] },
-            { id: 'sMin', label: 'Darkest spacing (mm)', type: 'range', min: 0.5, max: 4, step: 0.05, value: 0.9, random: [0.7, 1.4] },
+            { id: 'sMin', label: 'Darkest spacing (mm)', type: 'range', min: 0.5, max: 4, step: 0.05, value: 0.9, random: [0.9, 1.5] },
             { id: 'sMax', label: 'Lightest spacing (mm)', type: 'range', min: 1, max: 10, step: 0.1, value: 3.2, random: [2, 5] },
             { id: 'tones', label: 'Tones', type: 'range', min: 1, max: 8, step: 1, value: 4, random: false },
             { type: 'section', label: 'Pens' },
             { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false },
         ],
+
+        randomize(rng, p) {
+            // without outlines a blank cell is a hole in the quilt: keep them rare
+            return p.outline ? {} : { wBlank: +rng.range(0, 0.12).toFixed(2) };
+        },
 
         generate(p, ctx) {
             const { width: W, height: H, rng } = ctx;

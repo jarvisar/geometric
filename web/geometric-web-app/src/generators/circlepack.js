@@ -47,7 +47,7 @@
                 random: ['eccentric', 'eccentric', 'spiral', 'rings', 'hatch', 'hatch', 'mixed', 'mixed', 'outline'],
                 options: [['eccentric', 'Eccentric bubbles'], ['spiral', 'Spiral'], ['rings', 'Concentric rings'],
                     ['hatch', 'Hatch'], ['outline', 'Outline'], ['mixed', 'Mixed']] },
-            { id: 'spacing', label: 'Fill spacing (mm)', type: 'range', min: 0.6, max: 5, step: 0.05, value: 1.4, random: [0.9, 2.4] },
+            { id: 'spacing', label: 'Fill spacing (mm)', type: 'range', min: 0.6, max: 5, step: 0.05, value: 1.4, random: [1.1, 2.4] },
             { id: 'ecc', label: 'Eccentricity', type: 'range', min: 0, max: 1, step: 0.01, value: 0.72, random: [0.45, 0.8],
                 show: p => p.style === 'eccentric' || p.style === 'mixed' },
             { id: 'shift', label: 'Shift direction°', type: 'range', min: 0, max: 360, step: 1, value: 45,

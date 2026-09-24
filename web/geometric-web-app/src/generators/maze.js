@@ -108,7 +108,7 @@
 
     function rectMaze(p, ctx) {
         const { width: W, height: H, rng } = ctx;
-        let c = Math.min(p.cell, W / 2, H / 2); // at least 2 Ã— 2 cells, all inside the area
+        let c = Math.min(p.cell, W / 2, H / 2); // at least 2 × 2 cells, all inside the area
         let cols = Math.max(2, Math.floor(W / c)), rows = Math.max(2, Math.floor(H / c));
         if (cols * rows > 60000) { c *= Math.sqrt((cols * rows) / 60000); cols = Math.floor(W / c); rows = Math.floor(H / c); }
         const ox = (W - cols * c) / 2, oy = (H - rows * c) / 2;
@@ -271,6 +271,11 @@
             { id: 'round', label: 'Rounded solution', type: 'range', min: 0, max: 0.5, step: 0.01, value: 0.5, random: [0.2, 0.5],
                 show: p => p.solution },
         ],
+
+        randomize(rng, p) {
+            // theta mazes lose their rings when the cells are large
+            return p.shape === 'circle' ? { cell: +rng.range(3.5, 7).toFixed(1) } : {};
+        },
 
         generate(p, ctx) {
             return p.shape === 'circle' ? thetaMaze(p, ctx) : rectMaze(p, ctx);

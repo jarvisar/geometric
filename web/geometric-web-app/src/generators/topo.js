@@ -24,10 +24,10 @@
             { id: 'relief', label: 'Relief', type: 'select', value: 'fbm', random: ['fbm', 'fbm', 'ridged', 'marble'],
                 options: [['fbm', 'Rolling hills'], ['ridged', 'Ridged mountains'], ['marble', 'Marbled (double warp)']] },
             { id: 'scale', label: 'Feature size (mm)', type: 'range', min: 20, max: 400, step: 1, value: 220, random: [120, 300] },
-            { id: 'octaves', label: 'Octaves', type: 'range', min: 1, max: 7, step: 1, value: 5, random: [3, 6] },
+            { id: 'octaves', label: 'Octaves', type: 'range', min: 1, max: 7, step: 1, value: 5, random: [3, 5] },
             { id: 'rough', label: 'Roughness', type: 'range', min: 0.2, max: 0.7, step: 0.01, value: 0.42, random: [0.32, 0.55],
                 hint: 'Amplitude kept per octave (fBm gain)' },
-            { id: 'warp', label: 'Warp amount', type: 'range', min: 0, max: 3, step: 0.01, value: 0.35, random: [0.1, 0.9] },
+            { id: 'warp', label: 'Warp amount', type: 'range', min: 0, max: 3, step: 0.01, value: 0.35, random: [0.1, 0.6] },
             { id: 'peaks', label: 'Peakiness', type: 'range', min: 0.5, max: 3, step: 0.01, value: 1.5, random: [1, 2.2],
                 hint: 'Exponent on height: >1 flattens lowlands and steepens summits' },
             { id: 'island', label: 'Island falloff', type: 'range', min: 0, max: 1, step: 0.01, value: 0, random: false,
@@ -58,7 +58,7 @@
                 Object.assign(out, { rough: +rng.range(0.3, 0.4).toFixed(2), octaves: rng.int(3, 4), scale: rng.int(220, 340),
                     warp: +rng.range(0.15, 0.5).toFixed(2) });
             } else {
-                out.rough = +rng.range(0.3, 0.46).toFixed(2);
+                out.rough = +rng.range(0.3, 0.42).toFixed(2);
             }
             if (rng.chance(0.3)) {
                 out.island = +rng.range(0.5, 0.9).toFixed(2);
@@ -66,8 +66,10 @@
             } else {
                 out.island = 0; out.sea = 0;
             }
-            out.terrace = rng.chance(0.3) ? +rng.range(0.4, 0.8).toFixed(2) : 0;
-            out.terraces = rng.int(4, 10);
+            // Terraces bunch contours into risers; the spacing thinner then cuts
+            // most of them, so keep it gentle, and off for sharp ridges.
+            out.terrace = p.relief !== 'ridged' && rng.chance(0.25) ? +rng.range(0.3, 0.6).toFixed(2) : 0;
+            out.terraces = rng.int(4, 8);
             return out;
         },
 

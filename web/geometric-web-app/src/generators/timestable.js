@@ -80,9 +80,11 @@
             // An envelope with k − 1 cusps needs ~30 points per cusp to read
             // cleanly, so N follows k (capped so several layers stay light).
             const out = {};
-            const style = rng.weighted([[5, 'int'], [3, 'frac'], [1, 'wide']]);
-            out.layers = rng.chance(0.3) ? rng.int(2, 3) : 1;
-            const cap = Math.round(out.layers > 1 ? 320 / out.layers : 400);
+            const style = rng.weighted([[6, 'int'], [2, 'frac'], [1, 'wide']]);
+            // Extra layers either nudge k a little (the envelopes shift into a
+            // moiré) or step it by one (two clean envelopes on two pens).
+            out.layers = rng.chance(0.25) ? 2 : 1;
+            const cap = out.layers > 1 ? 240 : 400;
             if (style === 'wide') {
                 // k near N/2: every other chord flips across the circle, overlaying
                 // two small-multiplier patterns turned by half a turn
@@ -90,11 +92,11 @@
                 out.k = out.N / 2 + rng.pick([2, 3, 4]);
                 out.layers = 1;
             } else {
-                out.k = style === 'int' ? rng.weighted([[3, 2], [3, 3], [2, 4], [2, 5], [1, 6], [1, 7], [1, 9]])
-                    : +(rng.int(2, 6) + rng.pick([0.25, 0.5, 0.75, 1 / 3, 2 / 3])).toFixed(2);
-                out.N = Math.round(geo.clamp(Math.max(120, 30 * (out.k - 1)) * rng.range(1, 1.6), 90, Math.max(cap, 90)));
+                out.k = style === 'int' ? rng.weighted([[1, 2], [3, 3], [3, 4], [2, 5], [2, 6], [1, 7], [1, 8]])
+                    : +(rng.int(2, 5) + rng.pick([0.25, 0.5, 0.75, 1 / 3, 2 / 3])).toFixed(2);
+                out.N = Math.round(geo.clamp(Math.max(150, 34 * (out.k - 1)) * rng.range(1, 1.4) / out.layers ** 0.6, 110, cap));
             }
-            if (out.layers > 1) out.delta = +(rng.sign() * rng.pick([rng.range(0.02, 0.1), 0.5, 1])).toFixed(2);
+            if (out.layers > 1) out.delta = rng.chance(0.65) ? +(rng.sign() * rng.range(0.02, 0.08)).toFixed(2) : 1;
             return out;
         },
 

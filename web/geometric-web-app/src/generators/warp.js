@@ -50,8 +50,10 @@
             // blank-cell checkers need dense hatching to read as black squares
             if (p.style === 'checker' && !p.weave) out.spacing = +rng.range(1.1, 1.6).toFixed(2);
             out.radius = p.bulges > 1 ? rng.int(24, 40) : rng.int(34, 55);
-            // mostly swell, sometimes pinch
-            out.strength = +(rng.chance(0.8) ? rng.range(0.5, 1.1) : rng.range(-0.55, -0.3)).toFixed(2);
+            // Mostly swell, sometimes pinch. The lines crowd most at 0.65 R, where
+            // spacing shrinks to 1 − 0.65·s of the flat value: past s ≈ 1 that
+            // band turns into a dark rim rather than a rounded shoulder.
+            out.strength = +(rng.chance(0.8) ? rng.range(0.5, 0.95) : rng.range(-0.55, -0.3)).toFixed(2);
             return out;
         },
 

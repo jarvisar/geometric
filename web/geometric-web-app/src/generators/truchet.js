@@ -56,10 +56,10 @@
         ],
 
         randomize(rng, p) {
-            // keep the line length on A4 under ~40 m: length ≈ area · bands · k / cell
-            if (p.type === 'triangles') return { hatch: Math.max(p.hatch, p.otherHalf ? 1.3 : 0.8) };
+            // aim for 12-28 m of line on A4: length ≈ area · bands · k / cell
+            if (p.type === 'triangles') return { hatch: Math.max(p.hatch, p.otherHalf ? 1.4 : 1) };
             const k = { arcs: Math.PI / 2, hex: (2 * Math.PI) / 3, diagonal: 2.6 }[p.type];
-            return { bands: Math.max(1, Math.min(p.bands, Math.floor((40000 * p.cell) / (48000 * k)))) };
+            return { bands: Math.max(1, Math.min(p.bands, Math.floor((rng.range(12000, 28000) * p.cell) / (48000 * k)))) };
         },
 
         generate(p, ctx) {

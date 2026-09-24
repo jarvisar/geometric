@@ -54,7 +54,7 @@
             }
             return occ;
         };
-        const sky = dy => 0.6 + 0.06 * geo.smoothstep(0.2, 0, dy); // light-mid backdrop, darker upward
+        const sky = dy => 0.66 + 0.06 * geo.smoothstep(0.2, 0, dy); // light backdrop, darker upward
         for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
             const u = ((2 * (i + 0.5)) / w - 1) * (w / h), v = 1 - (2 * (j + 0.5)) / h;
             const [dx, dy, dz] = nz(fx * 2.2 + rx * u + ux * v, fy * 2.2 + uy * v, fz * 2.2 + rz * u + uz * v);
@@ -419,6 +419,11 @@
             { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false, show: p => p.mode === 'hatch',
                 hint: 'Hatch layers are shared out over the pens' },
         ],
+
+        randomize(rng, p) {
+            // full-page squiggle rows are the heaviest mode: give them more air
+            return p.mode === 'squiggle' ? { spacing: +rng.range(1.7, 2.6).toFixed(2) } : {};
+        },
 
         generate(p, ctx) {
             const { rng } = ctx;

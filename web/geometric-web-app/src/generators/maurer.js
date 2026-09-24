@@ -68,14 +68,16 @@
             // trace the rose again, and steps that land on its zeros collapse
             // to a few lines, so score candidates by their distinct chords.
             const n = rng.weighted([[1, 2], [2, 3], [2, 4], [2, 5], [2, 6], [2, 7], [1, 8], [1, 9], [0.5, 10]]);
-            const pickD = () => {
+            // Among steps that trace a real web, pick at random rather than the
+            // densest: sparser webs (a few hundred chords) are just as lovely.
+            const pickD = (lo = 150) => {
                 let best = 71, bestScore = -1;
-                for (let t = 0; t < 40; t++) {
+                for (let t = 0; t < 60; t++) {
                     const d = rng.int(2, 358);
                     if (d % 180 < 20 || d % 180 > 160) continue;
-                    const score = web(n, d, 361).segments + 20 * rng.random();
-                    if (score > bestScore) { bestScore = score; best = d; }
-                    if (score > 300) break;
+                    const segs = web(n, d, 361).segments;
+                    if (segs >= lo) return d;
+                    if (segs > bestScore) { bestScore = segs; best = d; }
                 }
                 return best;
             };
@@ -83,7 +85,7 @@
             const out = { n, d: pickD(), fine: false, count: 361, overlay: p.overlay };
             if (p.overlay) {
                 out.d2 = pickD();
-                if (ink(web(n, out.d, 361)) + ink(web(n, out.d2, 361)) > 45000) out.overlay = false;
+                if (ink(web(n, out.d, 361)) + ink(web(n, out.d2, 361)) > 38000) out.overlay = false;
             }
             return out;
         },

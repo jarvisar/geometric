@@ -81,7 +81,13 @@
             const out = { layout, chirality: rng.weighted([[6, 'alternate'], [2, 'same'], [2, 'random']]), steps: 0 };
             if (layout === 'single') {
                 out.sides = rng.weighted([[3, 3], [4, 4], [3, 5], [3, 6], [1, 7], [2, 8], [1, 10]]);
-                out.t = +rng.range(0.03, 0.09).toFixed(3);
+                // the polygon fills A4 (radius ≈ 90–130 mm); the spiral is about
+                // perimeter / (1 − shrink) long, so pick t for 8–22 m of line
+                const n = out.sides, P = 2 * n * 110 * Math.sin(Math.PI / n);
+                const target = rng.range(8000, 22000);
+                let t = rng.range(0.03, 0.09);
+                while (P / (1 - shrink(n, t)) > target && t < 0.2) t += 0.005;
+                out.t = +t.toFixed(3);
                 out.minSize = +rng.range(1.5, 5).toFixed(1);
                 return out;
             }
