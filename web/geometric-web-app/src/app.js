@@ -1,202 +1,1557 @@
-const canvasSize = 800;
-let petalCount = 12;
-let lineDensity = 40;
-let pointsPerLine = 100;
-let flowerRadius = 140;
-let lineThickness = 0.5;
-let lineColor = "black";
+/*
+ * Plotter Geometry — application UI.
+ *
+ * state (persisted) -> PG.run (generate + place + clip + optimise) -> result
+ * result -> canvas preview / plot simulation / SVG and PNG export
+ */
+(function () {
+    'use strict';
 
-// Spirograph parameters
-let R = 200;
-let r = 80;
-let d = 120;
-let spiroSmoothness = 500;
-let spiroLayers = 5;
-let layerOffset = 30; // New: offset between layers
-let rotationStep = 15; // New: rotation between layers
+    // ------------------------------------------------------------------ utils
 
-let mode = "flower";
+    const $ = (sel, root = document) => root.querySelector(sel);
+    const SVGNS = 'http://www.w3.org/2000/svg';
 
-const svgNamespace = "http://www.w3.org/2000/svg";
-const svgElement = document.getElementById("flowerCanvas");
-
-function polarToCartesian(cx, cy, angleDeg, r) {
-    const angleRad = (angleDeg * Math.PI) / 180;
-    const x = cx + r * Math.cos(angleRad);
-    const y = cy + r * Math.sin(angleRad);
-    return [x, y];
-}
-
-function addPolyline(points, strokeColor = lineColor, strokeWidth = lineThickness) {
-    const pathData = points.map(point => `${point[0].toFixed(2)},${point[1].toFixed(2)}`).join(" ");
-    const polyline = document.createElementNS(svgNamespace, "polyline");
-    polyline.setAttribute("points", pathData);
-    polyline.setAttribute("stroke", strokeColor);
-    polyline.setAttribute("fill", "none");
-    polyline.setAttribute("stroke-width", strokeWidth);
-    polyline.setAttribute("stroke-linejoin", "round");
-    polyline.setAttribute("stroke-linecap", "round");
-    svgElement.appendChild(polyline);
-}
-
-function drawFlower() {
-    svgElement.innerHTML = "";
-    const center = canvasSize / 2;
-
-    for (let i = 0; i < petalCount; i++) {
-        const angleOffset = (360 / petalCount) * i;
-        for (let j = 1; j < lineDensity; j++) {
-            const r = flowerRadius * (j / lineDensity);
-            const points = [];
-            for (let k = 0; k <= pointsPerLine; k++) {
-                const t = k / pointsPerLine;
-                const angle = angleOffset + t * (360 / petalCount);
-                const modR = r * (0.7 + 0.3 * Math.sin(petalCount * (angle * Math.PI / 180)));
-                points.push(polarToCartesian(center, center, angle, modR));
+    function el(tag, attrs, ...kids) {
+        const e = document.createElement(tag);
+        if (attrs) {
+            for (const [k, v] of Object.entries(attrs)) {
+                if (v === undefined || v === null || v === false) continue;
+                if (k === 'class') e.className = v;
+                else if (k === 'text') e.textContent = v;
+                else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+                else if (v === true) e.setAttribute(k, '');
+                else e.setAttribute(k, v);
             }
-            addPolyline(points);
+        }
+        for (const k of kids.flat()) {
+            if (k === null || k === undefined || k === false) continue;
+            e.append(k.nodeType ? k : document.createTextNode(String(k)));
+        }
+        return e;
+    }
+
+    function icon(name) {
+        const s = document.createElementNS(SVGNS, 'svg');
+        s.setAttribute('class', 'ic');
+        const u = document.createElementNS(SVGNS, 'use');
+        u.setAttribute('href', `#i-${name}`);
+        s.append(u);
+        return s;
+    }
+
+    const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+    const decimalsOf = step => (String(step).split('.')[1] || '').length;
+    const fmtNum = (v, step) => (+v).toFixed(Math.min(4, decimalsOf(step || 1)));
+    const fmtMM = v => (Math.round(v * 10) / 10).toString();
+
+    function fmtLength(mm) {
+        if (mm >= 1000) return `${(mm / 1000).toFixed(mm >= 100000 ? 0 : 1)} m`;
+        return `${Math.round(mm / 10)} cm`;
+    }
+    function fmtCount(n) {
+        if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+        if (n >= 1e4) return `${Math.round(n / 1000)}k`;
+        if (n >= 1e3) return `${(n / 1000).toFixed(1)}k`;
+        return String(n);
+    }
+    function fmtTime(s) {
+        s = Math.round(s);
+        const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+        if (h) return `${h} h ${m} min`;
+        if (m) return `${m} min ${String(sec).padStart(2, '0')} s`;
+        return `${sec} s`;
+    }
+    function fmtClock(s) {
+        s = Math.max(0, Math.floor(s));
+        const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+        return (h ? `${h}:${String(m).padStart(2, '0')}` : `${m}`) + `:${String(sec).padStart(2, '0')}`;
+    }
+
+    const getPath = (obj, path) => path.split('.').reduce((o, k) => (o ? o[k] : undefined), obj);
+    function setPath(obj, path, value) {
+        const keys = path.split('.');
+        const last = keys.pop();
+        keys.reduce((o, k) => o[k], obj)[last] = value;
+    }
+
+    function b64encode(text) {
+        let bin = '';
+        for (const b of new TextEncoder().encode(text)) bin += String.fromCharCode(b);
+        return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+    function b64decode(text) {
+        const bin = atob(text.replace(/-/g, '+').replace(/_/g, '/'));
+        return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
+    }
+
+    const randomSeed = () => 1 + Math.floor(Math.random() * 999998);
+
+    function storageGet(key) {
+        try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; }
+    }
+    function storageSet(key, value) {
+        try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (e) { return false; }
+    }
+
+    function toast(msg, isError) {
+        const t = el('div', { class: 'toast' + (isError ? ' error' : ''), text: msg });
+        $('#toasts').append(t);
+        setTimeout(() => t.remove(), isError ? 5000 : 2400);
+    }
+
+    function download(name, data, type) {
+        const blob = data instanceof Blob ? data : new Blob([data], { type: type || 'application/octet-stream' });
+        const url = URL.createObjectURL(blob);
+        const a = el('a', { href: url, download: name });
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
+    // ------------------------------------------------------------------ constants
+
+    const STORAGE_KEY = 'plotter-geometry:state:v1';
+    const SNAPS_KEY = 'plotter-geometry:snapshots:v1';
+    const MM_PER_CSS_PX = 25.4 / 96;
+
+    const PAPERS = [
+        ['A6', 105, 148], ['A5', 148, 210], ['A4', 210, 297], ['A3', 297, 420], ['A2', 420, 594],
+        ['Letter', 215.9, 279.4], ['Legal', 215.9, 355.6], ['Tabloid', 279.4, 431.8],
+        ['4×6 in', 101.6, 152.4], ['5×7 in', 127, 177.8], ['9×12 in', 228.6, 304.8], ['11×14 in', 279.4, 355.6],
+        ['Square 20 cm', 200, 200], ['Square 12 in', 304.8, 304.8], ['custom', 0, 0],
+    ];
+
+    const PEN_SETS = {
+        fineliner: { label: 'Fineliners on white', paper: '#fbfaf6', colors: ['#161616', '#d1342f', '#2456c8', '#1d8a4e', '#d99a00', '#7b3fc0'] },
+        gel: { label: 'Gel pens on black', paper: '#16181b', colors: ['#f4f1ea', '#e7c35a', '#aab7c1', '#f08bb0', '#7fcfe6', '#b5de7a'] },
+        riso: { label: 'Riso brights', paper: '#f7f4ec', colors: ['#0078bf', '#ff48b0', '#ffb511', '#00a95c', '#ff665e', '#765ba7'] },
+        sepia: { label: 'Sepia on cream', paper: '#f2e8d5', colors: ['#3a2a1c', '#8b4a2b', '#b8864e', '#556b2f', '#7a2e2e', '#2f4f6f'] },
+        blueprint: { label: 'White on blueprint', paper: '#1d3f78', colors: ['#f2f6ff', '#9cc7ff', '#ffd66b', '#ff9f8a', '#b8f2d0', '#d5b8ff'] },
+    };
+
+    function defaultState() {
+        return {
+            v: 1,
+            gen: 'spirograph',
+            params: {},
+            locks: {},
+            seed: 1,
+            paper: { size: 'A4', landscape: false, w: 210, h: 297, margin: 15, color: '#fbfaf6' },
+            comp: {
+                scale: 100, rotate: 0, offsetX: 0, offsetY: 0, clip: 'rect', frame: false, framePen: 0, frameInset: 0,
+                cols: 1, rows: 1, gutter: 8, cellVary: 'seed', sweepId: '', sweepAmount: 50,
+            },
+            pens: PEN_SETS.fineliner.colors.map((color, i) => ({ name: `Pen ${i + 1}`, color, width: 0.35, visible: true })),
+            opt: { merge: true, mergeTol: 0.1, simplify: true, simplifyTol: 0.02, sort: true, minLength: 0 },
+            plot: { drawSpeed: 60, travelSpeed: 150, liftTime: 0.25 },
+            view: { travel: false, margin: false, penWidth: true, simSpeed: 16 },
+            ui: { tab: 'design', open: { paper: true, comp: true, pens: true } },
+        };
+    }
+
+    function mergeInto(base, over) {
+        if (!over || typeof over !== 'object') return base;
+        for (const k of Object.keys(over)) {
+            const b = base[k], o = over[k];
+            if (k === 'pens' && Array.isArray(o)) {
+                base.pens = base.pens.map((p, i) => Object.assign({}, p, o[i] || {}));
+            } else if (b && typeof b === 'object' && !Array.isArray(b) && o && typeof o === 'object' && !Array.isArray(o)) {
+                mergeInto(b, o);
+            } else if (o !== undefined) {
+                base[k] = o;
+            }
+        }
+        return base;
+    }
+
+    // ------------------------------------------------------------------ state
+
+    let state = defaultState();
+    let result = null;
+    let lastGenMs = 0;
+    const imageStore = {}; // genId -> { paramId: { width, height, data, name } }
+
+    const currentDef = () => PG.byId[state.gen] || PG.generators[0];
+
+    // Params for a design, with defaults filled in place (controls hold on to this object).
+    function currentParams(def = currentDef()) {
+        const p = state.params[def.id] || (state.params[def.id] = {});
+        for (const q of def.params) if (q.id && !(q.id in p)) p[q.id] = q.value;
+        return p;
+    }
+
+    function applyPaperSize() {
+        const P = state.paper;
+        if (P.size === 'custom') return;
+        const e = PAPERS.find(x => x[0] === P.size) || PAPERS[2];
+        P.w = P.landscape ? e[2] : e[1];
+        P.h = P.landscape ? e[1] : e[2];
+    }
+
+    function paperLabel() {
+        const P = state.paper;
+        return `${P.size === 'custom' ? 'Custom' : P.size} · ${fmtMM(P.w)} × ${fmtMM(P.h)} mm`;
+    }
+
+    function pipelineSettings() {
+        const c = state.comp;
+        return {
+            seed: state.seed, paperW: state.paper.w, paperH: state.paper.h, margin: state.paper.margin,
+            scale: c.scale, rotate: c.rotate, offsetX: c.offsetX, offsetY: c.offsetY, clip: c.clip,
+            frame: c.frame, framePen: c.framePen, frameInset: c.frameInset, opt: state.opt,
+            cols: c.cols, rows: c.rows, gutter: c.gutter, cellVary: c.cellVary, locks: state.locks[state.gen] || [],
+            sweep: c.sweepId ? { id: c.sweepId, amount: c.sweepAmount / 100 } : null,
+        };
+    }
+
+    // What travels in share links, exported SVGs and settings files.
+    function shareable() {
+        const def = currentDef();
+        return {
+            app: 'plotter-geometry', v: 1, gen: def.id, params: { [def.id]: currentParams(def) }, seed: state.seed,
+            paper: state.paper, comp: state.comp,
+            pens: state.pens.map(p => ({ name: p.name, color: p.color, width: p.width })),
+        };
+    }
+
+    function applyShared(obj) {
+        if (!obj || typeof obj !== 'object') throw new Error('Not a settings file');
+        const next = mergeInto(JSON.parse(JSON.stringify(state)), {
+            seed: obj.seed, paper: obj.paper, comp: obj.comp, pens: obj.pens,
+            opt: obj.opt, plot: obj.plot,
+        });
+        if (obj.gen && PG.byId[obj.gen]) next.gen = obj.gen;
+        if (obj.params) for (const [id, p] of Object.entries(obj.params)) next.params[id] = Object.assign({}, next.params[id] || {}, p);
+        state = next;
+    }
+
+    let saveTimer = 0;
+    function scheduleSave() {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => storageSet(STORAGE_KEY, state), 300);
+    }
+
+    // ------------------------------------------------------------------ undo / redo
+
+    const undoStack = { items: [], index: -1 };
+    let commitTimer = 0;
+
+    function snapshotForUndo() {
+        const s = Object.assign({}, state);
+        delete s.ui; delete s.view;
+        return JSON.stringify(s);
+    }
+    function commit() {
+        clearTimeout(commitTimer);
+        commitTimer = setTimeout(pushUndo, 250);
+    }
+    function pushUndo() {
+        const snap = snapshotForUndo();
+        if (undoStack.items[undoStack.index] === snap) return;
+        undoStack.items.length = undoStack.index + 1;
+        undoStack.items.push(snap);
+        if (undoStack.items.length > 200) undoStack.items.shift();
+        undoStack.index = undoStack.items.length - 1;
+        updateUndoButtons();
+        scheduleSave();
+    }
+    function restoreUndo(i) {
+        if (i < 0 || i >= undoStack.items.length) return;
+        const keep = { ui: state.ui, view: state.view };
+        state = mergeInto(defaultState(), JSON.parse(undoStack.items[i]));
+        state.params = JSON.parse(undoStack.items[i]).params || {};
+        Object.assign(state, keep);
+        undoStack.index = i;
+        rebuildAll();
+        requestGenerate();
+        updateUndoButtons();
+        scheduleSave();
+    }
+    const undo = () => { clearTimeout(commitTimer); pushUndo(); restoreUndo(undoStack.index - 1); };
+    const redo = () => restoreUndo(undoStack.index + 1);
+    function updateUndoButtons() {
+        $('#undo').disabled = undoStack.index <= 0;
+        $('#redo').disabled = undoStack.index >= undoStack.items.length - 1;
+    }
+
+    // ------------------------------------------------------------------ generation
+
+    let genTimer = 0;
+
+    function requestGenerate(live) {
+        stopSim(false);
+        clearTimeout(genTimer);
+        const slow = lastGenMs > 90;
+        if (slow) setBusy(true);
+        genTimer = setTimeout(regenerate, slow ? (live ? 150 : 20) : 0);
+    }
+
+    function regenerate() {
+        const def = currentDef();
+        if (!def) return;
+        const t0 = performance.now();
+        try {
+            result = PG.run(def, currentParams(def), pipelineSettings(), { images: imageStore[def.id] || {} });
+            setError(null);
+        } catch (err) {
+            console.error(err);
+            setError(`${def.name}: ${err.message}`);
+            result = null;
+        }
+        lastGenMs = performance.now() - t0;
+        setBusy(false);
+        renderStats();
+        renderPenUsage();
+        draw();
+        scheduleSave();
+    }
+
+    const hiddenPens = () => new Set(state.pens.map((p, i) => (p.visible ? -1 : i)).filter(i => i >= 0));
+
+    function visibleResult() {
+        if (!result) return null;
+        const hidden = hiddenPens();
+        return Object.assign({}, result, { layers: result.layers.filter(l => !hidden.has(l.pen)) });
+    }
+
+    function setBusy(on) { $('#busy').hidden = !on; }
+    function setError(msg) {
+        const e = $('#errorMsg');
+        e.hidden = !msg;
+        e.textContent = msg || '';
+    }
+
+    // ------------------------------------------------------------------ stats
+
+    function renderStats() {
+        const bar = $('#stats');
+        bar.innerHTML = '';
+        if (!result) return;
+        const vis = visibleResult();
+        const st = PG.optimize.stats(vis.layers);
+        const time = PG.optimize.estimateTime(st, state.plot);
+        const raw = result.rawStats, all = result.stats;
+        const saved = raw.travel > 0 ? 1 - all.travel / raw.travel : 0;
+
+        const stat = (cls, ...kids) => el('span', { class: 'stat ' + (cls || '') }, ...kids);
+        const ink = stat(st.draw > 120000 ? 'warn' : '', el('b', { text: fmtLength(st.draw) }), 'ink');
+        if (st.draw > 120000) ink.title = 'That is a lot of ink — consider larger spacing or a smaller paper';
+        const items = [
+            ink,
+            stat('', el('b', { text: fmtLength(st.travel) }), 'travel',
+                saved > 0.05 && state.opt.sort ? el('span', { class: 'delta', text: `−${Math.round(saved * 100)}%` }) : null),
+            stat('', el('b', { text: fmtCount(st.lifts) }), st.lifts === 1 ? 'stroke' : 'strokes'),
+            stat('', el('b', { text: fmtCount(st.points) }), 'points'),
+            stat('', '≈', el('b', { text: fmtTime(time) }), 'to plot'),
+            vis.layers.length > 1 ? stat('', el('b', { text: vis.layers.length }), 'pens') : null,
+            stat('dim', `${Math.round(lastGenMs)} ms`),
+        ];
+        bar.append(...items.filter(Boolean));
+        const note = $('#optNote');
+        if (note) {
+            note.textContent = `Pen-up travel ${fmtLength(raw.travel)} → ${fmtLength(all.travel)}, strokes ${fmtCount(raw.lifts)} → ${fmtCount(all.lifts)}, points ${fmtCount(raw.points)} → ${fmtCount(all.points)}.`;
         }
     }
-}
 
-function drawSpirograph() {
-    svgElement.innerHTML = "";
-    const center = canvasSize / 2;
-    
-    function gcd(a, b) { return b === 0 ? a : gcd(b, a % b); }
-    const revolutions = Math.abs(R) / gcd(Math.abs(R), Math.abs(r));
-    const maxPoints = 15000;
-    const pointsPerRevolution = Math.min(spiroSmoothness, maxPoints / revolutions);
-    
-    for (let layer = 0; layer < spiroLayers; layer++) {
-        const points = [];
-        
-        // Vary parameters for each layer
-        const layerR = R + (layer * layerOffset / spiroLayers);
-        const layerD = d + (layer * 10);
-        const rotation = (layer * rotationStep * Math.PI) / 180;
-        
-        const totalPoints = pointsPerRevolution * revolutions;
-        
-        for (let i = 0; i <= totalPoints; i++) {
-            const t = (2 * Math.PI * i) / pointsPerRevolution;
-            
-            // Hypotrochoid formula
-            const x = (layerR - r) * Math.cos(t) + layerD * Math.cos(((layerR - r) / r) * t);
-            const y = (layerR - r) * Math.sin(t) - layerD * Math.sin(((layerR - r) / r) * t);
-            
-            // Apply rotation and center
-            const rotatedX = center + x * Math.cos(rotation) - y * Math.sin(rotation);
-            const rotatedY = center + x * Math.sin(rotation) + y * Math.cos(rotation);
-            
-            points.push([rotatedX, rotatedY]);
+    // ------------------------------------------------------------------ canvas view
+
+    const canvas = $('#view');
+    const overlay = $('#overlay');
+    const stage = $('#stage');
+    const view = { zoom: 1, panX: 0, panY: 0 };
+    let dpr = 1, cw = 0, ch = 0;
+
+    function resizeCanvas() {
+        const r = stage.getBoundingClientRect();
+        if (!r.width || !r.height) return;
+        dpr = window.devicePixelRatio || 1;
+        cw = r.width; ch = r.height;
+        for (const c of [canvas, overlay]) {
+            c.width = Math.round(cw * dpr);
+            c.height = Math.round(ch * dpr);
         }
-        
-        // Use slightly different colors for each layer if desired
-        const layerColor = mode === "spirograph" ? lineColor : `hsl(${layer * 60}, 70%, 50%)`;
-        addPolyline(points, layerColor);
+        draw();
     }
-}
 
-function updateParameters() {
-    mode = document.getElementById("modeToggle").value;
-    
-    // Show/hide controls based on mode
-    const spiroControls = document.getElementById("spiroControls");
-    const flowerControls = document.getElementById("flowerControls");
-    
-    if (mode === "spirograph") {
-        spiroControls.style.display = "";
-        flowerControls.style.display = "none";
-    } else {
-        spiroControls.style.display = "none";
-        flowerControls.style.display = "";
+    function viewTransform() {
+        const P = state.paper;
+        const fit = Math.max(0.05, Math.min((cw - 48) / P.w, (ch - 150) / P.h));
+        const s = fit * view.zoom;
+        const ox = cw / 2 - (P.w / 2) * s + view.panX;
+        const oy = ch / 2 + 2 - (P.h / 2) * s + view.panY;
+        return { scale: s * dpr, ox: ox * dpr, oy: oy * dpr, css: { s, ox, oy } };
     }
-    
-    // Update parameters
-    petalCount = parseInt(document.getElementById("petalCount").value) || 12;
-    lineDensity = parseInt(document.getElementById("lineDensity").value) || 40;
-    pointsPerLine = parseInt(document.getElementById("pointsPerLine").value) || 100;
-    flowerRadius = parseInt(document.getElementById("flowerRadius").value) || 140;
-    lineThickness = parseFloat(document.getElementById("lineThickness").value) || 0.5;
-    lineColor = document.getElementById("lineColor").value || "black";
 
-    // Spirograph parameters
-    if (document.getElementById("R")) R = parseInt(document.getElementById("R").value) || 200;
-    if (document.getElementById("r")) r = parseInt(document.getElementById("r").value) || 80;
-    if (document.getElementById("d")) d = parseInt(document.getElementById("d").value) || 120;
-    if (document.getElementById("spiroSmoothness")) spiroSmoothness = parseInt(document.getElementById("spiroSmoothness").value) || 500;
-    if (document.getElementById("spiroLayers")) spiroLayers = parseInt(document.getElementById("spiroLayers").value) || 5;
-    if (document.getElementById("layerOffset")) layerOffset = parseInt(document.getElementById("layerOffset").value) || 30;
-    if (document.getElementById("rotationStep")) rotationStep = parseInt(document.getElementById("rotationStep").value) || 15;
-
-    if (mode === "flower") {
-        drawFlower();
-    } else {
-        drawSpirograph();
+    function drawPaper(ctx, v) {
+        const P = state.paper;
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+        ctx.shadowBlur = 28 * dpr;
+        ctx.shadowOffsetY = 8 * dpr;
+        ctx.fillStyle = P.color;
+        ctx.fillRect(v.ox, v.oy, P.w * v.scale, P.h * v.scale);
+        ctx.restore();
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.32)';
+        ctx.font = `${11 * dpr}px ${getComputedStyle(document.body).fontFamily}`;
+        ctx.textAlign = 'center';
+        ctx.fillText(paperLabel(), v.ox + (P.w * v.scale) / 2, v.oy + P.h * v.scale + 17 * dpr);
+        ctx.restore();
     }
-}
 
-function exportSVG() {
-    const svgData = svgElement.outerHTML;
-    const blob = new Blob([svgData], { type: 'image/svg+xml' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `geometric-pattern-${Date.now()}.svg`;
-    link.click();
-    URL.revokeObjectURL(url);
-}
-
-function randomizeParameters() {
-    if (mode === "spirograph") {
-        document.getElementById("R").value = Math.floor(Math.random() * 300) + 50;
-        document.getElementById("r").value = Math.floor(Math.random() * 120) + 20;
-        document.getElementById("d").value = Math.floor(Math.random() * 250) + 50;
-        document.getElementById("spiroLayers").value = Math.floor(Math.random() * 10) + 3;
-        document.getElementById("layerOffset").value = Math.floor(Math.random() * 60) + 10;
-        document.getElementById("rotationStep").value = Math.floor(Math.random() * 45) + 5;
-    } else {
-        document.getElementById("petalCount").value = Math.floor(Math.random() * 18) + 6;
-        document.getElementById("lineDensity").value = Math.floor(Math.random() * 60) + 20;
-        document.getElementById("flowerRadius").value = Math.floor(Math.random() * 250) + 100;
-    }
-    updateParameters();
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-    const modeToggle = document.getElementById("modeToggle");
-    
-    modeToggle.addEventListener("change", updateParameters);
-
-    // Sync range and number inputs
-    document.querySelectorAll("input[type='range']").forEach(range => {
-        const num = document.getElementById(range.id + "_num");
-        if (num) {
-            range.addEventListener("input", () => {
-                num.value = range.value;
-                updateParameters();
+    function draw() {
+        if (!cw) return;
+        if (sim.active) { redrawSim(); return; }
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const v = viewTransform();
+        drawPaper(ctx, v);
+        if (result) {
+            PG.drawResult(ctx, result, v, {
+                paper: { w: state.paper.w, h: state.paper.h },
+                pens: state.pens,
+                showTravel: state.view.travel,
+                showMargin: state.view.margin,
+                hidden: hiddenPens(),
+                minLinePx: 0.8 * dpr,
+                hairline: !state.view.penWidth,
             });
-            num.addEventListener("input", () => {
-                range.value = num.value;
-                updateParameters();
+        }
+        overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height);
+        $('#zoomLabel').textContent = `${Math.round(v.css.s * MM_PER_CSS_PX * 100)}%`;
+    }
+
+    function fitView() {
+        view.zoom = 1; view.panX = 0; view.panY = 0;
+        draw();
+    }
+
+    function zoomAt(x, y, factor) {
+        const before = viewTransform().css;
+        const px = (x - before.ox) / before.s, py = (y - before.oy) / before.s;
+        view.zoom = clamp(view.zoom * factor, 0.25, 60);
+        const after = viewTransform().css;
+        view.panX += x - (after.ox + px * after.s);
+        view.panY += y - (after.oy + py * after.s);
+        draw();
+    }
+
+    function bindCanvas() {
+        new ResizeObserver(resizeCanvas).observe(stage);
+        canvas.addEventListener('wheel', e => {
+            e.preventDefault();
+            const r = canvas.getBoundingClientRect();
+            zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0016)));
+        }, { passive: false });
+
+        const pointers = new Map();
+        let pinch = null;
+        canvas.addEventListener('pointerdown', e => {
+            canvas.setPointerCapture(e.pointerId);
+            pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            canvas.classList.add('panning');
+            if (pointers.size === 2) {
+                const [a, b] = [...pointers.values()];
+                pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+            }
+        });
+        canvas.addEventListener('pointermove', e => {
+            const prev = pointers.get(e.pointerId);
+            if (!prev) return;
+            const cur = { x: e.clientX, y: e.clientY };
+            pointers.set(e.pointerId, cur);
+            if (pointers.size === 2 && pinch) {
+                const [a, b] = [...pointers.values()];
+                const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+                const r = canvas.getBoundingClientRect();
+                view.panX += mx - pinch.x; view.panY += my - pinch.y;
+                zoomAt(mx - r.left, my - r.top, d / (pinch.d || d));
+                pinch = { d, x: mx, y: my };
+            } else if (pointers.size === 1) {
+                view.panX += cur.x - prev.x;
+                view.panY += cur.y - prev.y;
+                draw();
+            }
+        });
+        const end = e => {
+            pointers.delete(e.pointerId);
+            if (pointers.size < 2) pinch = null;
+            if (!pointers.size) canvas.classList.remove('panning');
+        };
+        canvas.addEventListener('pointerup', end);
+        canvas.addEventListener('pointercancel', end);
+        canvas.addEventListener('dblclick', fitView);
+
+        // drag & drop: images and settings files
+        let dragDepth = 0;
+        stage.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; $('#dropHint').hidden = false; });
+        stage.addEventListener('dragover', e => e.preventDefault());
+        stage.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('#dropHint').hidden = true; } });
+        stage.addEventListener('drop', e => {
+            e.preventDefault();
+            dragDepth = 0;
+            $('#dropHint').hidden = true;
+            const file = e.dataTransfer.files && e.dataTransfer.files[0];
+            if (file) handleDroppedFile(file);
+        });
+    }
+
+    function handleDroppedFile(file) {
+        const name = file.name.toLowerCase();
+        if (name.endsWith('.json') || name.endsWith('.svg') || file.type === 'image/svg+xml') {
+            loadSettingsFile(file);
+            return;
+        }
+        if (file.type.startsWith('image/')) {
+            let def = currentDef();
+            let q = def.params.find(p => p.type === 'image');
+            if (!q && PG.byId.image) {
+                state.gen = 'image';
+                def = currentDef();
+                q = def.params.find(p => p.type === 'image');
+                rebuildAll();
+            }
+            if (q) loadImageFile(file, def.id, q.id);
+            else toast('This design does not use images', true);
+        }
+    }
+
+    // ------------------------------------------------------------------ plot simulation
+
+    const sim = { active: false, playing: false, raf: 0, last: 0, layers: [], li: 0, pi: 0, k: 0, phase: 'travel', pos: [0, 0], wait: 0, elapsed: 0, total: 0, done: false };
+
+    function simToggle() {
+        if (!result || !visibleResult().layers.length) return;
+        if (sim.active && !sim.done) {
+            sim.playing = !sim.playing;
+            if (sim.playing) { sim.last = performance.now(); sim.raf = requestAnimationFrame(simFrame); }
+            updateSimUI();
+            return;
+        }
+        const layers = visibleResult().layers;
+        Object.assign(sim, {
+            active: true, playing: true, layers, li: 0, pi: 0, k: 0, phase: 'travel', pos: [0, 0], wait: 0,
+            elapsed: 0, done: false, total: PG.optimize.estimateTime(PG.optimize.stats(layers), state.plot),
+        });
+        redrawSim();
+        sim.last = performance.now();
+        sim.raf = requestAnimationFrame(simFrame);
+        updateSimUI();
+    }
+
+    function stopSim(redraw = true) {
+        if (!sim.active) return;
+        cancelAnimationFrame(sim.raf);
+        sim.active = false;
+        sim.playing = false;
+        updateSimUI();
+        if (redraw) draw();
+    }
+
+    function simFrame(now) {
+        if (!sim.playing) return;
+        const dt = Math.min(0.1, (now - sim.last) / 1000);
+        sim.last = now;
+        simAdvance(dt * state.view.simSpeed);
+        drawSimHead();
+        updateSimUI();
+        if (sim.done) { sim.playing = false; updateSimUI(); return; }
+        sim.raf = requestAnimationFrame(simFrame);
+    }
+
+    function penStyle(ctx, pen, v) {
+        const p = state.pens[pen] || { color: '#111', width: 0.3 };
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = Math.max((0.8 * dpr) / v.scale, state.view.penWidth ? p.width : 0);
+    }
+
+    // Advance the virtual plotter by `budget` seconds, inking completed motion.
+    function simAdvance(budget) {
+        const P = state.plot;
+        const ctx = canvas.getContext('2d');
+        const v = viewTransform();
+        ctx.save();
+        ctx.setTransform(v.scale, 0, 0, v.scale, v.ox, v.oy);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        let open = false, openLayer = -1;
+        const flush = () => { if (open) { ctx.stroke(); open = false; } };
+        const travelTo = (target, speed) => {
+            const d = Math.hypot(target[0] - sim.pos[0], target[1] - sim.pos[1]);
+            const t = d / Math.max(1, speed);
+            if (t <= budget) { budget -= t; sim.elapsed += t; sim.pos = target; return true; }
+            const f = (budget * speed) / d;
+            sim.pos = [sim.pos[0] + (target[0] - sim.pos[0]) * f, sim.pos[1] + (target[1] - sim.pos[1]) * f];
+            sim.elapsed += budget;
+            budget = 0;
+            return false;
+        };
+        while (budget > 0 && !sim.done) {
+            const layer = sim.layers[sim.li];
+            if (!layer) {
+                sim.phase = 'home';
+                if (travelTo([0, 0], P.travelSpeed)) sim.done = true;
+                break;
+            }
+            const path = layer.paths[sim.pi];
+            if (sim.phase === 'travel') {
+                if (travelTo(path[0], P.travelSpeed)) { sim.phase = 'down'; sim.wait = P.liftTime / 2; }
+            } else if (sim.phase === 'down' || sim.phase === 'up') {
+                const t = Math.min(budget, sim.wait);
+                sim.wait -= t; budget -= t; sim.elapsed += t;
+                if (sim.wait <= 1e-9) {
+                    if (sim.phase === 'down') { sim.phase = 'draw'; sim.k = 0; }
+                    else {
+                        sim.phase = 'travel';
+                        if (++sim.pi >= layer.paths.length) { sim.pi = 0; sim.li++; }
+                    }
+                }
+            } else {
+                const next = path[sim.k + 1];
+                if (!next) { sim.phase = 'up'; sim.wait = P.liftTime / 2; continue; }
+                if (openLayer !== sim.li) { flush(); penStyle(ctx, layer.pen, v); ctx.beginPath(); open = true; openLayer = sim.li; }
+                ctx.moveTo(sim.pos[0], sim.pos[1]);
+                const arrived = travelTo(next, P.drawSpeed);
+                ctx.lineTo(sim.pos[0], sim.pos[1]);
+                if (arrived) sim.k++;
+            }
+        }
+        flush();
+        ctx.restore();
+    }
+
+    // Full redraw of everything the simulated plotter has drawn so far.
+    function redrawSim() {
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const v = viewTransform();
+        drawPaper(ctx, v);
+        ctx.save();
+        ctx.setTransform(v.scale, 0, 0, v.scale, v.ox, v.oy);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        for (let li = 0; li <= Math.min(sim.li, sim.layers.length - 1); li++) {
+            const layer = sim.layers[li];
+            penStyle(ctx, layer.pen, v);
+            if (li < sim.li) { ctx.stroke(PG.layerPath(layer)); continue; }
+            ctx.beginPath();
+            for (let pi = 0; pi <= sim.pi && pi < layer.paths.length; pi++) {
+                const p = layer.paths[pi];
+                if (pi === sim.pi && sim.phase !== 'draw' && sim.phase !== 'up') break;
+                const n = pi < sim.pi ? p.length : sim.k + 1;
+                ctx.moveTo(p[0][0], p[0][1]);
+                for (let i = 1; i < n; i++) ctx.lineTo(p[i][0], p[i][1]);
+                if (pi === sim.pi && sim.phase === 'draw') ctx.lineTo(sim.pos[0], sim.pos[1]);
+            }
+            ctx.stroke();
+        }
+        ctx.restore();
+        drawSimHead();
+        $('#zoomLabel').textContent = `${Math.round(v.css.s * MM_PER_CSS_PX * 100)}%`;
+    }
+
+    function drawSimHead() {
+        const ctx = overlay.getContext('2d');
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, overlay.width, overlay.height);
+        if (!sim.active) return;
+        const v = viewTransform();
+        const x = v.ox + sim.pos[0] * v.scale, y = v.oy + sim.pos[1] * v.scale;
+        const P = state.paper;
+        // gantry
+        ctx.strokeStyle = 'rgba(90, 162, 255, 0.35)';
+        ctx.lineWidth = 1 * dpr;
+        ctx.beginPath();
+        ctx.moveTo(v.ox, y); ctx.lineTo(v.ox + P.w * v.scale, y);
+        ctx.moveTo(x, v.oy); ctx.lineTo(x, v.oy + P.h * v.scale);
+        ctx.stroke();
+        const layer = sim.layers[sim.li];
+        const pen = state.pens[layer ? layer.pen : 0];
+        const down = sim.phase === 'draw';
+        ctx.beginPath();
+        ctx.arc(x, y, (down ? 4.5 : 6) * dpr, 0, Math.PI * 2);
+        ctx.fillStyle = down ? pen.color : 'rgba(255,255,255,0.15)';
+        ctx.fill();
+        ctx.lineWidth = 1.5 * dpr;
+        ctx.strokeStyle = down ? '#ffffff' : '#5aa2ff';
+        ctx.stroke();
+    }
+
+    function updateSimUI() {
+        const play = $('#simPlay');
+        play.replaceChildren(icon(sim.playing ? 'pause' : 'play'));
+        play.classList.toggle('on', sim.active);
+        play.title = sim.playing ? 'Pause simulation (P)' : 'Simulate plotting (P)';
+        $('#simStop').hidden = !sim.active;
+        const info = $('#simInfo');
+        info.hidden = !sim.active;
+        if (sim.active) info.textContent = `${fmtClock(sim.elapsed)} / ${fmtClock(sim.total)}${sim.done ? ' ✓' : ''}`;
+    }
+
+    // ------------------------------------------------------------------ controls
+
+    // Generic control builder shared by generator params and the output panel.
+    // q: { id|key, label, type, min, max, step, options, hint, multiline }
+    // get(): current value; set(value, live): apply; opts: { onReset, lockable, locked, onLock }
+    function makeControl(q, get, set, opts = {}) {
+        const id = `c-${(q.key || q.id).replace(/\W/g, '-')}-${Math.random().toString(36).slice(2, 7)}`;
+        const row = el('div', { class: `ctl ctl-${q.type === 'checkbox' ? 'check' : q.type}` });
+        const label = el('label', { for: id, text: q.label || q.id });
+        const head = el('div', { class: 'ctl-head' }, label);
+        if (q.hint) head.append(el('span', { class: 'hint', title: q.hint, text: '?' }));
+        if (opts.onReset) {
+            label.title = (q.hint ? q.hint + '\n' : '') + 'Double-click to reset';
+            label.addEventListener('dblclick', opts.onReset);
+        }
+        if (opts.lockable) {
+            const lock = el('button', { class: 'lock-btn' + (opts.locked ? ' locked' : ''), title: 'Keep fixed when randomizing', type: 'button' });
+            lock.append(icon(opts.locked ? 'lock' : 'unlock'));
+            lock.addEventListener('click', () => {
+                const on = opts.onLock();
+                lock.classList.toggle('locked', on);
+                lock.replaceChildren(icon(on ? 'lock' : 'unlock'));
             });
+            head.append(lock);
+        }
+        row.append(head);
+
+        const ctlRow = el('div', { class: 'ctl-row' });
+        row.append(ctlRow);
+
+        if (q.type === 'range') {
+            const step = q.step || 1;
+            const range = el('input', { type: 'range', id, min: q.min, max: q.max, step });
+            const num = el('input', { type: 'number', class: 'num', min: q.min, max: q.max, step, 'aria-label': q.label });
+            // fill from zero for signed ranges, from the left otherwise
+            const zero = q.min < 0 && q.max > 0 ? ((0 - q.min) / (q.max - q.min)) * 100 : 0;
+            const paint = () => {
+                const at = ((range.value - q.min) / (q.max - q.min)) * 100;
+                range.style.setProperty('--from', `${Math.min(zero, at)}%`);
+                range.style.setProperty('--to', `${Math.max(zero, at)}%`);
+            };
+            row.sync = () => { range.value = get(); num.value = fmtNum(get(), step); paint(); };
+            range.addEventListener('input', () => { num.value = fmtNum(range.value, step); paint(); set(+range.value, true); });
+            range.addEventListener('change', () => set(+range.value, false));
+            num.addEventListener('change', () => {
+                let v = +num.value;
+                if (!isFinite(v)) v = get();
+                v = PG.snap(clamp(v, q.min, q.max), step, q.min);
+                range.value = v; num.value = fmtNum(v, step); paint();
+                set(v, false);
+            });
+            ctlRow.append(range, num);
+        } else if (q.type === 'select') {
+            const sel = el('select', { id });
+            for (const [value, text] of q.options) sel.append(el('option', { value: String(value), text }));
+            row.sync = () => { sel.value = String(get()); };
+            sel.addEventListener('change', () => {
+                const opt = q.options.find(o => String(o[0]) === sel.value);
+                set(opt ? opt[0] : sel.value, false);
+            });
+            ctlRow.append(sel);
+        } else if (q.type === 'checkbox') {
+            const box = el('input', { type: 'checkbox', id });
+            row.sync = () => { box.checked = !!get(); };
+            box.addEventListener('change', () => set(box.checked, false));
+            // move label into the row so it sits next to the switch
+            head.remove();
+            ctlRow.append(head, el('span', { class: 'switch' }, box, el('span')));
+            head.style.marginBottom = '0';
+        } else if (q.type === 'color') {
+            const input = el('input', { type: 'color', id, class: 'color-input' });
+            row.sync = () => { input.value = get(); };
+            input.addEventListener('input', () => set(input.value, true));
+            input.addEventListener('change', () => set(input.value, false));
+            head.remove();
+            ctlRow.append(head, input);
+            ctlRow.style.justifyContent = 'space-between';
+            head.style.marginBottom = '0';
+        } else if (q.type === 'text') {
+            const input = q.multiline
+                ? el('textarea', { id, rows: q.rows || 2, spellcheck: 'false' })
+                : el('input', { type: 'text', id, class: 'text-input', spellcheck: 'false' });
+            let t = 0;
+            row.sync = () => { input.value = get(); };
+            input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => set(input.value, true), 450); });
+            input.addEventListener('change', () => { clearTimeout(t); set(input.value, false); });
+            ctlRow.append(input);
+        } else if (q.type === 'image') {
+            row.classList.add('image-ctl');
+            const name = el('span', { class: 'file-name' });
+            const pick = el('button', { class: 'btn', type: 'button', text: 'Load image…' });
+            const clear = el('button', { class: 'icon-btn', type: 'button', title: 'Use the built-in demo image' }, icon('x'));
+            pick.addEventListener('click', () => opts.onPickImage && opts.onPickImage());
+            clear.addEventListener('click', () => opts.onClearImage && opts.onClearImage());
+            row.sync = () => {
+                const loaded = opts.hasImage && opts.hasImage();
+                const v = get();
+                name.textContent = loaded ? v : v ? `${v} (load again)` : 'Demo image — or drop one on the preview';
+                clear.hidden = !loaded;
+            };
+            ctlRow.append(pick, name, clear);
+        }
+        row.sync && row.sync();
+        return row;
+    }
+
+    // Hide controls whose show() is false, and section labels with nothing visible under them.
+    function updateVisibility(container, values) {
+        let section = null, sectionHasVisible = false;
+        const finish = () => { if (section) section.hidden = !sectionHasVisible; };
+        for (const node of container.children) {
+            if (node.classList.contains('section-label')) {
+                finish();
+                section = node;
+                sectionHasVisible = false;
+                continue;
+            }
+            if (node.showFn) node.hidden = !node.showFn(values);
+            if (!node.hidden) sectionHasVisible = true;
+        }
+        finish();
+    }
+
+    // ---- generator parameters (left panel)
+
+    function buildParams() {
+        const def = currentDef();
+        const params = currentParams(def);
+        const root = $('#params');
+        root.replaceChildren();
+        $('#designTitle').textContent = def.name;
+        $('#designDesc').textContent = def.description || '';
+        $('#designName').textContent = def.name;
+        $('#designCat').textContent = def.category;
+        document.title = `${def.name} · Plotter Geometry`;
+
+        const locks = new Set(state.locks[def.id] || []);
+        for (const q of def.params) {
+            if (q.type === 'section') { root.append(el('div', { class: 'section-label', text: q.label })); continue; }
+            const row = makeControl(q, () => params[q.id], (v, live) => {
+                params[q.id] = v;
+                if (!live) commit();
+                updateVisibility(root, params);
+                requestGenerate(live);
+            }, {
+                lockable: q.type !== 'image' && q.type !== 'text',
+                locked: locks.has(q.id),
+                onLock() {
+                    const set = new Set(state.locks[def.id] || []);
+                    set.has(q.id) ? set.delete(q.id) : set.add(q.id);
+                    state.locks[def.id] = [...set];
+                    scheduleSave();
+                    return set.has(q.id);
+                },
+                onReset() {
+                    params[q.id] = q.value;
+                    row.sync();
+                    commit();
+                    updateVisibility(root, params);
+                    requestGenerate();
+                },
+                onPickImage() { pickImage(def.id, q.id); },
+                onClearImage() {
+                    if (imageStore[def.id]) delete imageStore[def.id][q.id];
+                    params[q.id] = '';
+                    row.sync();
+                    commit();
+                    requestGenerate();
+                },
+                hasImage: () => !!(imageStore[def.id] && imageStore[def.id][q.id]),
+            });
+            row.dataset.param = q.id;
+            if (q.show) row.showFn = q.show;
+            root.append(row);
+        }
+        updateVisibility(root, params);
+    }
+
+    // ---- images
+
+    let pendingImageTarget = null;
+    function pickImage(genId, paramId) {
+        pendingImageTarget = { genId, paramId };
+        const input = $('#imageFile');
+        input.value = '';
+        input.click();
+    }
+
+    function loadImageFile(file, genId, paramId) {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+            const max = 900;
+            const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+            const w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
+            const c = el('canvas', { width: w, height: h });
+            const g = c.getContext('2d', { willReadFrequently: true });
+            g.fillStyle = '#fff';
+            g.fillRect(0, 0, w, h);
+            g.drawImage(img, 0, 0, w, h);
+            const px = g.getImageData(0, 0, w, h).data;
+            const data = new Float32Array(w * h);
+            for (let i = 0; i < w * h; i++) {
+                data[i] = (0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2]) / 255;
+            }
+            URL.revokeObjectURL(url);
+            (imageStore[genId] || (imageStore[genId] = {}))[paramId] = { width: w, height: h, data, name: file.name };
+            state.params[genId] = Object.assign(currentParams(PG.byId[genId]), { [paramId]: file.name });
+            if (state.gen === genId) buildParams();
+            commit();
+            requestGenerate();
+            toast(`Loaded ${file.name}`);
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); toast('Could not read that image', true); };
+        img.src = url;
+    }
+
+    // ---- output panel (right)
+
+    const penOptions = () => state.pens.map((p, i) => [i, `${i + 1} · ${p.name}`]);
+    const isGrid = s => s.comp.cols * s.comp.rows > 1;
+
+    function outputSections() {
+        return [
+            {
+                id: 'paper', title: 'Paper', badge: paperLabel, controls: [
+                    { key: 'paper.size', label: 'Size', type: 'select',
+                        options: PAPERS.map(([n, w, h]) => [n, n === 'custom' ? 'Custom size' : `${n} — ${fmtMM(w)} × ${fmtMM(h)} mm`]),
+                        then: () => { applyPaperSize(); fitView(); } },
+                    { key: 'paper.landscape', label: 'Landscape', type: 'checkbox',
+                        then: () => {
+                            if (state.paper.size === 'custom') { const P = state.paper; [P.w, P.h] = [P.h, P.w]; }
+                            applyPaperSize();
+                            fitView();
+                        } },
+                    { key: 'paper.w', label: 'Width (mm)', type: 'range', min: 50, max: 1200, step: 0.5, show: s => s.paper.size === 'custom' },
+                    { key: 'paper.h', label: 'Height (mm)', type: 'range', min: 50, max: 1200, step: 0.5, show: s => s.paper.size === 'custom' },
+                    { key: 'paper.margin', label: 'Margin (mm)', type: 'range', min: 0, max: 80, step: 0.5 },
+                    { key: 'paper.color', label: 'Paper colour (preview only)', type: 'color', effect: 'draw' },
+                ],
+            },
+            {
+                id: 'comp', title: 'Composition', controls: [
+                    { key: 'comp.scale', label: 'Scale %', type: 'range', min: 10, max: 300, step: 1 },
+                    { key: 'comp.rotate', label: 'Rotation°', type: 'range', min: -180, max: 180, step: 0.5 },
+                    { key: 'comp.offsetX', label: 'Offset X (mm)', type: 'range', min: -150, max: 150, step: 0.5 },
+                    { key: 'comp.offsetY', label: 'Offset Y (mm)', type: 'range', min: -150, max: 150, step: 0.5 },
+                    { key: 'comp.clip', label: 'Crop to', type: 'select',
+                        options: [['rect', 'Rectangle (margins)'], ['circle', 'Circle'], ['hexagon', 'Hexagon'], ['diamond', 'Diamond']] },
+                    { key: 'comp.frame', label: 'Draw frame', type: 'checkbox' },
+                    { key: 'comp.framePen', label: 'Frame pen', type: 'select', options: penOptions(), show: s => s.comp.frame },
+                    { key: 'comp.frameInset', label: 'Second frame line (mm in)', type: 'range', min: 0, max: 12, step: 0.5, show: s => s.comp.frame },
+                ],
+            },
+            {
+                id: 'grid', title: 'Grid layout', badge: () => (isGrid(state) ? `${state.comp.cols} × ${state.comp.rows}` : 'off'), controls: [
+                    { key: 'comp.cols', label: 'Columns', type: 'range', min: 1, max: 8, step: 1 },
+                    { key: 'comp.rows', label: 'Rows', type: 'range', min: 1, max: 10, step: 1 },
+                    { key: 'comp.gutter', label: 'Gutter (mm)', type: 'range', min: 0, max: 40, step: 0.5, show: isGrid },
+                    { key: 'comp.cellVary', label: 'Each cell', type: 'select', show: isGrid,
+                        options: [['seed', 'New seed per cell'], ['params', 'Random parameters per cell'], ['none', 'Identical']] },
+                    { key: 'comp.sweepId', label: 'Sweep a parameter across cells', type: 'select', show: isGrid,
+                        options: [['', 'None']].concat(currentDef().params.filter(q => q.type === 'range').map(q => [q.id, q.label || q.id])) },
+                    { key: 'comp.sweepAmount', label: 'Sweep amount (% of range)', type: 'range', min: -100, max: 100, step: 1,
+                        show: s => isGrid(s) && !!s.comp.sweepId },
+                ],
+                note: el('p', { class: 'out-note', text: 'Repeat the design on one sheet. Random parameters keep the first cell as it is and respect locked parameters; a sweep steps one parameter from cell to cell.' }),
+            },
+            { id: 'pens', title: 'Pens', custom: buildPensSection },
+            {
+                id: 'opt', title: 'Optimize', controls: [
+                    { key: 'opt.merge', label: 'Join touching strokes', type: 'checkbox' },
+                    { key: 'opt.mergeTol', label: 'Join tolerance (mm)', type: 'range', min: 0.01, max: 1, step: 0.01, show: s => s.opt.merge },
+                    { key: 'opt.sort', label: 'Minimise pen-up travel', type: 'checkbox' },
+                    { key: 'opt.simplify', label: 'Simplify points', type: 'checkbox' },
+                    { key: 'opt.simplifyTol', label: 'Simplify tolerance (mm)', type: 'range', min: 0.005, max: 0.5, step: 0.005, show: s => s.opt.simplify },
+                    { key: 'opt.minLength', label: 'Drop strokes shorter than (mm)', type: 'range', min: 0, max: 5, step: 0.1 },
+                ],
+                note: el('p', { class: 'out-note', id: 'optNote' }),
+            },
+            {
+                id: 'plot', title: 'Plotter', controls: [
+                    { key: 'plot.drawSpeed', label: 'Drawing speed (mm/s)', type: 'range', min: 5, max: 300, step: 1, effect: 'stats' },
+                    { key: 'plot.travelSpeed', label: 'Travel speed (mm/s)', type: 'range', min: 10, max: 600, step: 5, effect: 'stats' },
+                    { key: 'plot.liftTime', label: 'Pen lift + drop (s)', type: 'range', min: 0, max: 1.5, step: 0.05, effect: 'stats' },
+                ],
+                note: el('p', { class: 'out-note', text: 'Used for the time estimate and the plot simulation. Home is the top-left corner.' }),
+            },
+            { id: 'snaps', title: 'Snapshots', custom: buildSnapshotsSection },
+        ];
+    }
+
+    function buildOutputPanel() {
+        const panel = $('#outputPanel');
+        const scroll = panel.scrollTop;
+        panel.replaceChildren();
+        for (const sec of outputSections()) {
+            const det = el('details', { class: 'out-section', 'data-sec': sec.id });
+            det.open = !!state.ui.open[sec.id];
+            det.addEventListener('toggle', () => { state.ui.open[sec.id] = det.open; scheduleSave(); });
+            const summary = el('summary', null, el('span', { text: sec.title }));
+            if (sec.badge) summary.append(el('span', { class: 'badge', text: sec.badge() }));
+            summary.append(icon('chev'));
+            det.append(summary);
+            const body = el('div', { class: 'controls' });
+            det.append(body);
+            if (sec.custom) sec.custom(body);
+            for (const q of sec.controls || []) {
+                const row = makeControl(q, () => getPath(state, q.key), (v, live) => {
+                    setPath(state, q.key, v);
+                    if (q.then) q.then();
+                    updateVisibility(body, state);
+                    if (sec.badge) summary.querySelector('.badge').textContent = sec.badge();
+                    applyEffect(q.effect || 'generate', live);
+                    if (!live) commit();
+                });
+                if (q.show) row.showFn = q.show;
+                body.append(row);
+            }
+            if (sec.note) body.append(sec.note);
+            updateVisibility(body, state);
+            panel.append(det);
+        }
+        panel.scrollTop = scroll;
+        renderStats();
+    }
+
+    function applyEffect(effect, live) {
+        if (effect === 'generate') requestGenerate(live);
+        else if (effect === 'draw') { stopSim(false); draw(); }
+        else if (effect === 'stats') renderStats();
+        scheduleSave();
+    }
+
+    // ---- pens
+
+    function buildPensSection(body) {
+        const sel = el('select', { 'aria-label': 'Pen set' },
+            el('option', { value: '', text: 'Apply a pen set…' }),
+            ...Object.entries(PEN_SETS).map(([k, v]) => el('option', { value: k, text: v.label })));
+        sel.addEventListener('change', () => {
+            const set = PEN_SETS[sel.value];
+            if (!set) return;
+            state.pens.forEach((p, i) => { p.color = set.colors[i]; });
+            state.paper.color = set.paper;
+            buildOutputPanel();
+            thumbCache.clear();
+            draw();
+            commit();
+        });
+        body.append(el('div', { class: 'ctl' }, sel));
+
+        const list = el('div', { id: 'penList' });
+        state.pens.forEach((pen, i) => {
+            const eye = el('button', { class: 'eye' + (pen.visible ? '' : ' off'), type: 'button', title: 'Show / hide this pen (hidden pens are not exported)' }, icon(pen.visible ? 'eye' : 'eye-off'));
+            eye.addEventListener('click', () => {
+                pen.visible = !pen.visible;
+                eye.classList.toggle('off', !pen.visible);
+                eye.replaceChildren(icon(pen.visible ? 'eye' : 'eye-off'));
+                stopSim(false);
+                draw();
+                renderStats();
+                scheduleSave();
+            });
+            const color = el('input', { type: 'color', class: 'color-input', value: pen.color, title: 'Pen colour' });
+            color.addEventListener('input', () => { pen.color = color.value; stopSim(false); draw(); });
+            color.addEventListener('change', () => { thumbCache.clear(); commit(); });
+            const name = el('input', { class: 'pen-name', value: pen.name, spellcheck: 'false', title: 'Pen name (used for SVG layer names)' });
+            name.addEventListener('change', () => { pen.name = name.value || `Pen ${i + 1}`; commit(); });
+            const width = el('input', { type: 'number', class: 'num', min: 0.05, max: 5, step: 0.05, value: pen.width, title: 'Pen width in mm' });
+            width.addEventListener('change', () => {
+                pen.width = clamp(+width.value || 0.35, 0.05, 5);
+                width.value = pen.width;
+                draw();
+                commit();
+            });
+            const meta = el('div', { class: 'pen-meta', 'data-pen': i });
+            list.append(el('div', { class: 'pen-row', 'data-pen': i }, eye, color, name, width, meta));
+        });
+        body.append(list);
+        body.append(el('p', { class: 'out-note', text: 'Width is in mm — the preview draws true-to-scale line widths. Each pen exports as its own Inkscape layer.' }));
+        renderPenUsage();
+    }
+
+    function renderPenUsage() {
+        const rows = document.querySelectorAll('#penList .pen-row');
+        if (!rows.length) return;
+        const usage = {};
+        if (result) for (const l of result.layers) usage[l.pen] = PG.optimize.stats([l]);
+        rows.forEach(row => {
+            const i = +row.dataset.pen;
+            const u = usage[i];
+            row.classList.toggle('unused', !u);
+            row.querySelector('.pen-meta').textContent = u ? `${fmtLength(u.draw)} · ${fmtCount(u.lifts)} strokes` : 'not used by this design';
+        });
+    }
+
+    // ---- snapshots
+
+    function loadSnaps() { return storageGet(SNAPS_KEY) || []; }
+
+    function buildSnapshotsSection(body) {
+        const btn = el('button', { class: 'btn', type: 'button' }, icon('camera'), el('span', { text: 'Save snapshot' }));
+        btn.addEventListener('click', saveSnapshot);
+        body.append(el('div', { class: 'ctl' }, btn));
+        const grid = el('div', { class: 'snaps', id: 'snapGrid' });
+        body.append(grid);
+        renderSnaps();
+    }
+
+    function renderSnaps() {
+        const grid = $('#snapGrid');
+        if (!grid) return;
+        grid.replaceChildren();
+        const snaps = loadSnaps();
+        if (!snaps.length) {
+            grid.append(el('p', { class: 'snaps-empty', text: 'Snapshots keep designs you like (stored in this browser). Press S to save one.' }));
+            return;
+        }
+        for (const s of snaps) {
+            const b = el('button', { class: 'snap', type: 'button', title: `${s.title}\n${new Date(s.time).toLocaleString()}` }, el('img', { src: s.thumb, alt: s.title }));
+            const del = el('span', { class: 'del', title: 'Delete snapshot' }, icon('x'));
+            del.addEventListener('click', e => {
+                e.stopPropagation();
+                storageSet(SNAPS_KEY, loadSnaps().filter(x => x.time !== s.time));
+                renderSnaps();
+            });
+            b.append(del);
+            b.addEventListener('click', () => {
+                applyShared(s.state);
+                rebuildAll();
+                requestGenerate();
+                commit();
+                toast(`Restored ${s.title}`);
+            });
+            grid.append(b);
+        }
+    }
+
+    function saveSnapshot() {
+        if (!result) return;
+        const P = state.paper;
+        const k = 160 / Math.max(P.w, P.h);
+        const c = el('canvas', { width: Math.round(P.w * k * 1.5), height: Math.round(P.h * k * 1.5) });
+        PG.drawResult(c.getContext('2d'), visibleResult(), { scale: k * 1.5, ox: 0, oy: 0 },
+            { paper: { w: P.w, h: P.h }, paperColor: P.color, pens: state.pens, minLinePx: 0.6, hairline: true });
+        const def = currentDef();
+        const snaps = loadSnaps();
+        snaps.unshift({ time: Date.now(), title: `${def.name} #${state.seed}`, thumb: c.toDataURL('image/png'), state: shareable() });
+        while (snaps.length > 30) snaps.pop();
+        if (!storageSet(SNAPS_KEY, snaps)) { toast('Browser storage is full — delete some snapshots', true); return; }
+        state.ui.open.snaps = true;
+        buildOutputPanel();
+        toast('Snapshot saved');
+    }
+
+    // ------------------------------------------------------------------ gallery
+
+    const thumbCache = new Map();
+    let thumbQueue = [];
+    let thumbTimer = 0;
+
+    function openGallery() {
+        const g = $('#gallery');
+        g.hidden = false;
+        buildGallery();
+        const search = $('#gallerySearch');
+        search.value = '';
+        filterGallery('');
+        setTimeout(() => search.focus(), 0);
+    }
+    function closeGallery() {
+        $('#gallery').hidden = true;
+        clearTimeout(thumbTimer);
+        thumbQueue = [];
+    }
+
+    function buildGallery() {
+        const body = $('#galleryBody');
+        body.replaceChildren();
+        thumbQueue = [];
+        const cats = PG.categories.concat([...new Set(PG.generators.map(g => g.category))].filter(c => !PG.categories.includes(c)));
+        for (const cat of cats) {
+            const gens = PG.generators.filter(g => g.category === cat);
+            if (!gens.length) continue;
+            const section = el('section', { 'data-cat': cat }, el('h3', { class: 'gallery-cat', text: cat }));
+            const cards = el('div', { class: 'cards' });
+            for (const def of gens) {
+                const thumb = el('canvas', { class: 'thumb', width: 320, height: 320 });
+                const card = el('button', { class: 'card' + (def.id === state.gen ? ' current' : ''), type: 'button', 'data-id': def.id,
+                    'data-search': `${def.name} ${def.description || ''} ${def.category} ${def.id}`.toLowerCase() },
+                thumb,
+                el('div', { class: 'card-text' }, el('div', { class: 'card-name', text: def.name }), el('div', { class: 'card-desc', text: def.description || '' })));
+                card.addEventListener('click', () => selectGenerator(def.id));
+                cards.append(card);
+                const cached = thumbCache.get(def.id);
+                if (cached) thumb.getContext('2d').drawImage(cached, 0, 0);
+                else thumbQueue.push([def, thumb]);
+            }
+            section.append(cards);
+            body.append(section);
+        }
+        pumpThumbs();
+    }
+
+    function pumpThumbs() {
+        clearTimeout(thumbTimer);
+        if (!thumbQueue.length) return;
+        thumbTimer = setTimeout(() => {
+            const [def, canvasEl] = thumbQueue.shift();
+            renderThumb(def, canvasEl);
+            pumpThumbs();
+        }, 16);
+    }
+
+    function renderThumb(def, canvasEl) {
+        // near-A4 scale, since fill designs size their features in real millimetres
+        const size = 190;
+        const S = {
+            seed: 1, paperW: size, paperH: size, margin: 10, scale: 100, rotate: 0, clip: 'rect',
+            opt: { simplify: true, simplifyTol: 0.05 },
+        };
+        const g = canvasEl.getContext('2d');
+        try {
+            const res = PG.run(def, PG.defaultParams(def), S);
+            const k = canvasEl.width / size;
+            PG.drawResult(g, res, { scale: k, ox: 0, oy: 0 },
+                { paper: { w: size, h: size }, paperColor: state.paper.color, pens: state.pens, minLinePx: 0.9, hairline: true });
+        } catch (e) {
+            g.fillStyle = '#300'; g.fillRect(0, 0, canvasEl.width, canvasEl.height);
+        }
+        const copy = el('canvas', { width: canvasEl.width, height: canvasEl.height });
+        copy.getContext('2d').drawImage(canvasEl, 0, 0);
+        thumbCache.set(def.id, copy);
+    }
+
+    function filterGallery(text) {
+        const t = text.trim().toLowerCase();
+        document.querySelectorAll('#galleryBody section').forEach(sec => {
+            let any = false;
+            sec.querySelectorAll('.card').forEach(card => {
+                const ok = !t || card.dataset.search.includes(t);
+                card.hidden = !ok;
+                if (ok) any = true;
+            });
+            sec.hidden = !any;
+        });
+    }
+
+    function selectGenerator(id) {
+        if (!PG.byId[id]) return;
+        state.gen = id;
+        closeGallery();
+        designChanged();
+        requestGenerate();
+        commit();
+    }
+
+    // The sweep parameter list in the grid section depends on the design.
+    function designChanged() {
+        const def = currentDef();
+        if (state.comp.sweepId && !def.params.some(q => q.id === state.comp.sweepId)) state.comp.sweepId = '';
+        buildParams();
+        buildOutputPanel();
+    }
+
+    function surprise() {
+        const others = PG.generators.filter(g => g.id !== state.gen);
+        const def = others[Math.floor(Math.random() * others.length)] || currentDef();
+        state.gen = def.id;
+        closeGallery();
+        designChanged();
+        randomize();
+    }
+
+    // ------------------------------------------------------------------ actions
+
+    function randomize() {
+        const def = currentDef();
+        const current = currentParams(def);
+        const locked = state.locks[def.id] || [];
+        const next = PG.randomParams(def, current, new PG.RNG(randomSeed() * 7919));
+        for (const id of locked) next[id] = current[id];
+        state.params[def.id] = next;
+        state.seed = randomSeed();
+        buildParams();
+        syncSeed();
+        requestGenerate();
+        commit();
+    }
+
+    function newSeed() {
+        state.seed = randomSeed();
+        syncSeed();
+        requestGenerate();
+        commit();
+    }
+
+    function resetParams() {
+        const def = currentDef();
+        state.params[def.id] = PG.defaultParams(def);
+        buildParams();
+        requestGenerate();
+        commit();
+    }
+
+    function syncSeed() { $('#seed').value = state.seed; }
+
+    function toggleView(key) {
+        state.view[key] = !state.view[key];
+        syncViewButtons();
+        stopSim(false);
+        draw();
+        scheduleSave();
+    }
+    function syncViewButtons() {
+        $('#toggleTravel').classList.toggle('on', state.view.travel);
+        $('#toggleMargin').classList.toggle('on', state.view.margin);
+        $('#togglePenWidth').classList.toggle('on', state.view.penWidth);
+        $('#simSpeed').value = String(state.view.simSpeed);
+    }
+
+    // ------------------------------------------------------------------ export
+
+    const fileBase = () => `${currentDef().id}-${state.seed}`;
+    const exportMeta = () => ({
+        title: `${currentDef().name} — seed ${state.seed}`,
+        description: 'plotter-geometry:' + JSON.stringify(shareable()),
+    });
+
+    function doExport(kind) {
+        $('#exportMenu').hidden = true;
+        if (kind === 'load') { $('#settingsFile').value = ''; $('#settingsFile').click(); return; }
+        if (kind === 'json') {
+            const data = Object.assign(shareable(), { opt: state.opt, plot: state.plot });
+            download(`${fileBase()}.json`, JSON.stringify(data, null, 2), 'application/json');
+            return;
+        }
+        if (kind === 'link') { copyLink(); return; }
+        const res = visibleResult();
+        if (!res || !res.layers.length) { toast('Nothing to export', true); return; }
+        const paper = { w: state.paper.w, h: state.paper.h };
+        if (kind === 'svg') {
+            download(`${fileBase()}.svg`, PG.exporters.svg(res, paper, state.pens, exportMeta()), 'image/svg+xml');
+        } else if (kind === 'svg-split') {
+            res.layers.forEach((l, i) => setTimeout(() => {
+                download(`${fileBase()}-pen${l.pen + 1}.svg`, PG.exporters.svg(res, paper, state.pens, exportMeta(), l.pen), 'image/svg+xml');
+            }, i * 300));
+        } else if (kind === 'png') {
+            const k = 200 / 25.4;
+            const c = el('canvas', { width: Math.round(paper.w * k), height: Math.round(paper.h * k) });
+            PG.drawResult(c.getContext('2d'), res, { scale: k, ox: 0, oy: 0 },
+                { paper, paperColor: state.paper.color, pens: state.pens, minLinePx: 1, hairline: !state.view.penWidth });
+            c.toBlob(b => download(`${fileBase()}.png`, b));
+        }
+    }
+
+    function shareUrl() {
+        const base = location.href.split('#')[0];
+        return `${base}#s=${b64encode(JSON.stringify(shareable()))}`;
+    }
+
+    function copyLink() {
+        const url = shareUrl();
+        const done = () => toast('Share link copied');
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(url).then(done, () => { window.prompt('Copy this link:', url); });
         } else {
-            range.addEventListener("input", updateParameters);
+            window.prompt('Copy this link:', url);
         }
-    });
+    }
 
-    document.querySelectorAll("input[type='number']").forEach(num => {
-        const range = document.getElementById(num.id.replace("_num", ""));
-        if (!range) num.addEventListener("input", updateParameters);
-    });
+    function loadSettingsFile(file) {
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                let text = String(reader.result).trim();
+                if (text.startsWith('<')) {
+                    const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+                    const desc = doc.querySelector('desc');
+                    const d = desc ? desc.textContent : '';
+                    if (!d.startsWith('plotter-geometry:')) throw new Error('This SVG was not made here (no embedded settings)');
+                    text = d.slice('plotter-geometry:'.length);
+                }
+                applyShared(JSON.parse(text));
+                rebuildAll();
+                requestGenerate();
+                commit();
+                toast(`Loaded settings from ${file.name}`);
+            } catch (e) {
+                toast(`Could not load ${file.name}: ${e.message}`, true);
+            }
+        };
+        reader.readAsText(file);
+    }
 
-    document.querySelectorAll("input[type='color'], select").forEach(input => {
-        input.addEventListener("input", updateParameters);
-    });
+    // ------------------------------------------------------------------ wiring
 
-    updateParameters(); // Initial draw
+    function rebuildAll() {
+        buildParams();
+        buildOutputPanel();
+        syncSeed();
+        syncViewButtons();
+    }
 
-    document.getElementById("exportSVG").addEventListener("click", exportSVG);
-    document.getElementById("randomize").addEventListener("click", randomizeParameters);
-});
+    function bindTopbar() {
+        $('#designBtn').addEventListener('click', openGallery);
+        $('#randomize').addEventListener('click', randomize);
+        $('#newSeed').addEventListener('click', newSeed);
+        $('#resetParams').addEventListener('click', resetParams);
+        $('#undo').addEventListener('click', undo);
+        $('#redo').addEventListener('click', redo);
+        $('#snapshotBtn').addEventListener('click', saveSnapshot);
+        $('#keysBtn').addEventListener('click', () => { $('#keysDialog').hidden = false; });
+        $('#seed').addEventListener('change', () => {
+            const v = Math.floor(+$('#seed').value);
+            state.seed = isFinite(v) ? clamp(v, 0, 999999999) : 1;
+            syncSeed();
+            requestGenerate();
+            commit();
+        });
+
+        $('#exportSvg').addEventListener('click', () => doExport('svg'));
+        $('#exportMenuBtn').addEventListener('click', e => {
+            e.stopPropagation();
+            $('#exportMenu').hidden = !$('#exportMenu').hidden;
+        });
+        $('#exportMenu').addEventListener('click', e => {
+            const b = e.target.closest('button[data-export]');
+            if (b) doExport(b.dataset.export);
+        });
+        document.addEventListener('click', e => {
+            if (!e.target.closest('.export')) $('#exportMenu').hidden = true;
+        });
+        $('#settingsFile').addEventListener('change', e => { const f = e.target.files[0]; if (f) loadSettingsFile(f); });
+        $('#imageFile').addEventListener('change', e => {
+            const f = e.target.files[0];
+            if (f && pendingImageTarget) loadImageFile(f, pendingImageTarget.genId, pendingImageTarget.paramId);
+        });
+
+        $('#fitView').addEventListener('click', fitView);
+        $('#toggleTravel').addEventListener('click', () => toggleView('travel'));
+        $('#toggleMargin').addEventListener('click', () => toggleView('margin'));
+        $('#togglePenWidth').addEventListener('click', () => toggleView('penWidth'));
+        $('#simPlay').addEventListener('click', simToggle);
+        $('#simStop').addEventListener('click', () => stopSim(true));
+        $('#simSpeed').addEventListener('change', e => { state.view.simSpeed = +e.target.value; scheduleSave(); });
+
+        $('#gallerySearch').addEventListener('input', e => filterGallery(e.target.value));
+        $('#gallerySearch').addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                const first = document.querySelector('#galleryBody .card:not([hidden])');
+                if (first) first.click();
+            }
+        });
+        $('#galleryClose').addEventListener('click', closeGallery);
+        $('#surprise').addEventListener('click', surprise);
+        for (const dlg of [$('#gallery'), $('#keysDialog')]) {
+            dlg.addEventListener('click', e => { if (e.target === dlg) { dlg === $('#gallery') ? closeGallery() : (dlg.hidden = true); } });
+        }
+        document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { $('#' + b.dataset.close).hidden = true; }));
+
+        document.querySelectorAll('#panelTabs button').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+    }
+
+    function setTab(tab) {
+        state.ui.tab = tab;
+        $('#layout').dataset.tab = tab;
+        document.querySelectorAll('#panelTabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+        if (tab === 'preview') requestAnimationFrame(resizeCanvas);
+        scheduleSave();
+    }
+
+    function bindKeys() {
+        document.addEventListener('keydown', e => {
+            const t = e.target;
+            const typing = (t.tagName === 'INPUT' && !['range', 'checkbox', 'color', 'button'].includes(t.type)) ||
+                t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable;
+            if (e.key === 'Escape') {
+                if (!$('#gallery').hidden) closeGallery();
+                $('#keysDialog').hidden = true;
+                $('#exportMenu').hidden = true;
+                if (typing) t.blur();
+                return;
+            }
+            const mod = e.ctrlKey || e.metaKey;
+            if (mod && !typing && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+            if (mod && !typing && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+            if (typing || mod || e.altKey) return;
+            if (!$('#gallery').hidden) return;
+            switch (e.key) {
+                case 'r': case 'R': randomize(); break;
+                case ' ':
+                    if (t.tagName === 'BUTTON') return;
+                    e.preventDefault(); newSeed(); break;
+                case 'g': case 'G': openGallery(); break;
+                case 'e': case 'E': doExport('svg'); break;
+                case 's': case 'S': saveSnapshot(); break;
+                case 'p': case 'P': simToggle(); break;
+                case 't': case 'T': toggleView('travel'); break;
+                case 'f': case 'F': fitView(); break;
+                case '?': $('#keysDialog').hidden = false; break;
+                default: return;
+            }
+        });
+    }
+
+    // Initial state: share link (#s=…) > saved state > defaults. `#gen=<id>` picks a design.
+    function loadInitialState() {
+        const saved = storageGet(STORAGE_KEY);
+        if (saved && saved.v === 1) {
+            state = mergeInto(defaultState(), saved);
+            state.params = saved.params || {};
+            state.locks = saved.locks || {};
+        }
+        const hash = location.hash.slice(1);
+        if (hash) {
+            const q = new URLSearchParams(hash);
+            try {
+                if (q.get('s')) applyShared(JSON.parse(b64decode(q.get('s'))));
+                if (q.get('gen') && PG.byId[q.get('gen')]) state.gen = q.get('gen');
+                if (q.get('seed')) state.seed = +q.get('seed') || 1;
+                if (q.get('tab')) state.ui.tab = q.get('tab');
+            } catch (e) {
+                console.warn('Bad share link', e);
+            }
+            // Drop the hash so later reloads use the live (saved) state.
+            try { history.replaceState(null, '', location.href.split('#')[0]); } catch (e) { /* file:// */ }
+        }
+        if (!PG.byId[state.gen]) state.gen = PG.generators[0] ? PG.generators[0].id : state.gen;
+        applyPaperSize();
+    }
+
+    async function init() {
+        await PG.loadGenerators();
+        if (!PG.generators.length) {
+            setError('No designs could be loaded.');
+            return;
+        }
+        loadInitialState();
+        bindTopbar();
+        bindKeys();
+        bindCanvas();
+        rebuildAll();
+        // phones open on the drawing; wider screens always show it
+        const phone = window.matchMedia('(max-width: 720px)').matches;
+        setTab(phone ? 'preview' : state.ui.tab === 'output' ? 'output' : 'design');
+        resizeCanvas();
+        regenerate();
+        pushUndo();
+        updateSimUI();
+    }
+
+    // Handle for scripted checks (scripts/drive.js) and console tinkering.
+    window.plotterApp = {
+        get state() { return state; },
+        get result() { return result; },
+        get sim() { return sim; },
+        select: selectGenerator, randomize, newSeed, undo, redo, exportAs: doExport, regenerate,
+    };
+
+    init();
+})();

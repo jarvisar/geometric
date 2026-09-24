@@ -1,12 +1,14 @@
 {
   "name": "geometric-web-app",
-  "version": "1.0.0",
-  "description": "A web application that allows users to dynamically create geometric shapes using adjustable sliders.",
-  "main": "src/app.js",
+  "version": "2.0.0",
+  "description": "Plotter Geometry: generative geometric line art for pen plotters, with plot-optimised SVG export.",
+  "private": true,
   "scripts": {
-    "start": "live-server src"
+    "start": "live-server src",
+    "check": "node scripts/check.js",
+    "smoke": "node scripts/drive.js scripts/smoke.steps.js shots",
+    "sheet": "node scripts/shot.js dev/sheet.html \"variants=2&size=220\" shots/sheet.png 1100 6000"
   },
-  "dependencies": {},
   "devDependencies": {
     "live-server": "^1.2.1"
   },

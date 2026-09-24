@@ -1,0 +1,44 @@
+# Publishes the Plotter Geometry web app (web/geometric-web-app/src) to GitHub Pages.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'web/geometric-web-app/src/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Don't let overlapping deploys cancel each other mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The app is static files only; drop the developer contact sheet.
+      - name: Prepare site
+        run: |
+          cp -r web/geometric-web-app/src _site
+          rm -rf _site/dev
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
