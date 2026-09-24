@@ -101,7 +101,9 @@
         generate(p, ctx) {
             const { width: W, height: H, rng } = ctx;
             const t = geo.clamp(p.t, 0.005, 0.5);
-            const maxSteps = p.steps > 0 ? Math.min(300, p.steps | 0) : 300;
+            // auto mode runs until the polygon reaches the stop radius (small steps on
+            // big polygons can need well over 300); the point budget below still applies
+            const maxSteps = p.steps > 0 ? Math.min(300, p.steps | 0) : 3000;
             const minR = p.steps > 0 ? 0 : Math.max(0.05, p.minSize);
 
             // cells: { poly (open vertex list), cls }

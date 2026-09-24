@@ -414,12 +414,12 @@
         return out.map(q => [q[0] * c - q[1] * s, q[0] * s + q[1] * c]);
     };
 
-    // Fill a convex polygon with concentric insets drawn as ONE stroke: the outer
-    // ring is closed, every inner ring skips its closing edge and runs on to the
-    // next ring's matching corner, so the fill winds inward as a polygon spiral.
-    // `round` (0..1) rounds the corners of every ring.
+    // Fill a convex polygon with concentric insets drawn as ONE stroke. Each ring's
+    // closing edge stops where it meets the line of the next ring's first edge and
+    // turns onto it, so the fill winds inward as a true polygon spiral with an even
+    // gap everywhere. The innermost ring closes. `round` (0..1) rounds the corners.
     geo.insetSpiral = function (poly, spacing, round = 0) {
-        // start at the sharpest corner so the connecting steps hide in it
+        // start at the sharpest corner
         let start = 0, bestCos = Infinity;
         for (let i = 0, n = poly.length; i < n; i++) {
             const a = poly[(i + n - 1) % n], b = poly[i], c = poly[(i + 1) % n];
@@ -427,21 +427,41 @@
             const cs = (ux * vx + uy * vy) / (Math.hypot(ux, uy) * Math.hypot(vx, vy) || 1);
             if (cs < bestCos - 1e-6) { bestCos = cs; start = i; }
         }
-        const out = [];
+        const rings = [];
         let cur = poly;
         for (let k = 0; k < 400 && cur.length >= 3; k++) {
             const n = cur.length;
-            let ring = [];
-            for (let i = 0; i <= n; i++) ring.push(cur[(start + i) % n]);
-            if (round > 0) ring = geo.roundCorners(ring, round * 0.5, 6);
+            const ring = [];
+            for (let i = 0; i < n; i++) ring.push(cur[(start + i) % n]);
+            rings.push(ring);
             const next = geo.cleanPolygon(geo.insetConvex(cur, spacing));
-            out.push(...(k === 0 || !next.length ? ring : ring.slice(0, -1)));
             const anchor = cur[start];
             let bd = Infinity;
             next.forEach((q, i) => { const d = geo.dist2(q, anchor); if (d < bd) { bd = d; start = i; } });
             cur = next;
         }
-        return out;
+        if (!rings.length) return [];
+        const out = rings[0].slice();
+        for (let k = 1; k < rings.length; k++) {
+            const prev = rings[k - 1], ring = rings[k];
+            const a = prev[prev.length - 1], b = prev[0], w0 = ring[0], w1 = ring[1];
+            // where the previous ring's closing edge (a -> b) meets the line w0 -> w1
+            const X = geo.lineIntersect(a, [b[0] - a[0], b[1] - a[1]], w0, [w1[0] - w0[0], w1[1] - w0[1]]);
+            // if it misses (the inset dropped the start corner), step straight to w0
+            out.push(X && X.t > 1e-9 && X.t <= 1 && X.u <= 1e-9 ? [X.x, X.y] : w0);
+            for (let i = 1; i < ring.length; i++) out.push(ring[i]);
+        }
+        const last = rings[rings.length - 1];
+        out.push(last[0]);
+        if (rings.length === 1) return round > 0 ? geo.roundCorners(out, round * 0.5, 6) : out;
+        if (!(round > 0)) return out;
+        // round the open spiral: lead in from partway along the outer ring's cut-off
+        // closing edge, and stop the innermost ring where its last corner would begin
+        const amt = round * 0.5;
+        const path = [geo.lerpPt(out[0], out[rings[0].length], 0.5), ...out];
+        const r = geo.roundCorners(path, amt, 6);
+        r[r.length - 1] = geo.lerpPt(last[0], last[last.length - 1], amt);
+        return r;
     };
 
     // Chaikin corner cutting.

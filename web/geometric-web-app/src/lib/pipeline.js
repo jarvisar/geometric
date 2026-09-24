@@ -145,7 +145,8 @@
         layers.forEach((l, i) => {
             const pen = (l && l.pen !== undefined ? l.pen : i) % PG.MAX_PENS;
             const paths = Array.isArray(l) ? l : l.paths || [];
-            (byPen[pen] || (byPen[pen] = [])).push(...paths);
+            const into = byPen[pen] || (byPen[pen] = []);
+            for (const p of paths) into.push(p); // not push(...paths): huge outputs overflow the stack
         });
         const res = [];
         byPen.forEach((paths, pen) => {
@@ -306,7 +307,8 @@
             outlines.push(cell.shape.outline());
             for (const l of cell.layers) {
                 if (!byPen.has(l.pen)) byPen.set(l.pen, []);
-                byPen.get(l.pen).push(...l.paths);
+                const into = byPen.get(l.pen);
+                for (const p of l.paths) into.push(p);
             }
         }
         let layers = [...byPen.entries()].sort((a, b) => a[0] - b[0]).map(([pen, paths]) => ({ pen, paths }));
