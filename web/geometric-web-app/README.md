@@ -11,7 +11,7 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 
 ## Designs
 
-25 designs, each with its own controls, seeded randomness and a curated **Randomize**.
+30 designs, each with its own controls, seeded randomness and a curated **Randomize**.
 
 **Curves** — centred figures, mostly single continuous strokes
 * **Spirograph**: hypotrochoids and epitrochoids with real tooth counts, so every curve closes exactly. Nested pen-hole rings.
@@ -30,18 +30,23 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 * **Ridgelines**: *Unknown Pleasures*-style stacked profiles with proper hidden-line removal.
 * **Topographic**: contour maps of warped fractal terrain, with index contours on a second pen.
 * **Chladni**: nodal patterns of vibrating square and circular plates (real Bessel modes), with "sand" bands.
+* **Field Lines**: electric field lines and equipotentials of charges (dipoles, quadrupoles, plates, random), or the magnetic field around wires, traced so line density follows field strength.
 * **Moiré**: overlaid circles, gratings, spirals or rays on separate pens.
 * **Op-Art Warp**: Vasarely-style bulges pushing hatched checkerboards out of the page.
 
 **Tiles**
 * **Truchet**: arc, hex-arc, diagonal and hatched-triangle tiles, random or noise-structured.
 * **Islamic Stars**: Hankin's polygons-in-contact method over eight tilings, with optional woven strapwork.
+* **Penrose Tiling**: aperiodic rhombs (P3) or kites and darts (P2) by Robinson-triangle deflation, with matching arcs, hatching or nested fills.
+* **Hyperbolic Tiling**: regular {p, q} tilings of the Poincaré disk, like Escher's *Circle Limit*: edges, the triangle kaleidoscope, nested tiles or a hatched checkerboard.
+* **Celtic Knot**: interlaced knotwork on a grid of dots, with random, symmetric or framed breaks and properly alternating over/under crossings.
 * **Whirls**: pursuit-curve polygons, alone or tiled with alternating spin.
 * **Maze**: rectangular or circular (theta) mazes, with the solution on a second pen.
 * **L-System**: Hilbert, Peano, Gosper, dragons, Koch, Sierpiński, plants, kolams and your own rules, optionally with rounded corners.
 
 **Packing**
 * **Circle Packing**: packed circles filled with eccentric "bubble" rings, spirals, rings or hatching.
+* **Apollonian Gasket**: every gap between tangent circles filled by Descartes' theorem, including the integral gaskets.
 * **Subdivision**: recursive rectangles and triangles, each hatched, cross-hatched or nested at its own tone.
 * **Voronoi**: relaxed Voronoi cells with spiral insets, hatching or rounded "pebble" outlines.
 

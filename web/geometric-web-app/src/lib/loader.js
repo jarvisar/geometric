@@ -11,11 +11,11 @@
         'spirograph', 'mystery', 'harmonograph', 'maurer', 'superformula', 'guilloche',
         'timestable', 'flower', 'phyllotaxis', 'attractor',
         // Fields
-        'flowfield', 'ridgelines', 'topo', 'chladni', 'moire', 'warp',
+        'flowfield', 'ridgelines', 'topo', 'chladni', 'fieldlines', 'moire', 'warp',
         // Tiles
-        'truchet', 'islamic', 'whirl', 'maze', 'lsystem',
+        'truchet', 'islamic', 'penrose', 'hyperbolic', 'celtic', 'whirl', 'maze', 'lsystem',
         // Packing
-        'circlepack', 'subdivide', 'voronoi',
+        'circlepack', 'apollonian', 'subdivide', 'voronoi',
         // Image
         'image',
     ];
