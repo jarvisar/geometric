@@ -17,7 +17,8 @@
     function ring(p, n, scale, offset, clearR, base = 0) {
         const paths = [];
         const L = Math.max(1, Math.round(p.lines));
-        const M = Math.max(4, Math.round(p.points));
+        // a line spans one petal's sector: few petals means long lines, so sample them more
+        const M = Math.max(4, Math.round(p.points * Math.max(1, 8 / n)));
         const sector = TAU / n;
         for (let i = 0; i < n; i++) {
             const a0 = offset + sector * i;
@@ -76,7 +77,8 @@
             { id: 'ring2Scale', label: 'Size', type: 'range', min: 0.2, max: 1.2, step: 0.01, value: 0.6, show: p => p.ring2 },
             { id: 'ring2Lines', label: 'Lines per petal', type: 'range', min: 1, max: 60, step: 1, value: 12, show: p => p.ring2 },
             { type: 'section', label: 'Quality' },
-            { id: 'points', label: 'Points per line', type: 'range', min: 20, max: 300, step: 1, value: 100, random: false },
+            { id: 'points', label: 'Points per line', type: 'range', min: 20, max: 300, step: 1, value: 100, random: false,
+                hint: 'Raised automatically for flowers with fewer than 8 petals' },
         ],
 
         randomize(rng, p) {
@@ -101,7 +103,10 @@
             const perLine = (n * len / Math.max(reach, 1e-3)) * 90 * 0.4; // mm, averaged over nested sizes
             const budget = out.ring2 ? 17000 : 22000;
             out.lines = geo.clamp(Math.round(budget / perLine), 4, 30);
-            out.centre = +(reach * rng.range(0.08, 0.3)).toFixed(2);
+            // centre radius as a share of the whole flower (cr + (1 − cr)·reach); a small
+            // centre crowds every petal's lines into a few points on its rim
+            const share = rng.range(0.15, 0.3);
+            out.centre = +geo.clamp((share * reach) / (1 - share + share * reach), 0.02, 0.3).toFixed(2);
             if (out.ring2) {
                 out.ring2Scale = +rng.range(0.45, 0.8).toFixed(2);
                 out.ring2Lines = Math.max(3, Math.round(out.lines * rng.range(0.4, 0.7)));

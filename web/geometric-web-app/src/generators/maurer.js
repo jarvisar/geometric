@@ -68,24 +68,39 @@
             // trace the rose again, and steps that land on its zeros collapse
             // to a few lines, so score candidates by their distinct chords.
             const n = rng.weighted([[1, 2], [2, 3], [2, 4], [2, 5], [2, 6], [2, 7], [1, 8], [1, 9], [0.5, 10]]);
+            // ink in mm on A4: the pipeline fits the rose's bounding box to the page
+            const bb = geo.bbox([rose(n)]), mm = Math.min(180 / bb.w, 267 / bb.h);
+            const ink = paths => paths.reduce((L, path) => L + geo.pathLength(path), 0) * mm;
             // Among steps that trace a real web, pick at random rather than the
             // densest: sparser webs (a few hundred chords) are just as lovely.
-            const pickD = (lo = 150) => {
-                let best = 71, bestScore = -1;
-                for (let t = 0; t < 60; t++) {
+            // Steps whose chords hug the petals pile up ink along the rim, so
+            // webs beyond the ink budget are passed over too. Steps near a
+            // multiple of 180°/n creep along the rose (a moiré of the curve);
+            // `hug` keeps a second web away from those so the two don't pile up.
+            const pickD = (budget, seen, hug = 0) => {
+                let best = null, bestScore = -1;
+                for (let t = 0; t < 80; t++) {
                     const d = rng.int(2, 358);
                     if (d % 180 < 20 || d % 180 > 160) continue;
-                    const segs = web(n, d, 361).segments;
-                    if (segs >= lo) return d;
-                    if (segs > bestScore) { bestScore = segs; best = d; }
+                    const off = d % (180 / n);
+                    if (Math.min(off, 180 / n - off) < hug) continue;
+                    const w = web(n, d, 361, new Set(seen)), L = ink(w.paths);
+                    if (L > budget) continue;
+                    if (w.segments >= 150) return { d, L };
+                    if (w.segments > bestScore) { bestScore = w.segments; best = { d, L }; }
                 }
                 return best;
             };
-            const ink = w => w.paths.reduce((L, path) => L + geo.pathLength(path), 0) * 90; // ≈ mm on A4
-            const out = { n, d: pickD(), fine: false, count: 361, overlay: p.overlay };
+            let budget = 38000 - (p.showRose ? ink([rose(n)]) : 0);
+            const first = pickD(budget) || { d: 71, L: 0 };
+            const out = { n, d: first.d, fine: false, count: 361, overlay: p.overlay };
             if (p.overlay) {
-                out.d2 = pickD();
-                if (ink(web(n, out.d, 361)) + ink(web(n, out.d2, 361)) > 38000) out.overlay = false;
+                // the second web skips chords the first already drew
+                const seen = new Set();
+                web(n, first.d, 361, seen);
+                const second = budget - first.L > 6000 ? pickD(budget - first.L, seen, 6) : null;
+                if (second) out.d2 = second.d;
+                else out.overlay = false;
             }
             return out;
         },

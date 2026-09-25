@@ -84,11 +84,12 @@
             const ph = () => (quarter ? 90 * rng.int(0, 3) : rng.int(0, 359));
             const out = { s, m, p1: 0, p2: ph(), p3: ph(), p4: ph(), echoes: 1, echoTurn: 0 };
             for (let k = 0; k < 4; k++) { out['j' + (k + 1)] = j[k]; out['a' + (k + 1)] = +a[k].toFixed(2); }
-            if (rng.chance(0.8)) {
-                // estimated ink per copy (mm on A4) caps the echo count
-                let v = 0, ext = 0;
-                for (let k = 0; k < 4; k++) { v += a[k] * Math.abs(n[k]); ext += a[k]; }
-                const perCopy = 0.6 * TAU * v * 90 / ext;
+            // estimated ink per copy (mm on A4) caps the echo count; a lone
+            // curve is kept only when it carries enough line to fill the page
+            let v = 0, ext = 0;
+            for (let k = 0; k < 4; k++) { v += a[k] * Math.abs(n[k]); ext += a[k]; }
+            const perCopy = 0.6 * TAU * v * 90 / ext;
+            if (perCopy < 3500 || rng.chance(0.8)) {
                 out.echoes = geo.clamp(Math.floor(20000 / perCopy), 3, rng.int(5, 10));
                 out.echoWheel = rng.pick(a[3] > 0 ? ['2', '3', '4'] : ['2', '3']);
                 out.echoScale = +rng.pick([rng.range(-0.8, 0.4), rng.range(1.4, 2)]).toFixed(2);

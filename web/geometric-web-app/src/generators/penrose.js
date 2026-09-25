@@ -21,7 +21,10 @@
  * at right angles, so arcs of neighbouring tiles join into smooth curves.
  * On kites and darts they are Penrose's own (radii 1 and ψ about the kite's
  * tip and tail, ψ and ψ² about the dart's nose and notch, in short-edge
- * units), cutting every edge in the golden ratio. On rhombs, the radii
+ * units), cutting every edge in the golden ratio. The two families touch on
+ * each tile's axis; that is forced (joining needs tip + nose = φ and
+ * tail + notch = 1, so keeping them apart in the kite makes them cross in
+ * the dart and vice versa). On rhombs, the radii
  * satisfy the joining constraints of the tiling while keeping the two arcs
  * of a thin rhomb apart.
  */
@@ -160,7 +163,11 @@
             // arcs read best with the tiles; hatching and nesting often look better alone
             if (p.decor === 'arcs' || p.decor === 'none') out.outline = p.decor === 'none' || rng.chance(0.6);
             else out.outline = rng.chance(0.5);
-            if (p.decor === 'nested' || p.decor === 'hatch') out.edge = Math.max(p.edge, 12);
+            if (p.decor === 'nested' || p.decor === 'hatch') {
+                // filling one tile type leaves islands: bigger tiles and a slimmer gap keep them substantial
+                out.edge = Math.max(p.edge, p.which === 'both' ? 12 : 16);
+                if (p.which !== 'both') out.gap = Math.min(p.gap, 1);
+            }
             return out;
         },
 
@@ -185,7 +192,9 @@
             const gens = Math.max(0, Math.ceil(Math.log(need / edge) / Math.log(PHI)));
             const R = edge * Math.pow(PHI, gens);
 
-            const pad = 1e-6 * R;
+            // keep a tile's width of margin so a half on the page keeps its twin
+            // (hatch and nested fills then fill edge tiles whole, not as triangles)
+            const pad = 2 * edge;
             const onPage = ([, A, B, C]) =>
                 Math.max(A[0], B[0], C[0]) >= bb.minX - pad && Math.min(A[0], B[0], C[0]) <= bb.maxX + pad &&
                 Math.max(A[1], B[1], C[1]) >= bb.minY - pad && Math.min(A[1], B[1], C[1]) <= bb.maxY + pad;

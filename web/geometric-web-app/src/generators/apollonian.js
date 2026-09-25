@@ -20,8 +20,10 @@
     'use strict';
     const { geo, TAU } = PG;
 
-    // Integral gaskets (outer, first, second): every curvature in them is an integer.
-    const INTEGRAL = [[1, 2, 2], [2, 3, 6], [3, 4, 12], [3, 5, 8], [6, 10, 15], [6, 11, 14], [10, 14, 35]];
+    // Integral gaskets (outer, first, second): every curvature in them is an integer
+    // (the third starting circle, the smaller Descartes root, is one too).
+    const INTEGRAL = [[1, 2, 2], [2, 3, 6], [3, 4, 12], [3, 5, 8], [4, 5, 20], [4, 8, 9], [5, 7, 18],
+        [6, 10, 15], [6, 11, 14], [7, 12, 17], [8, 12, 25], [9, 18, 19], [10, 14, 35]];
 
     function spiral(cx, cy, r, s, a0, dir) {
         // one lap on the rim, then wind inward to the centre
@@ -49,6 +51,7 @@
                 hint: 'Radius of the first inner circle relative to the outer one' },
             { id: 'r2', label: 'Second circle (× room left)', type: 'range', min: 0.05, max: 1, step: 0.001, value: 1,
                 hint: '1 = the two circles span a diameter' },
+            { id: 'angle', label: 'Rotation°', type: 'range', min: 0, max: 360, step: 1, value: 0 },
             { id: 'minR', label: 'Smallest radius (mm)', type: 'range', min: 0.3, max: 10, step: 0.1, value: 1, random: [0.8, 2.5] },
             { id: 'outer', label: 'Outer circle', type: 'checkbox', value: true, random: 0.8 },
             { type: 'section', label: 'Fill' },
@@ -82,16 +85,23 @@
             const { rng } = ctx;
             const bb = geo.bbox([ctx.shape.polygon()]);
             const ox = (bb.minX + bb.maxX) / 2, oy = (bb.minY + bb.maxY) / 2;
-            const R = Math.max(1, ctx.shape.dist(ox, oy)); // the largest circle the visible area holds
+            // the largest circle the visible area holds; the gasket sits half a gap
+            // inside it so the outer ring keeps the same clearance as neighbours do
+            const gap = p.gap / 2;
+            const R = Math.max(1, ctx.shape.dist(ox, oy) - gap);
 
             // ---- the starting four circles: { x, y, k, g (generation) }, outer k < 0
             const a = geo.clamp(p.r1, 0.02, 0.98) * R;
             const b = geo.clamp(p.r2, 0.02, 1) * (R - a);
+            const rot = geo.rad(p.angle || 0), ca = Math.cos(rot), sa = Math.sin(rot);
+            const at = (u, v) => [ox + u * ca - v * sa, oy + u * sa + v * ca]; // gasket frame -> page
             const O = { x: ox, y: oy, k: -1 / R, g: 0 };
-            const C1 = { x: ox - (R - a), y: oy, k: 1 / a, g: 0 };
+            const [x1, y1] = at(-(R - a), 0);
+            const C1 = { x: x1, y: y1, k: 1 / a, g: 0 };
             // C2 touches O inside (|X| = R − b) and C1 outside (|X − C1| = a + b)
-            const x2 = -((R - b) ** 2 - (a + b) ** 2 + (R - a) ** 2) / (2 * (R - a));
-            const C2 = { x: ox + x2, y: oy - Math.sqrt(Math.max(0, (R - b) ** 2 - x2 * x2)), k: 1 / b, g: 0 };
+            const u2 = -((R - b) ** 2 - (a + b) ** 2 + (R - a) ** 2) / (2 * (R - a));
+            const [x2, y2] = at(u2, -Math.sqrt(Math.max(0, (R - b) ** 2 - u2 * u2)));
+            const C2 = { x: x2, y: y2, k: 1 / b, g: 0 };
             // C3: the larger Descartes root, placed where it touches O and C1 and checked against C2
             const k3 = O.k + C1.k + C2.k - 2 * Math.sqrt(Math.max(0, O.k * C1.k + C1.k * C2.k + C2.k * O.k));
             const r3 = 1 / k3;
@@ -127,25 +137,31 @@
             }
 
             // ---- draw
-            const s = p.spacing, gap = p.gap / 2;
+            const s = p.spacing;
             const pens = Math.max(1, p.pens | 0);
             const layers = Array.from({ length: pens }, () => []);
-            const maxG = Math.max(1, ...circles.map(c => c.g));
             const lnSpan = Math.log(R / minR) || 1;
             for (const c of circles) {
                 const outer = c.k < 0;
                 if (outer && !p.outer) continue;
-                const r = Math.abs(1 / c.k) + (outer ? 0 : -gap);
+                const r = Math.abs(1 / c.k) + (outer ? gap : -gap);
                 if (r < 0.15) continue;
                 let pen = 0;
                 if (pens > 1) {
                     if (p.penMode === 'size') pen = Math.min(pens - 1, Math.floor((Math.log(R / r) / lnSpan) * pens));
                     else if (p.penMode === 'random') pen = rng.int(0, pens - 1);
-                    else pen = Math.min(pens - 1, Math.floor((c.g / (maxG + 1)) * pens));
+                    // cycle, so each circle differs from the newest circle of its gap
+                    // (banding by depth left the later pens a few specks in the cusps)
+                    else pen = c.g % pens;
                 }
                 const out = layers[pen];
                 let style = outer ? 'outline' : p.style;
-                if (style === 'mixed') style = rng.weighted([[3, 'rings'], [3, 'eccentric'], [2, 'spiral'], [2, 'hatch'], [1, 'outline']]);
+                if (style === 'mixed') {
+                    // big circles left empty read as holes: mostly fill them
+                    style = rng.weighted(r > 5 * s
+                        ? [[3, 'rings'], [3, 'eccentric'], [2, 'spiral'], [2, 'hatch'], [0.3, 'outline']]
+                        : [[3, 'rings'], [3, 'eccentric'], [2, 'spiral'], [2, 'hatch'], [1.5, 'outline']]);
+                }
                 if (r < s * 0.9) style = 'outline';
                 if (style === 'rings') {
                     for (let rr = r; rr > s * 0.3; rr -= s) out.push(geo.circle(c.x, c.y, rr));

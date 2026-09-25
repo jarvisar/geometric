@@ -27,7 +27,7 @@
             { id: 'twist', label: 'Spiral twist°', type: 'range', min: -90, max: 90, step: 1, value: 35, show: p => p.field === 'spiral' },
             { type: 'section', label: 'Lines' },
             { id: 'spacing', label: 'Spacing (mm)', type: 'range', min: 0.6, max: 12, step: 0.1, value: 2.2, random: [1.5, 4.5] },
-            { id: 'variation', label: 'Density variation', type: 'range', min: 0, max: 0.9, step: 0.01, value: 0, random: [0, 0.6] },
+            { id: 'variation', label: 'Density variation', type: 'range', min: 0, max: 0.9, step: 0.01, value: 0, random: [0, 0.45] },
             { id: 'test', label: 'Closeness', type: 'range', min: 0.2, max: 0.95, step: 0.01, value: 0.55, random: [0.4, 0.75],
                 hint: 'How close a line may approach its neighbours before stopping (× spacing)' },
             { id: 'minLen', label: 'Min length (mm)', type: 'range', min: 0, max: 80, step: 1, value: 8, random: [2, 24] },
@@ -247,8 +247,15 @@
                     const v = noise.noise2(mid[0] * sc * 0.5 + 99, mid[1] * sc * 0.5 - 99);
                     return Math.min(n - 1, Math.floor(((v + 1) / 2) * n));
                 }
-                const a = line[0], b = line[line.length - 1];
-                let ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+                // mean orientation of the line (averaging doubled angles, so a
+                // segment and its reverse agree); the chord alone is meaningless
+                // for lines that curl round
+                let c2 = 0, s2 = 0;
+                for (let k = 1; k < line.length; k++) {
+                    const dx = line[k][0] - line[k - 1][0], dy = line[k][1] - line[k - 1][1], L = dx * dx + dy * dy;
+                    if (L > 0) { c2 += (dx * dx - dy * dy) / Math.sqrt(L); s2 += (2 * dx * dy) / Math.sqrt(L); }
+                }
+                let ang = Math.atan2(s2, c2) / 2;
                 if (ang < 0) ang += Math.PI;
                 if (ang >= Math.PI) ang -= Math.PI;
                 return Math.min(n - 1, Math.floor((ang / Math.PI) * n));

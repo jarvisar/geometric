@@ -54,7 +54,7 @@
                 show: p => p.style === 'eccentric' || p.style === 'mixed' },
             { id: 'spread', label: 'Direction spread°', type: 'range', min: 0, max: 180, step: 1, value: 25, random: [0, 60],
                 show: p => p.style === 'eccentric' || p.style === 'mixed' },
-            { id: 'rim', label: 'Outline hatched circles', type: 'checkbox', value: true,
+            { id: 'rim', label: 'Outline hatched circles', type: 'checkbox', value: true, random: 0.75,
                 show: p => p.style === 'hatch' || p.style === 'mixed' },
             { type: 'section', label: 'Pens' },
             { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false },

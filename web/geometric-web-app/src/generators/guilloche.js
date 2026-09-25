@@ -17,7 +17,9 @@
     // K closed lines filling one band.
     function band(o) {
         const lines = [];
-        const M = Math.min(20000, Math.ceil(Math.max(360, o.N * 18 * (1 + Math.min(o.loop, 3) * 0.6)) * o.quality));
+        // ~40 samples per wave (more for loops and sharp crests) keep the chord error
+        // near 0.02 mm at A4 size; the pipeline simplifies the flat stretches away
+        const M = Math.min(30000, Math.ceil(Math.max(720, o.N * 40 * (1 + Math.min(o.loop, 3) * 0.6) * Math.max(1, Math.min(o.pw, 3))) * o.quality));
         for (let k = 0; k < o.K; k++) {
             const ph = (TAU * k) / o.K;
             const pts = new Array(M + 1);
@@ -141,9 +143,12 @@
                 const Nc = Math.max(1, Math.round(p.centreWaves));
                 // same line spacing as the outer band, measured at 60% of the rosette radius
                 const Kc = geo.clamp(Math.round((K * N0 * rc * 0.6) / (mid0 * Nc)), 2, 24);
+                // the Kc·Nc troughs all touch the inner circle: keep them ~0.7 mm
+                // apart on A4 (radius 1 ≈ 90 mm) so the middle doesn't ink over
+                const rin = Math.max(rc * 0.12, Math.min(rc * 0.4, Kc * Nc * 0.0012));
                 const lines = band({
                     K: Kc, N: Nc, pw: 1, loop: 0, quality: p.quality,
-                    ro: rc, ri: rc * 0.12, ao: 0, ai: 0, mo: 0, mi: 0, rot: 0,
+                    ro: rc, ri: rin, ao: 0, ai: 0, mo: 0, mi: 0, rot: 0,
                 });
                 layers[B % pens].push(...lines);
             }

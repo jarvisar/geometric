@@ -78,17 +78,26 @@
             const base = epi ? R + r : R - r;
             const innerTurns = Math.abs(epi ? P + Q : P - Q) + Q;
             const layers = Array.from({ length: p.pens }, () => []);
-            if (!epi && r === R) {
-                // a gear as big as the ring can't roll: the pen just circles the centre
-                layers[0].push(geo.circle(0, 0, r * p.hole, 360));
-                return { layers };
-            }
-
+            const seen = new Set();
             for (let ring = 0; ring < p.rings; ring++) {
                 const hole = p.hole + ring * p.holeStep;
                 if (hole < 0.01) break; // further rings would overdraw the same tiny curve
                 const d = r * hole;
-                const N = Math.min(250000, Math.ceil(innerTurns * 90 * p.quality * Math.max(1, d / r)));
+                if (!epi && r === R) {
+                    // a gear as big as the ring can't roll: the pen just circles the centre
+                    if (ring === 0 || p.holeStep) layers[ring % p.pens].push(geo.circle(0, 0, d, 360));
+                    continue;
+                }
+                // with no hole change, rings rotated by a multiple of the P-fold
+                // symmetry land exactly on an earlier ring: skip the overdraw
+                if (!p.holeStep) {
+                    const sym = 360 / P, a = (((ring * p.ringRotate) % sym) + sym) % sym;
+                    const key = Math.round(a * 1000) % Math.round(sym * 1000);
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                }
+                // point budget shared by all rings keeps extreme settings responsive
+                const N = Math.min(Math.ceil(400000 / p.rings), Math.ceil(innerTurns * 90 * p.quality * geo.clamp(d / r, 1, 2)));
                 const rot = geo.rad(ring * p.ringRotate);
                 const c = Math.cos(rot), s = Math.sin(rot);
                 const tMax = TAU * Q;

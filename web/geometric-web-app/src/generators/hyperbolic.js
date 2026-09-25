@@ -55,6 +55,25 @@
         return [(nx * dx + ny * dy) / d, (ny * dx - nx * dy) / d];
     }
 
+    // Points reached along different chains of reflections agree only to ~1e-12,
+    // which can straddle any rounding boundary, so identify them with a tolerance:
+    // a hash grid of 1e-6 cells searched 3 × 3, matching within 1e-9.
+    function pointIds() {
+        const grid = new Map();
+        let count = 0;
+        return z => {
+            const gx = Math.round(z[0] * 1e6), gy = Math.round(z[1] * 1e6);
+            for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+                const list = grid.get((gx + dx) * 4194304 + gy + dy);
+                if (list) for (const q of list) if (Math.abs(q[0] - z[0]) < 1e-9 && Math.abs(q[1] - z[1]) < 1e-9) return q[2];
+            }
+            const k = gx * 4194304 + gy;
+            if (!grid.has(k)) grid.set(k, []);
+            grid.get(k).push([z[0], z[1], count]);
+            return count++;
+        };
+    }
+
     // Curated {p, q} pairs that all read well.
     const PAIRS = [[7, 3], [3, 7], [5, 4], [4, 5], [6, 4], [4, 6], [8, 3], [3, 8], [5, 5], [6, 6], [8, 4], [4, 8], [12, 3], [7, 4], [10, 3]];
 
@@ -148,17 +167,19 @@
 
             // ---- breadth-first reflection in tile edges
             const tileSize = t => Rd * Math.max(...t.pts.slice(1, p + 1).map(v => geo.dist(v, t.pts[0])));
-            const key = z => `${Math.round(z[0] * 1e7)},${Math.round(z[1] * 1e7)}`;
+            const id = pointIds();
             const tiles = [{ pts: first, parity: 0 }];
-            const seen = new Set([key(first[0])]);
+            const seen = new Set([id(first[0])]);
             const minSize = Math.max(0.3, prm.minSize);
             for (let head = 0; head < tiles.length && tiles.length < 25000; head++) {
                 const t = tiles[head];
                 if (tileSize(t) < minSize) continue;
                 for (let i = 0; i < p; i++) {
                     const g = geodesic(t.pts[V(i)], t.pts[V(i + 1)]);
-                    const c = reflect(t.pts[0], g), k = key(c);
-                    if (seen.has(k) || Math.hypot(c[0], c[1]) >= 1) continue;
+                    const c = reflect(t.pts[0], g);
+                    if (Math.hypot(c[0], c[1]) >= 1) continue;
+                    const k = id(c);
+                    if (seen.has(k)) continue;
                     seen.add(k);
                     tiles.push({ pts: t.pts.map(z => reflect(z, g)), parity: 1 - t.parity });
                 }
@@ -180,7 +201,7 @@
             const done = new Set();
             const emit = (a, b, out) => {
                 if (geo.dist(a, b) * Rd < 0.15) return;
-                const ka = key(a), kb = key(b), k = ka < kb ? ka + '|' + kb : kb + '|' + ka;
+                const ia = id(a), ib = id(b), k = ia < ib ? ia * 1e8 + ib : ib * 1e8 + ia;
                 if (done.has(k)) return;
                 done.add(k);
                 out.push(arc(a, b));

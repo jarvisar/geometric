@@ -13,7 +13,7 @@
     const { geo, TAU } = PG;
 
     // One closed superformula curve with max radius 1.
-    function shape(m, n1, n2, n3, quality) {
+    function shape(m, n1, n2, n3, quality, maxN = 24000) {
         const k = Math.round(m * 2); // m in half steps
         const sym = Math.abs(n2 - n3) < 1e-9;
         let turns;
@@ -25,7 +25,7 @@
         const logR = phi => -Math.log(Math.pow(Math.abs(Math.cos(q * phi)), n2) + Math.pow(Math.abs(Math.sin(q * phi)), n3)) / n1;
 
         // dense enough for sharp spikes (small n1) and many lobes
-        let N = Math.min(24000, Math.ceil(turns * (300 + 90 * Math.abs(m)) * (n1 < 1 ? 2 : 1) * quality));
+        let N = Math.min(maxN, Math.ceil(turns * (300 + 90 * Math.abs(m)) * (n1 < 1 ? 2 : 1) * quality));
         // a multiple of the lobe count puts a sample exactly on every spike tip
         const per = Math.max(1, Math.abs(k) * turns);
         N = Math.ceil(N / per) * per;
@@ -81,20 +81,24 @@
             // (two overlapping sweeps) only with n2 = n3 so it stays light.
             const half = rng.chance(0.12);
             const m = rng.weighted([[3, rng.int(3, 8)], [1, rng.int(9, 14)]]) + (half ? 0.5 : 0);
-            const set = () => {
-                const style = rng.weighted([[3, 'star'], [1, 'round'], [3, 'spiky'], [2, 'petal'], [3, 'bourke']]);
+            const set = (round = 1) => {
+                const style = rng.weighted([[3, 'star'], [round, 'round'], [3, 'spiky'], [2, 'petal'], [3, 'bourke']]);
                 if (style === 'star') return [rng.range(1, 4), rng.range(4, 12)];
-                if (style === 'round') return [rng.range(4, 20), rng.range(2, 8)];
+                if (style === 'round') return [rng.range(4, 20), rng.range(2, 8), true];
                 if (style === 'spiky') return [rng.range(0.25, 0.6), rng.range(0.5, 1.5)];
                 if (style === 'bourke') return [rng.range(0.8, 1.5), rng.range(5, 9)];
                 return [rng.range(0.6, 2), rng.range(0.5, 1)];
             };
-            const [a1, a2] = set(), [b1, b2] = set();
+            // a round outer shape needs a different inner one, or the stack is
+            // just nested squircles
+            const [a1, a2, round] = set(), [b1, b2] = set(round ? 0 : 1);
             const asym = () => (half || rng.chance(0.7) ? 1 : rng.range(0.7, 1.4));
             const r2 = v => +v.toFixed(2);
             // m stays fixed along the stack: a changing m jumps between rounded
             // symmetries and breaks the smooth morph
             const out = { m, m2: m, n1: r2(a1), n2: r2(a2), n3: r2(a2 * asym()), n1b: r2(b1), n2b: r2(b2), n3b: r2(b2 * asym()) };
+            // ... and a good twist to turn them into a vortex
+            if (round && Math.abs(p.twist) < 1.5) out.twist = +(rng.sign() * rng.range(1.5, 4)).toFixed(1);
             // keep the ink to roughly 25 m on A4 (a unit radius ends up ≈ 90 mm):
             // measure a few shapes along the stack
             let avg = 0;
@@ -116,7 +120,9 @@
                 const f = K > 1 ? i / (K - 1) : 0;
                 const g = Math.pow(f, p.ease);
                 const m = Math.round(geo.lerp(p.m, p.m2, g) * 2) / 2;
-                const pts = shape(m, geo.lerp(p.n1, p.n1b, g), geo.lerp(p.n2, p.n2b, g), geo.lerp(p.n3, p.n3b, g), p.quality);
+                // the point budget is shared by the stack so extreme settings stay responsive
+            const pts = shape(m, geo.lerp(p.n1, p.n1b, g), geo.lerp(p.n2, p.n2b, g), geo.lerp(p.n3, p.n3b, g), p.quality,
+                Math.min(24000, Math.ceil(600000 / K)));
                 const s = geo.lerp(1, p.inner, f);
                 if (s <= 1e-4) continue;
                 const a = geo.rad(p.twist * i), c = Math.cos(a) * s, sn = Math.sin(a) * s;

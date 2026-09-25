@@ -56,6 +56,23 @@
                 hint: 'Integration step for the field lines' },
         ],
 
+        randomize(rng, p) {
+            const out = {};
+            // the set pieces are unit charges huddled round the centre: give them
+            // more lines and more of the page than a random scatter needs
+            if (p.layout === 'dipole' || p.layout === 'like' || p.layout === 'quadrupole') {
+                out.spread = +rng.range(0.6, 0.95).toFixed(2);
+                out.density = rng.int(20, 36);
+            } else if (p.layout === 'ring') {
+                out.spread = +rng.range(0.65, 0.95).toFixed(2);
+                out.count = rng.int(3, 8);
+                out.density = rng.int(14, 28);
+            }
+            // wire contours thin out fast away from the wires
+            if (p.kind === 'magnetic') out.density = rng.int(18, 32);
+            return out;
+        },
+
         generate(p, ctx) {
             const { width: W, height: H, rng } = ctx;
             const bb = geo.bbox([ctx.shape.polygon()]);
@@ -77,8 +94,12 @@
                 for (let i = 0; i < n; i++) { const u = -0.8 + (1.6 * i) / (n - 1); at(u, -0.35, 0.5); at(u, 0.35, -0.5); }
             } else {
                 const n = Math.max(2, Math.round(p.count)), minD = (1.6 * S) / Math.sqrt(n);
+                // stretch the scatter along the long side of the page
+                const ar = bb.w / bb.h, su = ar > 1 ? Math.min(1.4, ar) : 1, sv = ar < 1 ? Math.min(1.4, 1 / ar) : 1;
                 for (let t = 0; t < 400 * n && src.length < n; t++) {
-                    const u = rng.range(-1, 1), v = rng.range(-1, 1) * (bb.h / bb.w > 1 ? Math.min(1.4, bb.h / bb.w) : 1);
+                    const u = rng.range(-1, 1) * su, v = rng.range(-1, 1) * sv;
+                    // (the bbox is larger than the visible area when the page is rotated)
+                    if (ctx.shape.dist(cx + u * S, cy + v * S) < 0.1 * S) continue;
                     if (src.some(s => Math.hypot(s.x - (cx + u * S), s.y - (cy + v * S)) < minD)) continue;
                     at(u, v, (rng.chance(p.balance) ? 1 : -1) * rng.pick([1, 1, 2, 3]));
                 }
@@ -89,6 +110,14 @@
 
             const mk = Math.max(0, p.marker);
             const layers = [[], [], []];
+            // Lines per source, and the radius inside which they would crowd
+            // closer than ~0.45 mm (a solid blot of ink with a fine pen). Electric
+            // lines stop there, and markers grow to it, so big charges read bigger.
+            for (const s of src) {
+                s.lines = Math.max(1, Math.round(p.density * Math.abs(s.q)));
+                s.crowd = p.kind === 'magnetic' ? 0 : Math.min((s.lines * 0.45) / TAU, 0.2 * S);
+                s.r = mk > 0 ? Math.max(mk, s.crowd) : 0;
+            }
 
             // ψ = Σ q ln r: minus the electric potential, or the magnetic flux function
             const psi = (x, y) => {
@@ -103,12 +132,11 @@
                 // levels spanning the page, not the singular values right at the sources
                 const vals = Float64Array.from(f.values).sort();
                 const lo = vals[Math.floor(vals.length * 0.01)], hi = vals[Math.floor(vals.length * 0.99)];
-                const cut = mk + 0.6;
                 for (const level of PG.contourLevels(f, Math.max(1, Math.round(count)), lo, hi)) {
                     for (const line of PG.isolines(f, level)) {
                         let cur = null;
                         for (const q of line) {
-                            if (src.some(s => Math.hypot(q[0] - s.x, q[1] - s.y) < cut)) { cur = null; continue; }
+                            if (src.some(s => s.r > 0 && Math.hypot(q[0] - s.x, q[1] - s.y) < s.r + 0.6)) { cur = null; continue; }
                             if (!cur) { cur = []; out.push(cur); }
                             cur.push(q);
                         }
@@ -140,7 +168,7 @@
                 const trace = (from, a, sg) => {
                     let x = from.x + r0 * Math.cos(a), y = from.y + r0 * Math.sin(a);
                     const pts = [[x, y]];
-                    let len = 0;
+                    let len = 0, prev = null;
                     while (len < maxLen) {
                         let dmin = Infinity, near = -1;
                         for (let i = 0; i < src.length; i++) {
@@ -154,6 +182,10 @@
                         const off = x < bb.minX || y < bb.minY || x > bb.maxX || y > bb.maxY;
                         const h = geo.clamp(0.25 * dmin, 0.01, off ? 4 * hMax : hMax);
                         const k1 = dir(x, y, sg); if (!k1) break;
+                        // the direction flips across a null point (between like charges,
+                        // at a quadrupole's centre): stop instead of dithering on it
+                        if (prev && k1[0] * prev[0] + k1[1] * prev[1] < -0.5) break;
+                        prev = k1;
                         const k2 = dir(x + (h / 2) * k1[0], y + (h / 2) * k1[1], sg); if (!k2) break;
                         const k3 = dir(x + (h / 2) * k2[0], y + (h / 2) * k2[1], sg); if (!k3) break;
                         const k4 = dir(x + h * k3[0], y + h * k3[1], sg); if (!k4) break;
@@ -165,12 +197,13 @@
                     }
                     return { path: pts, end: -1 };
                 };
-                // cut out the parts inside markers, and thin the tiny steps taken near charges
+                // cut out the parts inside markers (or where lines crowd), and thin
+                // the tiny steps taken near charges
                 const tidy = path => {
                     const out = [];
                     let cur = null;
                     for (const q of path) {
-                        if (mk > 0 && src.some(s => Math.hypot(q[0] - s.x, q[1] - s.y) < mk)) { cur = null; continue; }
+                        if (src.some(s => Math.hypot(q[0] - s.x, q[1] - s.y) < Math.max(s.r, s.crowd))) { cur = null; continue; }
                         if (!cur) { cur = []; out.push(cur); }
                         const last = cur[cur.length - 1];
                         if (!last || Math.hypot(q[0] - last[0], q[1] - last[1]) > 0.05) cur.push(q);
@@ -179,7 +212,7 @@
                 };
                 const phase = rng.range(0, 1);
                 for (const s of src) {
-                    const n = Math.max(1, Math.round(p.density * Math.abs(s.q)));
+                    const n = s.lines;
                     const sg = s.q > 0 ? 1 : -1;
                     for (let i = 0; i < n; i++) {
                         const { path, end } = trace(s, (TAU * (i + phase)) / n, sg);
@@ -193,7 +226,7 @@
             // ---- markers: ⊕ / ⊖ for charges, ⊙ / ⊗ for currents
             if (mk > 0) {
                 for (const s of src) {
-                    const r = mk, g = r * 0.5, out = layers[0];
+                    const r = s.r, g = r * 0.5, out = layers[0];
                     out.push(geo.circle(s.x, s.y, r));
                     if (p.kind === 'magnetic') {
                         if (s.q > 0) out.push(geo.circle(s.x, s.y, r * 0.18));
