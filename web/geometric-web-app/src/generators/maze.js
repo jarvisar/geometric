@@ -59,7 +59,7 @@
             inTree[start] = 1;
             const order = rng.shuffle(Array.from({ length: N }, (_, i) => i));
             for (const s of order) {
-                if (inTree[s]) continue;
+                if (inTree[s] || !nbrs[s].length) continue; // masked-out cells have no neighbours
                 let c = s;
                 while (!inTree[c]) { next[c] = pickW(nbrs[c])[0]; c = next[c]; }
                 for (c = s; !inTree[c]; c = next[c]) { inTree[c] = 1; link(c, next[c]); }
@@ -108,44 +108,93 @@
 
     function rectMaze(p, ctx) {
         const { width: W, height: H, rng } = ctx;
+        // Only cells lying wholly inside the clip shape (circle, hexagon, rotated page…)
+        // are used: the largest 4-connected group of them. Cells shrink until a few fit.
         let c = Math.min(p.cell, W / 2, H / 2); // at least 2 × 2 cells, all inside the area
-        let cols = Math.max(2, Math.floor(W / c)), rows = Math.max(2, Math.floor(H / c));
-        if (cols * rows > 60000) { c *= Math.sqrt((cols * rows) / 60000); cols = Math.floor(W / c); rows = Math.floor(H / c); }
-        const ox = (W - cols * c) / 2, oy = (H - rows * c) / 2;
+        let cols, rows, ox, oy, inc, count;
+        for (let tries = 0; ; tries++) {
+            cols = Math.max(2, Math.floor(W / c)); rows = Math.max(2, Math.floor(H / c));
+            if (cols * rows > 60000) { c *= Math.sqrt((cols * rows) / 60000); cols = Math.floor(W / c); rows = Math.floor(H / c); }
+            ox = (W - cols * c) / 2; oy = (H - rows * c) / 2;
+            const corner = new Uint8Array((cols + 1) * (rows + 1));
+            for (let j = 0; j <= rows; j++) for (let i = 0; i <= cols; i++) corner[j * (cols + 1) + i] = ctx.shape.dist(ox + i * c, oy + j * c) > -1e-6 ? 1 : 0;
+            const ok = (i, j) => corner[j * (cols + 1) + i] && corner[j * (cols + 1) + i + 1] && corner[(j + 1) * (cols + 1) + i] && corner[(j + 1) * (cols + 1) + i + 1];
+            inc = new Int32Array(cols * rows); // 0 outside, else a group label; then 1 = kept
+            count = 0;
+            let label = 1, best = 0, bestLabel = 0;
+            for (let s = 0; s < cols * rows; s++) {
+                if (inc[s] || !ok(s % cols, Math.floor(s / cols))) continue;
+                label++;
+                let size = 0;
+                const stack = [s];
+                inc[s] = label;
+                while (stack.length) {
+                    const k = stack.pop(), i = k % cols, j = Math.floor(k / cols);
+                    size++;
+                    for (const [a, b] of [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]]) {
+                        if (a < 0 || b < 0 || a >= cols || b >= rows || inc[b * cols + a] || !ok(a, b)) continue;
+                        inc[b * cols + a] = label;
+                        stack.push(b * cols + a);
+                    }
+                }
+                if (size > best) { best = size; bestLabel = label; }
+            }
+            for (let s = 0; s < inc.length; s++) inc[s] = inc[s] === bestLabel ? 1 : 0;
+            count = best;
+            if (count >= 4 || tries > 30) break;
+            c *= 0.85;
+        }
         const N = cols * rows, id = (i, j) => j * cols + i;
+        const on = (i, j) => i >= 0 && j >= 0 && i < cols && j < rows && inc[id(i, j)] === 1;
         const nbrs = Array.from({ length: N }, () => []);
         for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
-            if (i + 1 < cols) { nbrs[id(i, j)].push([id(i + 1, j), 0]); nbrs[id(i + 1, j)].push([id(i, j), 0]); }
-            if (j + 1 < rows) { nbrs[id(i, j)].push([id(i, j + 1), 1]); nbrs[id(i, j + 1)].push([id(i, j), 1]); }
+            if (!on(i, j)) continue;
+            if (on(i + 1, j)) { nbrs[id(i, j)].push([id(i + 1, j), 0]); nbrs[id(i + 1, j)].push([id(i, j), 0]); }
+            if (on(i, j + 1)) { nbrs[id(i, j)].push([id(i, j + 1), 1]); nbrs[id(i, j + 1)].push([id(i, j), 1]); }
         }
         const b = geo.clamp(p.bias, -0.95, 0.95);
-        const maze = carve(N, nbrs, p.algorithm, k => (k ? 1 - b : 1 + b), rng, id(rng.int(0, cols - 1), rng.int(0, rows - 1)));
+        const kept = [];
+        for (let s = 0; s < N; s++) if (inc[s]) kept.push(s);
+        const start = count === N ? id(rng.int(0, cols - 1), rng.int(0, rows - 1)) : rng.pick(kept);
+        const maze = carve(N, nbrs, p.algorithm, k => (k ? 1 - b : 1 + b), rng, start);
 
+        // entrance in the top row near the left, exit in the bottom row near the right
+        const jTop = Math.floor(kept[0] / cols), jBot = Math.floor(kept[kept.length - 1] / cols);
+        const top = [], bot = [];
+        for (let i = 0; i < cols; i++) { if (on(i, jTop)) top.push(i); if (on(i, jBot)) bot.push(i); }
+        const inCol = top[rng.int(0, Math.max(0, Math.floor(top.length / 4) - 1))];
+        const outCol = bot[bot.length - 1 - rng.int(0, Math.max(0, Math.floor(bot.length / 4) - 1))];
+
+        // walls: every grid edge with a kept cell on either side, unless it is a passage or a door
         const walls = [];
-        for (let j = 1; j < rows; j++) {
+        for (let j = 0; j <= rows; j++) {
             const y = oy + j * c;
             const f = [];
-            for (let i = 0; i < cols; i++) f.push(!maze.has(id(i, j - 1), id(i, j)));
+            for (let i = 0; i < cols; i++) {
+                const A = on(i, j - 1), B = on(i, j);
+                const door = (B && j === jTop && i === inCol) || (A && j === jBot + 1 && i === outCol);
+                f.push((A || B) && !door && !(A && B && maze.has(id(i, j - 1), id(i, j))));
+            }
             for (const [s, e] of runs(f)) walls.push([[ox + s * c, y], [ox + e * c, y]]);
         }
-        for (let i = 1; i < cols; i++) {
+        for (let i = 0; i <= cols; i++) {
             const x = ox + i * c;
             const f = [];
-            for (let j = 0; j < rows; j++) f.push(!maze.has(id(i - 1, j), id(i, j)));
+            for (let j = 0; j < rows; j++) {
+                const A = on(i - 1, j), B = on(i, j);
+                f.push((A || B) && !(A && B && maze.has(id(i - 1, j), id(i, j))));
+            }
             for (const [s, e] of runs(f)) walls.push([[x, oy + s * c], [x, oy + e * c]]);
         }
-        // outer wall: entrance in the top wall near the left, exit in the bottom wall near the right
-        const q = Math.max(0, Math.floor(cols / 4) - 1);
-        const inCol = rng.int(0, q), outCol = cols - 1 - rng.int(0, q);
-        const x0 = ox, x1 = ox + cols * c, y0 = oy, y1 = oy + rows * c;
-        walls.push([[ox + (inCol + 1) * c, y0], [x1, y0], [x1, y1], [ox + (outCol + 1) * c, y1]]);
-        walls.push([[ox + outCol * c, y1], [x0, y1], [x0, y0], [ox + inCol * c, y0]]);
 
         if (!p.solution) return walls;
-        const cells = solve(N, nbrs, maze, id(inCol, 0), id(outCol, rows - 1));
-        const path = [[ox + (inCol + 0.5) * c, y0 - c / 2]];
+        const cells = solve(N, nbrs, maze, id(inCol, jTop), id(outCol, jBot));
+        // lead in and out through the doors, as far as the drawing area allows
+        const xa = ox + (inCol + 0.5) * c, xb = ox + (outCol + 0.5) * c, y0 = oy + jTop * c, y1 = oy + (jBot + 1) * c;
+        const lead = (x, y) => Math.min(c / 2, Math.max(0, ctx.shape.dist(x, y) - 0.3));
+        const path = [[xa, y0 - lead(xa, y0)]];
         for (const k of cells) path.push([ox + ((k % cols) + 0.5) * c, oy + (Math.floor(k / cols) + 0.5) * c]);
-        path.push([ox + (outCol + 0.5) * c, y1 + c / 2]);
+        path.push([xb, y1 + lead(xb, y1)]);
         return { layers: [walls, [geo.roundCorners(path, p.round, 8)]] };
     }
 
@@ -223,7 +272,8 @@
         const ringOf = k => { let i = rings - 1; while (base[i] > k) i--; return i; };
         const mid = k => { const i = ringOf(k); return [a0 + (TAU * (k - base[i] + 0.5)) / n[i], i ? (i + 0.5) * c : 0]; };
         let [ta] = mid(cells[0]);
-        const poly = [[ta, Ro + c / 2], [ta, (rings - 0.5) * c]];
+        // lead in from outside the entrance, but not past the edge of the drawing area
+        const poly = [[ta, Math.min(Ro + c / 2, Math.max(Ro, R - 0.3))], [ta, (rings - 0.5) * c]];
         for (let s = 1; s < cells.length; s++) {
             const A = ringOf(cells[s - 1]), B = ringOf(cells[s]);
             const [tb, rb] = mid(cells[s]);

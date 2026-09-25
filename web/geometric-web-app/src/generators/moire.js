@@ -90,7 +90,7 @@
                 Math.hypot(c[0], c[1]), Math.hypot(W - c[0], c[1]),
                 Math.hypot(c[0], H - c[1]), Math.hypot(W - c[0], H - c[1])) + 1;
 
-            const layers = [];
+            const layers = [], flat = [];
             for (let k = 0; k < sets; k++) {
                 const sp = Math.max(0.5, p.spacing * Math.pow(1 + p.stretch / 100, k));
                 const c = p.pattern === 'lines' ? [cx, cy] : centres[k];
@@ -142,6 +142,11 @@
                     }
                 }
 
+                // a set identical to an earlier one (no offset, rotation or stretch
+                // between them, and no wobble) would only redraw the same lines
+                if (!(p.wobble > 0) && flat.some(q => samePaths(q, paths))) continue;
+                flat.push(paths);
+
                 if (p.wobble > 0 && k > 0) {
                     const s = 1 / p.wobbleScale, amp = p.wobble, o = k * 57.3; // independent field per set
                     paths = paths.map(path => geo.resample(path, 1).map(q => [
@@ -154,4 +159,16 @@
             return p.separate ? { layers } : [].concat(...layers);
         },
     });
+
+    function samePaths(A, B) {
+        if (A.length !== B.length) return false;
+        for (let i = 0; i < A.length; i++) {
+            const a = A[i], b = B[i];
+            if (a.length !== b.length) return false;
+            for (let j = 0; j < a.length; j++) {
+                if (Math.abs(a[j][0] - b[j][0]) > 1e-6 || Math.abs(a[j][1] - b[j][1]) > 1e-6) return false;
+            }
+        }
+        return true;
+    }
 })();

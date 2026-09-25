@@ -66,7 +66,7 @@
         dadras: [[0, 0, 0], [30, 30, 0], [-30, 20, 0]],
         chen: [[0, 0, 0], [0, 35, 0], [-20, 0, 0]],
         sprott: [[0, 0, 0], [-30, 0, 0], [-60, 20, 0]],
-        fourwing: [[0, 0, 0], [-45, 20, 0], [0, 40, 0]],
+        fourwing: [[0, 0, 0], [-30, 0, 0], [0, 40, 0]],                             // steeper tilts show a wing edge-on as a spike
     };
 
     function integrate(sys, steps, dt, transient, jitter) {
@@ -83,10 +83,11 @@
             return isFinite(x) && isFinite(y) && isFinite(z) && Math.abs(x) + Math.abs(y) + Math.abs(z) < 1e5;
         };
         for (let i = 0; i < transient; i++) if (!step()) return [];
-        const pts = [[x, y, z]];
+        // each point also keeps its velocity, for smooth in-between points later
+        const pts = [[x, y, z, ...f(x, y, z)]];
         for (let i = 0; i < steps; i++) {
             if (!step()) break;
-            pts.push([x, y, z]);
+            pts.push([x, y, z, ...f(x, y, z)]);
         }
         return pts;
     }
@@ -140,13 +141,29 @@
             const c = [0, 1, 2].map(i => (lo[i] + hi[i]) / 2);
             const s = 2 / Math.max(1e-9, hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
 
+            // Fast stretches take long steps. Fill them in with cubic Hermite points
+            // (position and velocity at both ends of the step), so the line stays
+            // smooth to ~0.012 unit (≈1 mm on A4) without changing the trajectory.
+            const seg = 0.012 / s;
+            const path = [raw[0]];
+            for (let i = 1; i < raw.length; i++) {
+                const a = raw[i - 1], b = raw[i];
+                const n = Math.min(8, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / seg));
+                for (let j = 1; j < n; j++) {
+                    const t = j / n, t2 = t * t, t3 = t2 * t;
+                    const h00 = 2 * t3 - 3 * t2 + 1, h10 = (t3 - 2 * t2 + t) * dt, h01 = 3 * t2 - 2 * t3, h11 = (t3 - t2) * dt;
+                    path.push([0, 1, 2].map(k => h00 * a[k] + h10 * a[k + 3] + h01 * b[k] + h11 * b[k + 3]));
+                }
+                path.push(b);
+            }
+
             const rx = geo.rad(p.rotX), ry = geo.rad(p.rotY), rz = geo.rad(p.rotZ);
             const cx = Math.cos(rx), sx = Math.sin(rx), cy = Math.cos(ry), sy = Math.sin(ry), cz = Math.cos(rz), sz = Math.sin(rz);
             // camera distance in unit radii, kept outside the √3 sphere the rotated points can reach
             const cam = Math.max(2.5, 1.5 + 8 * (1 - p.persp) * (1 - p.persp));
-            const pts = new Array(raw.length), depth = new Float64Array(raw.length);
-            for (let i = 0; i < raw.length; i++) {
-                const q = raw[i];
+            const pts = new Array(path.length), depth = new Float64Array(path.length);
+            for (let i = 0; i < path.length; i++) {
+                const q = path[i];
                 let x = (q[ax] - c[ax]) * s, y = (q[ay] - c[ay]) * s, z = (q[az] - c[az]) * s;
                 let t = y * cx - z * sx; z = y * sx + z * cx; y = t;   // about X
                 t = x * cy + z * sy; z = -x * sy + z * cy; x = t;      // about Y

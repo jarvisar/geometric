@@ -133,7 +133,12 @@
                     const layer = layers[dirLayer(fi % 2)];
                     for (let s = 0; s < F; s++) {
                         let run = null;
-                        for (let k = s; k + F < N; k += F) {
+                        // A fixed pair's spirals all start among the first F seeds and would
+                        // meet in a dense star; start those from the innermost third one turn out.
+                        // (A tighter link limit can't do this: the rim links of the smaller
+                        // family are up to ~2.9 gaps long, as long as the inner ones.)
+                        const k0 = p.para === 'pair' && s < F / 3 ? s + F : s;
+                        for (let k = k0; k + F < N; k += F) {
                             const d = Math.hypot(X[k + F] - X[k], Y[k + F] - Y[k]);
                             const ok = d <= limit * gap(k + F / 2) && (!best || best[2 * k] === F || best[2 * k + 1] === F);
                             if (!ok) {

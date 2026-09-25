@@ -29,7 +29,7 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 * **Flow Field**: evenly spaced streamlines (Jobard–Lefer) through noise, curl, vortex, wave or spiral fields.
 * **Ridgelines**: *Unknown Pleasures*-style stacked profiles with proper hidden-line removal.
 * **Topographic**: contour maps of warped fractal terrain, with index contours on a second pen.
-* **Chladni**: nodal patterns of vibrating square and circular plates (real Bessel modes), with "sand" bands.
+* **Chladni**: nodal patterns of vibrating square plates and circular membranes (real Bessel modes), with "sand" bands.
 * **Field Lines**: electric field lines and equipotentials of charges (dipoles, quadrupoles, plates, random), or the magnetic field around wires, traced so line density follows field strength.
 * **Moiré**: overlaid circles, gratings, spirals or rays on separate pens.
 * **Op-Art Warp**: Vasarely-style bulges pushing hatched checkerboards out of the page.

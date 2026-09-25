@@ -88,9 +88,10 @@
             const top = Math.min(p.padY, H / 3);
             const yFront = H - top;
             // leave room for the back row's peaks, but never let the back pass the front
-            const yBack = Math.min(top + A * 0.85, yFront - 0.3 * (yFront - top));
+            // (the back row's peaks are shrunk by perspective, so need less room)
             const depthPos = z => (k > 0 ? ((1 - 1 / (1 + k * z)) * (1 + k)) / k : z);
             const depthScale = z => 1 / (1 + k * z);
+            const yBack = Math.min(top + A * 0.85 * depthScale(1), yFront - 0.3 * (yFront - top));
 
             const sc = 1 / p.scale;
             // how far apart neighbouring lines are in noise space

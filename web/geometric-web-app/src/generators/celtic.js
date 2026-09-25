@@ -54,9 +54,10 @@
             { id: 'ringGaps', label: 'Openings in frames', type: 'range', min: 0, max: 0.9, step: 0.01, value: 0.25, random: [0, 0.5],
                 show: p => p.breaks === 'rings' },
             { type: 'section', label: 'Band' },
-            { id: 'width', label: 'Band width (% of spacing)', type: 'range', min: 0, max: 27, step: 0.5, value: 18, random: [12, 26] },
             { id: 'lines', label: 'Lines per band', type: 'range', min: 1, max: 6, step: 1, value: 2, random: [2, 4],
                 hint: '1 draws the centre line only' },
+            { id: 'width', label: 'Band width (% of spacing)', type: 'range', min: 0, max: 27, step: 0.5, value: 18, random: [12, 26],
+                show: p => p.lines > 1 },
             { id: 'gap', label: 'Crossing gap (mm)', type: 'range', min: 0, max: 5, step: 0.05, value: 1.2, random: [0.6, 1.8] },
             { id: 'flip', label: 'Mirror over/under', type: 'checkbox', value: false, random: 0.5 },
             { type: 'section', label: 'Pens' },
@@ -73,11 +74,29 @@
             const XM = 2 * m, YM = 2 * n;
             const toMM = (x, y) => [X0 + x * u, Y0 + y * u];
 
-            // ---- site kinds (x + y odd); border sites are breaks
+            // ---- squares of the dot grid (m × n) lying wholly inside the clip shape; strands
+            // only run through these, so a circle or hexagon gets a closed border of its own
+            const inSq = new Uint8Array(m * n);
+            let all = true;
+            for (let j = 0; j < n; j++) for (let i = 0; i < m; i++) {
+                const ok = [[0, 0], [1, 0], [0, 1], [1, 1]].every(([a, b]) => {
+                    const P = toMM(2 * (i + a), 2 * (j + b));
+                    return ctx.shape.dist(P[0], P[1]) > -1e-6;
+                });
+                inSq[j * m + i] = ok ? 1 : 0;
+                if (!ok) all = false;
+            }
+            const sq = (i, j) => i >= 0 && j >= 0 && i < m && j < n && inSq[j * m + i] === 1;
+            // the squares either side of a site: above / below a horizontal edge (x odd), left / right of a vertical one
+            const sides = (x, y) => (x % 2 ? [[(x - 1) / 2, y / 2 - 1], [(x - 1) / 2, y / 2]] : [[x / 2 - 1, (y - 1) / 2], [x / 2, (y - 1) / 2]]);
+
+            // ---- site kinds (x + y odd): a crossing between two inside squares, a break
+            // between an inside and an outside one (the border), unused otherwise
             const idx = (x, y) => y * (XM + 1) + x;
             const kind = new Int8Array((XM + 1) * (YM + 1)).fill(-1);
             for (let y = 0; y <= YM; y++) for (let x = (y + 1) % 2; x <= XM; x += 2) {
-                kind[idx(x, y)] = y === 0 || y === YM ? H : x === 0 || x === XM ? V : X;
+                const [[ia, ja], [ib, jb]] = sides(x, y), A = sq(ia, ja), B = sq(ib, jb);
+                kind[idx(x, y)] = A && B ? X : A || B ? (x % 2 ? H : V) : -1;
             }
             // a break on an interior grid edge: sites with x odd lie on horizontal edges
             const setBreak = (x, y) => {
@@ -86,10 +105,30 @@
             };
             if (p.breaks === 'rings') {
                 const step = Math.max(1, Math.round(p.ringStep));
-                for (let k = step; 2 * k < Math.min(m, n); k += step) {
-                    const a = 2 * k, bx = XM - 2 * k, by = YM - 2 * k;
-                    for (let x = a + 1; x < bx; x += 2) for (const y of [a, by]) if (!rng.chance(p.ringGaps)) setBreak(x, y);
-                    for (let y = a + 1; y < by; y += 2) for (const x of [a, bx]) if (!rng.chance(p.ringGaps)) setBreak(x, y);
+                if (all) {
+                    for (let k = step; 2 * k < Math.min(m, n); k += step) {
+                        const a = 2 * k, bx = XM - 2 * k, by = YM - 2 * k;
+                        for (let x = a + 1; x < bx; x += 2) for (const y of [a, by]) if (!rng.chance(p.ringGaps)) setBreak(x, y);
+                        for (let y = a + 1; y < by; y += 2) for (const x of [a, bx]) if (!rng.chance(p.ringGaps)) setBreak(x, y);
+                    }
+                } else {
+                    // frames that follow the shape: breaks where the squares' depth from the
+                    // border (4-neighbour steps) passes a multiple of the step
+                    const depth = new Int32Array(m * n), queue = [];
+                    for (let j = 0; j < n; j++) for (let i = 0; i < m; i++) {
+                        if (sq(i, j) && !(sq(i - 1, j) && sq(i + 1, j) && sq(i, j - 1) && sq(i, j + 1))) { depth[j * m + i] = 1; queue.push(j * m + i); }
+                    }
+                    for (let h = 0; h < queue.length; h++) {
+                        const i = queue[h] % m, j = Math.floor(queue[h] / m);
+                        for (const [a, b] of [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]]) {
+                            if (sq(a, b) && !depth[b * m + a]) { depth[b * m + a] = depth[queue[h]] + 1; queue.push(b * m + a); }
+                        }
+                    }
+                    for (let y = 1; y < YM; y++) for (let x = 1 + (y % 2); x < XM; x += 2) {
+                        if (kind[idx(x, y)] !== X) continue;
+                        const [[ia, ja], [ib, jb]] = sides(x, y), da = depth[ja * m + ia], db = depth[jb * m + ib];
+                        if (da !== db && Math.min(da, db) % step === 0 && !rng.chance(p.ringGaps)) setBreak(x, y);
+                    }
                 }
             } else if (p.breaks !== 'none') {
                 const mx = p.breaks === 'mirror' || p.breaks === 'quad', my = p.breaks === 'quad';
@@ -106,11 +145,12 @@
 
             // ---- trace every closed strand as a list of visits { x, y, a (in dir), d (out dir) }
             const used = new Uint8Array((XM + 1) * (YM + 1) * 4);
-            const valid = (x, y) => x >= 0 && y >= 0 && x <= XM && y <= YM;
+            // the link leaving (x, y) in direction d runs through an inside square
+            const linkIn = (x, y, d) => sq(Math.floor((x + DIRS[d][0] / 2) / 2), Math.floor((y + DIRS[d][1] / 2) / 2));
             const loops = [];
             for (let y = 0; y <= YM; y++) for (let x = (y + 1) % 2; x <= XM; x += 2) {
                 for (let d0 = 0; d0 < 4; d0++) {
-                    if (used[idx(x, y) * 4 + d0] || !valid(x + DIRS[d0][0], y + DIRS[d0][1])) continue;
+                    if (used[idx(x, y) * 4 + d0] || !linkIn(x, y, d0)) continue;
                     const visits = [];
                     let sx = x, sy = y, d = d0;
                     for (let guard = 0; guard < 4 * (XM + 1) * (YM + 1); guard++) {
@@ -128,7 +168,8 @@
 
             // ---- draw: every visit is the piece from the incoming to the outgoing link midpoint
             const w = (p.width / 100) * cell;
-            const L = Math.max(1, Math.round(p.lines));
+            // a band too narrow to separate its lines is drawn as one line, not L copies
+            const L = w < 0.05 ? 1 : Math.max(1, Math.round(p.lines));
             const offsets = L === 1 ? [0] : Array.from({ length: L }, (_, j) => -w / 2 + (j * w) / (L - 1));
             const half = u * Math.SQRT1_2; // half a link, the straight run either side of a crossing
             const cut = Math.min(0.92 * half, (L === 1 ? 0 : w / 2) + p.gap);

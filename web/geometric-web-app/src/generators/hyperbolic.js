@@ -55,9 +55,10 @@
         return [(nx * dx + ny * dy) / d, (ny * dx - nx * dy) / d];
     }
 
-    // Points reached along different chains of reflections agree only to ~1e-12,
+    // Points reached along different chains of reflections agree only to ~1e-12
+    // (~1e-9 deep in the rim of a large tiling),
     // which can straddle any rounding boundary, so identify them with a tolerance:
-    // a hash grid of 1e-6 cells searched 3 × 3, matching within 1e-9.
+    // a hash grid of 1e-6 cells searched 3 × 3, matching within 1e-7.
     function pointIds() {
         const grid = new Map();
         let count = 0;
@@ -65,7 +66,7 @@
             const gx = Math.round(z[0] * 1e6), gy = Math.round(z[1] * 1e6);
             for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
                 const list = grid.get((gx + dx) * 4194304 + gy + dy);
-                if (list) for (const q of list) if (Math.abs(q[0] - z[0]) < 1e-9 && Math.abs(q[1] - z[1]) < 1e-9) return q[2];
+                if (list) for (const q of list) if (Math.abs(q[0] - z[0]) < 1e-7 && Math.abs(q[1] - z[1]) < 1e-7) return q[2];
             }
             const k = gx * 4194304 + gy;
             if (!grid.has(k)) grid.set(k, []);
@@ -107,7 +108,7 @@
             { id: 'rim', label: 'Boundary circle', type: 'checkbox', value: true, random: 0.7 },
             { type: 'section', label: 'Pens' },
             { id: 'split', label: 'Detail on pen 2', type: 'checkbox', value: true, random: false,
-                hint: 'Tile edges and rim on pen 1, subdivision, copies or hatching on pen 2' },
+                hint: 'Tile edges and rim on pen 1, subdivision, copies or hatching on pen 2', show: p => p.style !== 'edges' },
         ],
 
         randomize(rng) {

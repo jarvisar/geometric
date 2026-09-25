@@ -73,7 +73,7 @@
             { id: 'outline', label: 'Cell outlines', type: 'checkbox', value: true, random: 0.75 },
             { type: 'section', label: 'Pens' },
             { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 3, step: 1, value: 1, random: false,
-                hint: 'Alternate cells between pens (outlines stay on pen 1)' },
+                hint: 'Alternate cells between pens (outlines stay on pen 1)', show: p => p.layout !== 'single' },
         ],
 
         randomize(rng) {
@@ -153,7 +153,7 @@
             const est = cells.reduce((s, c) => s + c.poly.length, 0);
             if (est * perCell > budget) perCell = Math.max(4, Math.floor(budget / est));
 
-            const pens = Math.max(1, p.pens | 0);
+            const pens = p.layout === 'single' ? 1 : Math.max(1, p.pens | 0); // one cell: nothing to alternate
             const layers = Array.from({ length: pens }, () => []);
             const outline = [];
             const seen = new Set();

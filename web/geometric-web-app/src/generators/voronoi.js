@@ -41,7 +41,8 @@
                 options: [['nested', 'Nested insets'], ['hatch', 'Hatch'], ['outline', 'Outline'], ['mixed', 'Mixed']] },
             { id: 'spacing', label: 'Line spacing (mm)', type: 'range', min: 0.6, max: 6, step: 0.05, value: 1.5, random: [1, 2.6],
                 show: p => p.style !== 'outline' },
-            { id: 'gap', label: 'Gap (mm)', type: 'range', min: 0, max: 10, step: 0.1, value: 3, random: [1.2, 4.5] },
+            { id: 'gap', label: 'Gap (mm)', type: 'range', min: 0, max: 10, step: 0.1, value: 3, random: [1.2, 4.5],
+                hint: 'At 0 neighbouring cells share one (sharp) outline and fills start half a spacing in' },
             { id: 'round', label: 'Corner rounding', type: 'range', min: 0, max: 1, step: 0.01, value: 0, random: [0, 1] },
             { id: 'rim', label: 'Outline hatched cells', type: 'checkbox', value: true,
                 show: p => p.style === 'hatch' || p.style === 'mixed' },
@@ -163,9 +164,25 @@
             const pens = Math.max(1, p.pens);
             const layers = Array.from({ length: pens }, () => []);
             const STY = ['nested', 'hatch', 'outline'];
+            // Gap 0: neighbours share their edges, so outlines are collected as a
+            // deduplicated edge set (sharp corners) and fills start half a spacing
+            // inside, which keeps the spacing even across each shared edge.
+            const shared = !(p.gap > 0);
+            const edges = new Map();
+            const addEdges = (poly, out) => {
+                const key = q => q[0].toFixed(3) + ',' + q[1].toFixed(3);
+                poly.forEach((a, k) => {
+                    const b = poly[(k + 1) % poly.length], ka = key(a), kb = key(b);
+                    if (ka === kb) return;
+                    const id = ka < kb ? ka + ';' + kb : kb + ';' + ka;
+                    if (!edges.has(id)) edges.set(id, [out, [a, b]]);
+                });
+            };
             cells.forEach((c, i) => {
                 let poly = p.gap > 0 ? geo.cleanPolygon(geo.insetConvex(c, p.gap / 2)) : c;
                 if (poly.length < 3 || Math.abs(geo.polygonArea(poly)) < 0.5) return;
+                const cell = poly;
+                if (shared && p.style !== 'outline') poly = geo.cleanPolygon(geo.insetConvex(poly, p.spacing / 2));
                 let style = p.style;
                 if (style === 'mixed') style = rng.weighted([[5, 'nested'], [3, 'hatch'], [1.5, 'outline']]);
                 let pen = 0;
@@ -177,15 +194,18 @@
                     } else pen = rng.int(0, pens - 1);
                 }
                 const out = layers[pen % pens];
+                if (poly.length < 3) { if (shared) addEdges(cell, out); return; } // too small to fill
                 if (style === 'nested') out.push(geo.insetSpiral(poly, p.spacing, p.round));
                 else if (style === 'hatch') {
                     // a rounded convex cell is still convex, so hatch the rounded outline
                     const rim = ring(poly, 0, p.round);
                     const z = geo.hatchZigzag(p.round > 0 ? geo.cleanPolygon(rim.slice(0, -1), 1e-3) : poly, p.spacing, rng.range(0, Math.PI));
                     if (z.length > 1) out.push(z);
-                    if (p.rim || z.length < 2) out.push(rim);
-                } else out.push(ring(poly, 0, p.round));
+                    if (p.rim || z.length < 2) { if (shared) addEdges(cell, out); else out.push(rim); }
+                } else if (shared) addEdges(cell, out);
+                else out.push(ring(poly, 0, p.round));
             });
+            for (const [out, seg] of edges.values()) out.push(seg);
             return pens > 1 ? { layers } : layers[0];
         },
     });

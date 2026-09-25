@@ -60,7 +60,8 @@
             } else {
                 out.rough = +rng.range(0.3, 0.42).toFixed(2);
             }
-            if (rng.chance(0.3)) {
+            // ridged relief sinks into scattered slivers under an island falloff
+            if (p.relief !== 'ridged' && rng.chance(0.35)) {
                 out.island = +rng.range(0.5, 0.9).toFixed(2);
                 out.sea = +rng.range(0.3, 0.5).toFixed(2);
             } else {

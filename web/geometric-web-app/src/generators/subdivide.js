@@ -39,7 +39,8 @@
             { id: 'jitter', label: 'Split randomness', type: 'range', min: 0, max: 1, step: 0.01, value: 0.75, random: [0.2, 1] },
             { id: 'diagonal', label: 'Diagonal splits', type: 'range', min: 0, max: 1, step: 0.01, value: 0.3, random: [0.1, 0.6],
                 show: p => p.shape === 'mixed', hint: 'Chance a rectangle is cut into two triangles' },
-            { id: 'gap', label: 'Gap (mm)', type: 'range', min: 0, max: 10, step: 0.1, value: 2.2, random: [0.8, 4] },
+            { id: 'gap', label: 'Gap (mm)', type: 'range', min: 0, max: 10, step: 0.1, value: 2.2, random: [0.8, 4],
+                hint: 'At 0 every cut is drawn once and fills start inside the cut lines' },
             { type: 'section', label: 'Fill' },
             { id: 'outline', label: 'Outline cells', type: 'checkbox', value: true, random: 0.8 },
             { id: 'wHatch', label: 'Hatch', type: 'range', min: 0, max: 1, step: 0.01, value: 1, random: [0.3, 1] },
@@ -66,7 +67,7 @@
             if (!area.length) return [];
             const whole = area.length === 4 && area.every(v => (v[0] === 0 || v[0] === W) && (v[1] === 0 || v[1] === H));
             const minS = p.minSize, jit = p.jitter;
-            const leaves = [];
+            const leaves = [], cuts = []; // cuts: every split line once, for gap 0
 
             const triSize = t => {
                 let L = 0;
@@ -84,13 +85,14 @@
                 const m = geo.lerpPt(a, b, 0.5 + jit * rng.range(-0.15, 0.15));
                 const t1 = [a, m, c], t2 = [m, b, c];
                 if (Math.min(triSize(t1), triSize(t2)) < minS) { leaves.push(t); return; }
+                cuts.push([m, c]);
                 splitTri(t1, depth + 1);
                 splitTri(t2, depth + 1);
             }
             function toTris(x0, y0, x1, y1, depth) {
                 const A = [x0, y0], B = [x1, y0], C = [x1, y1], D = [x0, y1];
-                if (rng.chance(0.5)) { splitTri([A, B, C], depth); splitTri([A, C, D], depth); }
-                else { splitTri([A, B, D], depth); splitTri([B, C, D], depth); }
+                if (rng.chance(0.5)) { cuts.push([A, C]); splitTri([A, B, C], depth); splitTri([A, C, D], depth); }
+                else { cuts.push([B, D]); splitTri([A, B, D], depth); splitTri([B, C, D], depth); }
             }
             function splitRect(x0, y0, x1, y1, depth) {
                 const w = x1 - x0, h = y1 - y0;
@@ -106,9 +108,11 @@
                 if (!can(vert)) return leaf();
                 if (vert) {
                     const x = x0 + w * t;
+                    cuts.push([[x, y0], [x, y1]]);
                     splitRect(x0, y0, x, y1, depth + 1); splitRect(x, y0, x1, y1, depth + 1);
                 } else {
                     const y = y0 + h * t;
+                    cuts.push([[x0, y], [x1, y]]);
                     splitRect(x0, y0, x1, y, depth + 1); splitRect(x0, y, x1, y1, depth + 1);
                 }
             }
@@ -132,6 +136,10 @@
             const anyFill = weights.some(w => w[0] > 0);
             const layers = Array.from({ length: Math.max(1, p.pens) }, () => []);
 
+            // Gap 0: cells share their edges, so the outline is the boundary plus
+            // every cut drawn once, and fills start inside it so none retrace it
+            const shared = !(p.gap > 0);
+            if (shared && p.outline) layers[0].push(geo.close(area), ...cuts);
             for (let poly of leaves) {
                 if (!whole) poly = intersectConvex(poly, area);
                 if (poly.length < 3) continue;
@@ -140,11 +148,19 @@
                 const out = layers[rng.int(0, layers.length - 1)];
                 const kind = anyFill ? rng.weighted(weights) : 'blank';
                 const s = tone();
-                if (kind === 'nested') { out.push(geo.insetSpiral(poly, s)); continue; }
-                if (p.outline) out.push(geo.close(poly));
+                if (kind === 'nested') {
+                    // at gap 0 the first ring sits one spacing inside the cut lines
+                    // (half a spacing without them, so neighbours' rings stay one apart)
+                    const ring = shared ? geo.cleanPolygon(geo.insetConvex(poly, p.outline ? s : s / 2)) : poly;
+                    if (ring.length >= 3) out.push(geo.insetSpiral(ring, s));
+                    continue;
+                }
+                if (p.outline && !shared) out.push(geo.close(poly));
                 if (kind === 'hatch' || kind === 'cross') {
                     const a = angle();
                     const ss = kind === 'cross' ? s * 1.5 : s;
+                    // at gap 0 the zig-zag's rim runs half a spacing in, off the cut lines
+                    if (shared) poly = geo.cleanPolygon(geo.insetConvex(poly, ss / 2));
                     const z = geo.hatchZigzag(poly, ss, a);
                     if (z.length > 1) out.push(z);
                     if (kind === 'cross') {
