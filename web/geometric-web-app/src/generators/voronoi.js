@@ -201,8 +201,13 @@
                     // a rounded convex cell is still convex, so hatch the rounded outline
                     const rim = ring(poly, 0, p.round);
                     const z = geo.hatchZigzag(p.round > 0 ? geo.cleanPolygon(rim.slice(0, -1), 1e-3) : poly, p.spacing, rng.range(0, Math.PI));
-                    if (z.length > 1) out.push(z);
-                    if (p.rim || z.length < 2) { if (shared) addEdges(cell, out); else out.push(rim); }
+                    const withRim = p.rim || z.length < 2;
+                    // the cell's own rim and its hatch go down as one stroke (shared edges can't)
+                    if (withRim && !shared && z.length > 1) out.push(geo.joinLoop(rim, z));
+                    else {
+                        if (z.length > 1) out.push(z);
+                        if (withRim) { if (shared) addEdges(cell, out); else out.push(rim); }
+                    }
                 } else if (shared) addEdges(cell, out);
                 else out.push(ring(poly, 0, p.round));
             });

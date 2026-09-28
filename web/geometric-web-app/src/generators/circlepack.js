@@ -133,8 +133,9 @@
                 } else if (style === 'hatch') {
                     const rim = geo.circle(x, y, r);
                     const z = geo.hatchZigzag(rim.slice(0, -1), s, rng.range(0, Math.PI));
-                    if (z.length) paths.push(z);
-                    if (p.rim || r < 3 * s) paths.push(rim);
+                    const withRim = p.rim || r < 3 * s;
+                    if (z.length) paths.push(withRim ? geo.joinLoop(rim, z) : z);
+                    else if (withRim) paths.push(rim);
                 } else {
                     paths.push(geo.circle(x, y, r));
                 }

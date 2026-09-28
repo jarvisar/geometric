@@ -155,19 +155,24 @@
                     if (ring.length >= 3) out.push(geo.insetSpiral(ring, s));
                     continue;
                 }
-                if (p.outline && !shared) out.push(geo.close(poly));
+                const outline = p.outline && !shared ? geo.close(poly) : null;
                 if (kind === 'hatch' || kind === 'cross') {
                     const a = angle();
                     const ss = kind === 'cross' ? s * 1.5 : s;
                     // at gap 0 the zig-zag's rim runs half a spacing in, off the cut lines
                     if (shared) poly = geo.cleanPolygon(geo.insetConvex(poly, ss / 2));
                     const z = geo.hatchZigzag(poly, ss, a);
-                    if (z.length > 1) out.push(z);
+                    // the outline and the first zig-zag go down as one stroke
+                    if (outline && z.length > 1) out.push(geo.joinLoop(outline, z));
+                    else {
+                        if (outline) out.push(outline);
+                        if (z.length > 1) out.push(z);
+                    }
                     if (kind === 'cross') {
                         const z2 = geo.hatchZigzag(poly, ss, a + Math.PI / 2);
                         if (z2.length > 1) out.push(z2);
                     }
-                }
+                } else if (outline) out.push(outline);
             }
             return p.pens > 1 ? { layers } : layers[0];
         },

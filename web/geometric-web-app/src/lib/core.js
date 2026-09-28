@@ -424,6 +424,25 @@
         return out.map(q => [q[0] * c - q[1] * s, q[0] * s + q[1] * c]);
     };
 
+    // One stroke for a closed outline plus a path that starts on it (e.g. a hatch
+    // zig-zag inside it): the loop is restarted where the path begins, drawn all the
+    // way round, and the path follows on. One pen lift instead of two, same ink.
+    geo.joinLoop = function (loop, path) {
+        const q = path[0], n = loop.length - 1; // loop is closed: loop[n] repeats loop[0]
+        let best = Infinity, bi = 0, bp = loop[0];
+        for (let i = 0; i < n; i++) {
+            const a = loop[i], b = loop[i + 1], dx = b[0] - a[0], dy = b[1] - a[1];
+            const t = geo.clamp(((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+            const p = [a[0] + dx * t, a[1] + dy * t], d = geo.dist2(p, q);
+            if (d < best) { best = d; bi = i; bp = p; }
+        }
+        const out = [bp];
+        for (let k = 1; k <= n; k++) out.push(loop[(bi + k) % n]);
+        out.push(bp);
+        for (let i = 1; i < path.length; i++) out.push(path[i]);
+        return out;
+    };
+
     // Fill a convex polygon with concentric insets drawn as ONE stroke. Each ring's
     // closing edge stops where it meets the line of the next ring's first edge and
     // turns onto it, so the fill winds inward as a true polygon spiral with an even

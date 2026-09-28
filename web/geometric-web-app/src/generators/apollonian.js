@@ -176,8 +176,7 @@
                 } else if (style === 'hatch') {
                     const rim = geo.circle(c.x, c.y, r);
                     const z = geo.hatchZigzag(rim.slice(0, -1), s, rng.range(0, Math.PI));
-                    if (z.length) out.push(z);
-                    out.push(rim);
+                    out.push(z.length ? geo.joinLoop(rim, z) : rim);
                 } else {
                     out.push(geo.circle(c.x, c.y, r));
                 }
