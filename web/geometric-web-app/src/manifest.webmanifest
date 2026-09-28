@@ -1,7 +1,8 @@
 {
     "name": "Plotter Geometry",
     "short_name": "Geometry",
-    "description": "Generative geometric line art with SVG export.",
+    "description": "Generative line art for pen plotters, with layered SVG export.",
+    "lang": "en",
     "id": "./",
     "start_url": "./",
     "scope": "./",
