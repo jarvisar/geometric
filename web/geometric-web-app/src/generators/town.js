@@ -258,43 +258,9 @@
     // Trees and plants (upright cut-outs)
     // ------------------------------------------------------------------
 
-    const TIERS = {
-        2: [[0, 0.68, 1], [0.42, 1, 0.66]],
-        3: [[0, 0.56, 1], [0.3, 0.8, 0.78], [0.58, 1, 0.55]],
-        4: [[0, 0.44, 1], [0.22, 0.64, 0.82], [0.44, 0.84, 0.64], [0.64, 1, 0.46]],
-    };
-
-    // Silhouette of a cone seen from above: the apex, the two tangent lines and
-    // the near side of the base ellipse
-    function coneOutline(r, q, base, apex, n) {
-        const phi = Math.asin(Math.min(0.95, q / Math.max(1e-6, apex - base)));
-        const pts = [[0, apex]];
-        for (let i = 0; i <= n; i++) {
-            const t = -phi + ((Math.PI + 2 * phi) * i) / n;
-            pts.push([r * Math.cos(t), base - q * Math.sin(t)]);
-        }
-        return pts;
-    }
-
     function conifer(T, x, y, z, h, rng) {
-        const S = T.S, te = T.cam.tanE;
-        S.kind = PLANT;
-        const tiers = h > 6.5 ? rng.pick([3, 3, 4]) : rng.pick([2, 3, 3, 3]);
-        const R = h * rng.range(0.23, 0.29);
-        const spec = TIERS[tiers];
-        const trunk = R * te + 0.3;
-        const Hc = h - trunk;
-        spec.forEach(([fb, fa, fr], i) => {
-            const P = card(T, x, y, z, 0.12 * (i + 1));
-            const r = R * fr, q = r * te;
-            const pts = coneOutline(r, q, trunk + fb * Hc, trunk + fa * Hc, T.segs(r)).map(([u, w]) => P(u, w));
-            S.face(pts);
-            S.loop(pts);
-        });
-        const P = card(T, x, y, z, 0);
-        const tw = Math.max(0.12, R * 0.1);
-        S.face([P(-tw, 0), P(tw, 0), P(tw, trunk), P(-tw, trunk)]);
-        S.line([P(-tw, trunk), P(-tw, 0), P(tw, 0), P(tw, trunk)]);
+        T.S.kind = PLANT;
+        PG.isokit.conifer(T, x, y, z, h, rng);
     }
 
     function roundTree(T, x, y, z, h, rng) {
