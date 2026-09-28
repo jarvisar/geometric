@@ -101,7 +101,9 @@
     // wall tops with overhanging eaves. Returns its height function.
     function gableRoof(T, F, fp, zTop, alongU, pitch, rng, o = {}) {
         const S = T.S, [a0, b0, a1, b1] = fp;
-        const oh = 0.4, zb = zTop - 0.25, tp = Math.tan(pitch);
+        // Below ~32° pitch, dropping the eave 0.25 m put the slope under the wall top at
+        // the wall line, and the wall's top edges poked through the roof
+        const oh = 0.4, tp = Math.tan(pitch), zb = zTop - Math.min(0.25, oh * tp - 0.03);
         const P = F.P;
         const res = { zb, alongU, tp, oh, fp };
         if (alongU) {
@@ -259,7 +261,7 @@
 
     function hipRoof(T, F, fp, zTop, pitch) {
         const [a0, b0, a1, b1] = fp, P = F.P;
-        const oh = 0.4, zb = zTop - 0.25;
+        const oh = 0.4, zb = zTop - Math.min(0.25, oh * Math.tan(pitch) - 0.03); // see gableRoof
         const A0 = a0 - oh, A1 = a1 + oh, B0 = b0 - oh, B1 = b1 + oh;
         const hw = Math.min(A1 - A0, B1 - B0) / 2, rise = hw * Math.tan(pitch);
         const v = [P(A0, B0, zb), P(A1, B0, zb), P(A1, B1, zb), P(A0, B1, zb)];

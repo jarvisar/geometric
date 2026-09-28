@@ -1192,8 +1192,10 @@
             { id: 'elev', label: 'Camera height (°)', type: 'range', min: 20, max: 60, step: 0.5, value: 39.5, random: false,
                 hint: '35.3 is true isometric' },
             { type: 'section', label: 'Harbour' },
+            { id: 'side', label: 'Water on', type: 'select', value: 'left', random: ['left', 'right'],
+                options: [['left', 'Left'], ['right', 'Right']] },
             { id: 'shore', label: 'Waterline', type: 'range', min: 0, max: 1, step: 0.01, value: 0.45, random: [0.3, 0.6],
-                hint: 'How far down the left edge of the page the quay starts' },
+                hint: 'How far down the edge of the page the quay starts' },
             { id: 'piers', label: 'Piers', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.3, 0.9] },
             { id: 'boats', label: 'Boats', type: 'range', min: 0, max: 1, step: 0.01, value: 0.7, random: [0.4, 1] },
             { id: 'lighthouse', label: 'Lighthouse', type: 'checkbox', value: true },
@@ -1244,6 +1246,9 @@
             const S = new Scene(cam, W, H);
             const cot = 1 / Math.tan(geo.rad(p.sun));
             const sun = [cot * Math.cos(SUN_TURN), -cot * Math.sin(SUN_TURN)];
+            // Water on the right is the same town drawn mirrored, shadows and all.
+            // Keeping the shadows on the right would shade the big front roof slopes.
+            const mirror = p.side === 'right';
             if (p.shadows) S.sun = sun;
             const toSun = unit([-sun[0], -sun[1], 1]);
             const T = {
@@ -1264,6 +1269,7 @@
                 S.hatchShadows(p.shadowGap);
             }
             const kinds = render(S);
+            if (mirror) for (const paths of kinds) for (const q of paths || []) for (const v of q) v[0] = W - v[0];
             const penOf = { four: [0, 1, 2, 4], three: [0, 1, 2, 1], one: [0, 0, 0, 0] }[p.inks] || [0, 1, 2, 4];
             const byPen = [];
             kinds.forEach((paths, kind) => {

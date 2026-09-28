@@ -210,6 +210,9 @@
             const L0 = [], L1 = prm.split ? [] : L0;
             for (const t of tiles) {
                 if (drawEdges) for (const [i, j] of edges) emit(t.pts[i], t.pts[j], L0);
+                // rim tiles under the cut-off only get their outline: 2p spokes in a 0.5 mm
+                // tile just retrace its centre into a blob of ink
+                if (tileSize(t) < minSize) continue;
                 for (const [i, j] of detail) emit(t.pts[i], t.pts[j], L1);
                 if (!rings) continue;
                 // toward the rim keep every stride-th copy, so copies stay ≥ 0.8 mm apart (across the inradius)

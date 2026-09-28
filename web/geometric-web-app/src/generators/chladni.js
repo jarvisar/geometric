@@ -105,7 +105,7 @@
             field.min /= amp; field.max /= amp;
 
             const clip = circle ? paths => PG.clipPaths(paths, PG.shapes.circle(cx, cy, R)) : paths => paths;
-            let nodal = clip(PG.isolines(field, 0));
+            let nodal = clip(PG.isolines(field, 0, fn));
             if (circle) {
                 // The rim is itself a zero of the field. Trace it once as a clean circle:
                 // drop the traced copy and run the nodal lines that reach it out onto it.

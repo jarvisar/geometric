@@ -148,7 +148,7 @@
                 options: [['arcs', 'Matching arcs'], ['hatch', 'Hatching'], ['nested', 'Nested outlines'], ['none', 'None']] },
             { id: 'spacing', label: 'Line spacing (mm)', type: 'range', min: 0.5, max: 5, step: 0.05, value: 1.2, random: [0.9, 2],
                 show: p => p.decor === 'hatch' || p.decor === 'nested' },
-            { id: 'gap', label: 'Gap (mm)', type: 'range', min: 0, max: 4, step: 0.1, value: 0.8, random: [0.4, 1.6],
+            { id: 'gap', label: 'Gap (mm)', type: 'range', min: 0.3, max: 4, step: 0.1, value: 0.8, random: [0.4, 1.6],
                 show: p => p.decor === 'hatch' || p.decor === 'nested', hint: 'Space between the fill and the tile edges' },
             { id: 'which', label: 'Fill', type: 'select', value: 'both', random: true,
                 show: p => p.decor === 'hatch' || p.decor === 'nested',
@@ -243,7 +243,8 @@
                     poly = geo.cleanPolygon(poly);
                     if (poly.length < 3) continue;
                     const out = layers[split ? 1 + type : 0];
-                    const inner = p.gap > 0 ? insetPoly(poly, p.gap) : poly;
+                    // at 0 the first fill ring is the tile edge, which the neighbouring tile draws too
+                    const inner = insetPoly(poly, Math.max(0.3, p.gap));
                     if (inner.length < 3) continue;
                     const convex = !(kind === 'P2' && type === 1 && poly.length === 4); // a whole dart is concave
                     if (p.decor === 'nested') {

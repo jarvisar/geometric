@@ -201,14 +201,29 @@
                 };
                 // cut out the parts inside markers (or where lines crowd), and thin
                 // the tiny steps taken near charges
+                const cutBy = q => src.find(s => Math.hypot(q[0] - s.x, q[1] - s.y) < Math.max(s.r, s.crowd));
+                // where the step a (outside) -> b (inside s) crosses the cut circle, so lines
+                // end on the marker instead of up to a step (0.5 mm) short of it
+                const onCut = (a, b, s) => {
+                    const rc = Math.max(s.r, s.crowd), dx = b[0] - a[0], dy = b[1] - a[1], fx = a[0] - s.x, fy = a[1] - s.y;
+                    const A = dx * dx + dy * dy, B = fx * dx + fy * dy, C = fx * fx + fy * fy - rc * rc;
+                    const t = A > 0 ? geo.clamp((-B - Math.sqrt(Math.max(0, B * B - A * C))) / A, 0, 1) : 0;
+                    return [a[0] + dx * t, a[1] + dy * t];
+                };
                 const tidy = path => {
                     const out = [];
-                    let cur = null;
+                    let cur = null, prev = null;
                     for (const q of path) {
-                        if (src.some(s => Math.hypot(q[0] - s.x, q[1] - s.y) < Math.max(s.r, s.crowd))) { cur = null; continue; }
-                        if (!cur) { cur = []; out.push(cur); }
+                        const s = cutBy(q);
+                        if (s) { if (cur && prev) cur.push(onCut(prev, q, s)); cur = null; prev = q; continue; }
+                        if (!cur) {
+                            cur = []; out.push(cur);
+                            const sp = prev && cutBy(prev);
+                            if (sp) cur.push(onCut(q, prev, sp));
+                        }
                         const last = cur[cur.length - 1];
                         if (!last || Math.hypot(q[0] - last[0], q[1] - last[1]) > 0.05) cur.push(q);
+                        prev = q;
                     }
                     return out.filter(c => c.length > 1);
                 };

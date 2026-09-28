@@ -229,12 +229,21 @@
 
     // Split a polyline into the runs where keep(pt) holds; drops crumbs < 1.5 mm.
     function thin(line, keep) {
+        const ok = line.map(keep);
+        // Where the slope hovers around the cut-off the test flickers, which broke
+        // contours into dashes. Bridge drops shorter than 2 mm.
+        for (let i = 1, j; i < line.length; i = j) {
+            j = i + 1;
+            if (ok[i]) continue;
+            while (j < line.length && !ok[j]) j++;
+            if (j < line.length && ok[i - 1] && geo.pathLength(line.slice(i - 1, j + 1)) < 2) ok.fill(true, i, j);
+        }
         const out = [];
         let run = null;
-        for (const pt of line) {
-            if (keep(pt)) (run || (run = [])).push(pt);
+        line.forEach((pt, i) => {
+            if (ok[i]) (run || (run = [])).push(pt);
             else if (run) { out.push(run); run = null; }
-        }
+        });
         if (run) out.push(run);
         if (out.length === 1 && out[0].length === line.length) return [line];
         return out.filter(r => r.length > 1 && geo.pathLength(r) >= 1.5);

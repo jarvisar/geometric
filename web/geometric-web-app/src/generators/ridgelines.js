@@ -157,8 +157,15 @@
             const hMax = Math.max(1e-9, lineMax[Math.floor((lineMax.length - 1) * 0.9)]);
 
             const layers = Array.from({ length: Math.max(1, p.pens) }, () => []);
-            const horizon = new Float64Array(nx).fill(H + 1e4);
+            // The horizon is a polyline: every grid x plus the points where earlier
+            // lines crossed it. Keeping only the grid samples would bridge the V
+            // between two crossing lines with a chord, and lines further back would
+            // stop short of the front ones (about 1 mm at a 2 mm resolution).
+            // Points are [j, t, y] with x = x0 + (j + t) * dx, t in [0, 1).
+            let horizon = [];
+            for (let j = 0; j < nx; j++) horizon.push([j, 0, H + 1e4]);
             const ys = new Float64Array(nx);
+            const lineY = (j, t) => (t > 0 ? ys[j] + (ys[j + 1] - ys[j]) * t : ys[j]);
             for (let i = 0; i < N; i++) {
                 const z = N > 1 ? i / (N - 1) : 0;
                 const s = depthScale(z);
@@ -170,25 +177,29 @@
                     ys[j] = base - A * s * (hz[j] / hMax + jit);
                 }
 
-                // visible runs: ys < horizon, with interpolated crossings
-                const runs = [];
-                let run = null;
-                let dPrev = ys[0] - horizon[0];
-                if (dPrev < 0) run = [[x0, ys[0]]];
-                for (let j = 1; j < nx; j++) {
-                    const d = ys[j] - horizon[j];
-                    const xj = x0 + j * dx;
-                    if ((d < 0) !== (dPrev < 0)) {
-                        const t = dPrev / (dPrev - d);
-                        const pt = [xj - dx + dx * t, ys[j - 1] + (ys[j] - ys[j - 1]) * t];
+                // visible runs: line above the horizon, with exact crossings
+                const runs = [], next = [];
+                let run = null, prev = null, dPrev = 0;
+                for (const h of horizon) {
+                    const y = lineY(h[0], h[1]), d = y - h[2];
+                    if (prev && (d < 0) !== (dPrev < 0)) {
+                        const u = dPrev / (dPrev - d);
+                        const tEnd = h[0] === prev[0] ? h[1] : 1; // consecutive points never straddle a grid x
+                        const t = prev[1] + (tEnd - prev[1]) * u;
+                        const c = [prev[0], t, lineY(prev[0], t)];
+                        const pt = [x0 + (c[0] + c[1]) * dx, c[2]];
                         if (run) { run.push(pt); runs.push(run); run = null; }
                         else run = [pt];
+                        next.push(c);
                     }
-                    if (d < 0) run.push([xj, ys[j]]);
-                    dPrev = d;
+                    if (d < 0) {
+                        // off-grid horizon points under a visible stretch are now on a straight segment
+                        if (h[1] === 0) { (run || (run = [])).push([x0 + h[0] * dx, y]); next.push([h[0], 0, y]); }
+                    } else next.push(h);
+                    prev = h; dPrev = d;
                 }
                 if (run) runs.push(run);
-                for (let j = 0; j < nx; j++) if (ys[j] < horizon[j]) horizon[j] = ys[j];
+                horizon = next;
 
                 const pen = p.pens <= 1 ? 0 : p.penMode === 'alternate'
                     ? i % p.pens : Math.min(p.pens - 1, Math.floor((i / N) * p.pens));

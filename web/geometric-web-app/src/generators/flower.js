@@ -36,12 +36,16 @@
                     const r = base + (scale - base) * ratio * rose * fall * organic;
                     // keep the centre disc clear so the lines don't pile up in one spot
                     const inside = clearR > 0 && Math.abs(r) < clearR;
-                    if (prev && inside !== prev.inside) {
-                        // end or start the line exactly on the centre circle, not at the nearest sample
-                        const f = (clearR - Math.abs(prev.r)) / (Math.abs(r) - Math.abs(prev.r));
-                        const er = geo.lerp(prev.r, r, f), ea = geo.lerp(prev.ang, ang, f);
-                        const edge = [er * Math.cos(ea), er * Math.sin(ea)];
-                        if (inside) { if (cur) cur.push(edge); } else { cur = [edge]; paths.push(cur); }
+                    // A line crosses the centre disc when it goes in or out, or when r changes sign
+                    // between two samples outside it (it runs through the middle).
+                    if (prev && (inside !== prev.inside || (!inside && prev.r * r < 0))) {
+                        // end or start the line exactly on the centre circle, on the side it's on
+                        const edge = er => {
+                            const ea = geo.lerp(prev.ang, ang, (er - prev.r) / (r - prev.r));
+                            return [er * Math.cos(ea), er * Math.sin(ea)];
+                        };
+                        if (!prev.inside && cur) { cur.push(edge(Math.sign(prev.r) * clearR)); cur = null; }
+                        if (!inside) { cur = [edge(Math.sign(r) * clearR)]; paths.push(cur); }
                     }
                     prev = { r, ang, inside };
                     if (inside) { cur = null; continue; }

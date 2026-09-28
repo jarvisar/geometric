@@ -13,7 +13,7 @@
     const { geo, TAU } = PG;
 
     // One closed superformula curve with max radius 1.
-    function shape(m, n1, n2, n3, quality, maxN = 24000) {
+    function shape(m, n1, n2, n3, quality, maxN = 24000, tol = 0) {
         const k = Math.round(m * 2); // m in half steps
         const sym = Math.abs(n2 - n3) < 1e-9;
         let turns;
@@ -23,6 +23,22 @@
         n1 = Math.max(0.02, n1);
         const q = m / 4;
         const logR = phi => -Math.log(Math.pow(Math.abs(Math.cos(q * phi)), n2) + Math.pow(Math.abs(Math.sin(q * phi)), n3)) / n1;
+        // With n2 close to n3 the extra sweeps land almost on the first one, so drawing
+        // them just inks the same line twice. Both sweeps start and end at r = 1, so the
+        // first one closes on its own.
+        const half = k % 2 ? 2 : 1;
+        if (tol > 0 && turns === 2 * half) {
+            let top = -Infinity;
+            const S = 2000, a = new Float64Array(S), b = new Float64Array(S);
+            for (let i = 0; i < S; i++) {
+                const phi = (TAU * half * i) / S;
+                a[i] = logR(phi); b[i] = logR(phi + TAU * half);
+                top = Math.max(top, a[i], b[i]);
+            }
+            let d = 0;
+            for (let i = 0; i < S; i++) d = Math.max(d, Math.abs(Math.exp(a[i] - top) - Math.exp(b[i] - top)));
+            if (d < tol) turns = half;
+        }
 
         // dense enough for sharp spikes (small n1) and many lobes
         let N = Math.min(maxN, Math.ceil(turns * (300 + 90 * Math.abs(m)) * (n1 < 1 ? 2 : 1) * quality));
@@ -122,7 +138,7 @@
                 const m = Math.round(geo.lerp(p.m, p.m2, g) * 2) / 2;
                 // the point budget is shared by the stack so extreme settings stay responsive
             const pts = shape(m, geo.lerp(p.n1, p.n1b, g), geo.lerp(p.n2, p.n2b, g), geo.lerp(p.n3, p.n3b, g), p.quality,
-                Math.min(24000, Math.ceil(600000 / K)));
+                Math.min(24000, Math.ceil(600000 / K)), 0.003 / Math.max(1e-4, geo.lerp(1, p.inner, f)));
                 const s = geo.lerp(1, p.inner, f);
                 if (s <= 1e-4) continue;
                 const a = geo.rad(p.twist * i), c = Math.cos(a) * s, sn = Math.sin(a) * s;

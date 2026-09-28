@@ -393,8 +393,14 @@
         const chains = [[], []];
         for (let i = top; ; i = (i + 1) % n) { chains[0].push(P[i]); if (i === bot) break; }
         for (let i = top; ; i = (i + n - 1) % n) { chains[1].push(P[i]); if (i === bot) break; }
-        const k0 = Math.floor(v0 / spacing) + 1, k1 = Math.ceil(v1 / spacing) - 1;
-        if (k1 < k0) return [];
+        // Centre the lines between the extremes, so the first and last sit 0.75 to 1.25
+        // spacings in from the rim. On a fixed k * spacing grid they could land 0.1 mm off
+        // it and merge with the outline into one thick line.
+        const L = v1 - v0;
+        let m = Math.round(L / spacing) - 1;
+        if (m < 1 && L > spacing) m = 1;
+        if (m < 1) return [];
+        const first = v0 + (L - (m - 1) * spacing) / 2;
         const seg = [0, 0], next = [1, 1];
         const at = (side, v) => {
             const ch = chains[side];
@@ -405,12 +411,12 @@
         };
         const out = [];
         let side = 0, prevV = v0;
-        for (let k = k0; k <= k1; k++) {
-            const v = k * spacing;
+        for (let k = 0; k < m; k++) {
+            const v = first + k * spacing;
             // rim vertices passed since the previous line on the side we start from
             const ch = chains[side];
             while (next[side] < ch.length - 1 && ch[next[side]][1] <= prevV) next[side]++;
-            if (k > k0) while (next[side] < ch.length - 1 && ch[next[side]][1] < v) out.push(ch[next[side]++]);
+            if (k > 0) while (next[side] < ch.length - 1 && ch[next[side]][1] < v) out.push(ch[next[side]++]);
             out.push(at(side, v), at(1 - side, v));
             side = 1 - side;
             prevV = v;
@@ -444,9 +450,17 @@
             for (let i = 0; i < n; i++) ring.push(cur[(start + i) % n]);
             rings.push(ring);
             const next = geo.cleanPolygon(geo.insetConvex(cur, spacing));
-            const anchor = cur[start];
+            const anchor = cur[start], a = cur[(start + n - 1) % n];
             let bd = Infinity;
             next.forEach((q, i) => { const d = geo.dist2(q, anchor); if (d < bd) { bd = d; start = i; } });
+            // If the innermost ring's first edge misses this ring's closing edge (see the
+            // fallback below), the only way in is a long diagonal across the middle. End the
+            // spiral a ring early instead.
+            if (next.length >= 3 && geo.insetConvex(next, spacing).length < 3) {
+                const w0 = next[start], w1 = next[(start + 1) % next.length];
+                const X = geo.lineIntersect(a, [anchor[0] - a[0], anchor[1] - a[1]], w0, [w1[0] - w0[0], w1[1] - w0[1]]);
+                if (!(X && X.t > 1e-9 && X.t <= 1 && X.u <= 1e-9)) break;
+            }
             cur = next;
         }
         if (!rings.length) return [];
@@ -464,7 +478,22 @@
             for (let i = 1; i < ring.length; i++) out.push(ring[i]);
         }
         const last = rings[rings.length - 1];
-        out.push(last[0]);
+        // A sliver of an innermost ring would draw its two long sides on top of each
+        // other: stop at its far tip instead of going round and closing it
+        let thin = 0, far = 0;
+        if (rings.length > 1) {
+            thin = Infinity;
+            for (let i = 0; i < last.length; i++) {
+                const p = last[i], q = last[(i + 1) % last.length], L = geo.dist(p, q) || 1;
+                let w = 0;
+                for (const r of last) w = Math.max(w, Math.abs((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])) / L);
+                thin = Math.min(thin, w);
+            }
+            last.forEach((q, i) => { if (geo.dist2(q, last[0]) > geo.dist2(last[far], last[0])) far = i; });
+        }
+        const cut = thin < spacing * 0.5 && far > 0;
+        if (cut) out.length -= last.length - 1 - far;
+        else out.push(last[0]);
         if (rings.length === 1) return round > 0 ? geo.roundCorners(out, round * 0.5, 6) : out;
         if (!(round > 0)) return out;
         // round the open spiral: lead in from partway along the outer ring's cut-off
@@ -472,7 +501,7 @@
         const amt = round * 0.5;
         const path = [geo.lerpPt(out[0], out[rings[0].length], 0.5), ...out];
         const r = geo.roundCorners(path, amt, 6);
-        r[r.length - 1] = geo.lerpPt(last[0], last[last.length - 1], amt);
+        if (!cut) r[r.length - 1] = geo.lerpPt(last[0], last[last.length - 1], amt);
         return r;
     };
 

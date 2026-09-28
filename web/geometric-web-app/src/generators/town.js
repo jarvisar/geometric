@@ -99,7 +99,8 @@
         if (rng.chance(0.5)) {
             const a = am + rng.sign() * w * 0.18;
             const [x, y, z] = P(a, rng.range(b0 + 1.5, b1 - 1), deck + h * (1 - Math.abs(a - am) / (w / 2)));
-            S.frustum(x, y, z - 0.3, z + 1.2, 0.16, 0.16, 8);
+            // start well under the slope: A-frame roofs drop ~0.37 m across the pipe's width
+            S.frustum(x, y, z - 0.45, z + 1.2, 0.16, 0.16, 8);
         }
         S.kind = THING;
         fence(T, P(a0 - 0.5, b0 - 2.1, deck), P(a1 + 0.5, b0 - 2.1, deck), 0.9, true);

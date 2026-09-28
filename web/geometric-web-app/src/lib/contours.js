@@ -26,7 +26,10 @@
     };
 
     // Iso-lines of a sampled field at `level`. Returns an array of polylines.
-    PG.isolines = function (field, level) {
+    // `exact(x, y)`, if given, is the true field: crossings are then found by
+    // bisection along each grid edge instead of linear interpolation, which is
+    // far off where the field is flat (e.g. where several contours cross).
+    PG.isolines = function (field, level, exact) {
         const { values: v, nx, ny, x0, y0, dx, dy } = field;
         // a sample exactly on the level gives zero-length and doubled segments: nudge the level off it
         for (let i = 0; i < v.length; i++) if (v[i] === level) { level += 1e-9 * (Math.abs(level) || 1); break; }
@@ -46,6 +49,17 @@
             let t = (level - va) / (vb - va);
             if (!isFinite(t)) t = 0.5;
             t = Math.min(1, Math.max(0, t));
+            if (exact) {
+                const at = u => (horizontal ? exact(x0 + (i + u) * dx, y0 + j * dy) : exact(x0 + i * dx, y0 + (j + u) * dy)) - level;
+                let lo = 0, hi = 1, flo = at(0);
+                if ((flo < 0) !== (at(1) < 0)) {
+                    for (let k = 0; k < 24; k++) {
+                        const mid = (lo + hi) / 2, fm = at(mid);
+                        if ((fm < 0) === (flo < 0)) { lo = mid; flo = fm; } else hi = mid;
+                    }
+                    t = (lo + hi) / 2;
+                }
+            }
             p = horizontal ? [x0 + (i + t) * dx, y0 + j * dy] : [x0 + i * dx, y0 + (j + t) * dy];
             points.set(id, p);
             return p;
