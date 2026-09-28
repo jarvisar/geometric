@@ -1,11 +1,16 @@
 /*
  * Town: an isometric suburb in the style of an illustrated map.
  *
- * The town is a small 3D scene: a grid of raised blocks with curbs and
+ * The town is a small 3D scene: rows of raised blocks with curbs and
  * sidewalks, lots with houses, apartments, A-frames and the odd windmill,
- * plus cars, fences, trees and yard clutter. Everything is built from boxes,
- * prisms and faceted cylinders, with flat upright cut-outs for trees and
- * people, and viewed through an orthographic camera.
+ * plus cars, fences, trees and yard clutter. The rows don't have to line up
+ * (see plan), some streets are boulevards or meet at roundabouts, and a river
+ * with bridges can run through. Round a town centre the lots get denser, with
+ * terraces and shops, squares and a church in its churchyard. The town centre
+ * buildings, boats and bridges are shared with Harbour (lib/isokit.js).
+ * Everything is built from boxes, prisms and faceted cylinders, with flat
+ * upright cut-outs for trees and people, and viewed through an orthographic
+ * camera.
  *
  * Hidden lines are removed exactly (see lib/iso.js), so the plot has just the
  * visible outlines. Sizes are in metres and Scale turns them into millimetres
@@ -18,7 +23,9 @@
     const {
         FLOOR, wall, rect, pane, door, garageDoor, windows, gableRoof, roofExtras, chimney, roofUnit, flatRoof,
         plinth, steps, porch, downpipe, hipRoof, car, fence, railing, patioSet, bench, clothesline, bike,
-        person, Occupancy,
+        person, Occupancy, nearestDir,
+        awning, marketHall, clockTower, terrace, church, cart, bistro, fountain, obelisk, bandstand,
+        underway, moorRow, bridge, bridgeRamp,
     } = PG.isokit;
 
     // line kinds, split over pens
@@ -177,8 +184,21 @@
             S.box(F, a0 + doorS - 0.9, b0 - 0.9, base + 3.0, a0 + doorS + 0.9, b0, base + 3.15);
             downpipe(T, front, front.len - 0.25, 0, top);
         }
+        // in the town centre the ground floor is shops, with awnings either side of the door
+        const shops = o.shops && T.sees(front.n);
         for (let side = 0; side < 4; side++) {
-            windows(T, wall(F, side, fp), { base, floors, style, winW: 1.1, winH: 1.5, gap: 0.85, doors: side === 0 ? [doorS] : [] });
+            const sh = shops && side === 0;
+            windows(T, wall(F, side, fp), {
+                base: sh ? base + FLOOR : base, floors: sh ? floors - 1 : floors, style, winW: 1.1, winH: 1.5, gap: 0.85,
+                doors: side === 0 && !sh ? [doorS] : [],
+            });
+        }
+        if (shops) {
+            for (const [s0, s1] of [[0.3, doorS - 1.1], [doorS + 1.1, a1 - a0 - 0.3]]) {
+                if (s1 - s0 < 1.8) continue;
+                pane(T, front.at, s0 + 0.15, base + 0.8, s1 - s0 - 0.3, 1.8, 'wide');
+                awning(T, F, a0 + s0, a0 + s1, b0, base + 3.1, 1.2);
+            }
         }
         const side = wall(F, 3, fp);
         if (T.sees(side.n) && rng.chance(0.5)) downpipe(T, side, 0.25, 0, top);
@@ -640,7 +660,9 @@
         return pts;
     }
 
-    function block(T, x0, y0, x1, y1, keys) {
+    // The raised block with its curb, sidewalk, paving joints and whatever
+    // stands on the sidewalk. Returns the rectangle inside the sidewalk.
+    function curb(T, x0, y0, x1, y1, keys) {
         const { S, p } = T;
         const hc = T.curb, sw = p.sidewalk, rc = T.cornerR;
         S.kind = GROUND;
@@ -666,7 +688,6 @@
                 run(x1, y0 + c, x1, y1 - c, -1, 0);
             }
         }
-        const rng = new PG.RNG(hash(...keys, 1));
         // street furniture on the sidewalk: each side as a start on the curb line,
         // a direction along it and the inward normal
         if (sw > 1) {
@@ -685,10 +706,19 @@
                 for (let k = 0; k < n; k++) person(T, ...at(deco.range(0.05, 0.95) * len, sw * deco.range(0.35, 0.65)), hc, deco);
             }
         }
-        const ix0 = x0 + sw, iy0 = y0 + sw, ix1 = x1 - sw, iy1 = y1 - sw;
-        const W = ix1 - ix0, D = iy1 - iy0;
+        return [x0 + sw, y0 + sw, x1 - sw, y1 - sw];
+    }
+
+    // A block of lots, or a park, a square or a churchyard (`special`)
+    function block(T, x0, y0, x1, y1, keys, special = {}) {
+        const { p } = T, hc = T.curb;
+        const [ix0, iy0, ix1, iy1] = curb(T, x0, y0, x1, y1, keys);
+        const W = ix1 - ix0, D = iy1 - iy0, F = frame(ix0, iy0, hc, 0);
+        if (special.plaza && W >= 12 && D >= 12) return plaza(T, F, W, D, keys, special);
+        if (special.church && W >= 16 && D >= 20) return churchyard(T, F, W, D, keys);
+        const rng = new PG.RNG(hash(...keys, 1));
         if (rng.chance(p.parks * 0.2) || W < 6 || D < 6) {
-            parkBlock(T, frame(ix0, iy0, hc, 0), W, D, keys);
+            parkBlock(T, F, W, D, keys);
             return;
         }
         // Lots on a grid. Outer lots face the nearest street (corner lots pick
@@ -787,16 +817,19 @@
     function fillLot(T, lot, keys) {
         const { p } = T;
         const rng = new PG.RNG(hash(...keys, 3));
+        // 1 in the middle of the town centre, 0 out in the suburbs
+        lot.t = centreness(T, (lot.x0 + lot.x1) / 2, (lot.y0 + lot.y1) / 2);
         if (lot.dir < 0) return yard(T, lot, keys, 'court');
-        const big = lot.w >= 7.5 && lot.d >= 8.8;
+        const big = lot.w >= 7.5 && lot.d >= 8.8, t = lot.t, out = 1 - t;
         const kind = rng.weighted([
-            [p.houses * 1.0, 'house'],
-            [p.flats * 1.0, 'modern'],
-            [lot.w >= 6.5 && lot.d >= 10 ? p.aframes : 0, 'aframe'],
-            [big ? p.apartments : 0, 'apartment'],
-            [lot.w >= 9 && lot.d >= 9 ? p.windmills : 0, 'windmill'],
+            [p.houses * (1 - 0.85 * t), 'house'],
+            [p.flats * (1 - 0.3 * t), 'modern'],
+            [lot.w >= 6.5 && lot.d >= 10 ? p.aframes * out * out : 0, 'aframe'],
+            [big ? p.apartments * (1 + 2.5 * t) : 0, 'apartment'],
+            [lot.w >= 8 && lot.d >= 8.5 ? p.terraces * (0.15 + 3 * t) : 0, 'terrace'],
+            [lot.w >= 9 && lot.d >= 9 ? p.windmills * out * out : 0, 'windmill'],
             [p.parks * 0.8, 'park'],
-            [p.parks * 0.5, 'garden'],
+            [p.parks * 0.5 * out, 'garden'],
             [0.001, 'park'],
         ]);
         if (kind === 'park' || kind === 'garden') return yard(T, lot, keys, kind);
@@ -813,14 +846,16 @@
         if (kind === 'apartment') { L = rng.range(6, 8.5); D = rng.range(6, 8.5); }
         else if (kind === 'aframe') { L = rng.range(5, 6.4); D = rng.range(6.5, 8.5); }
         else if (kind === 'modern') { L = rng.range(6, 9.5); D = rng.range(5.5, 7.5); }
+        else if (kind === 'terrace') { L = w - 1.2; D = rng.range(7, 9); }
         else { L = rng.range(5.5, 8.5); D = rng.range(5, 7.5); }
         L = Math.min(L, w - 1.2);
         D = Math.min(D, d - (kind === 'aframe' ? 4 : 2.6));
         if (L < 4 || D < 4) return yard(T, lot, keys, 'park');
+        const row = kind === 'apartment' || kind === 'terrace';
         // squeeze the house a little to fit a driveway beside it
-        if (kind !== 'apartment' && w - L < 3.9 && w - 3.9 >= 4.8 && rng.chance(0.8)) L = w - 3.9;
+        if (!row && w - L < 3.9 && w - 3.9 >= 4.8 && rng.chance(0.8)) L = w - 3.9;
         const room = w - L;
-        const hasDrive = kind !== 'apartment' && room >= 3.9;
+        const hasDrive = !row && room >= 3.9;
         const driveLeft = rng.chance(0.5);
         const setback = geo.clamp(rng.range(kind === 'aframe' ? 2.8 : 1.4, 3.6), kind === 'aframe' ? 2.6 : 1.2, Math.max(1.2, d - D - 1.2));
         let a0;
@@ -832,7 +867,10 @@
         occ.add(fp[0] + L * 0.25, 0, fp[2] - L * 0.25, fp[1]);
         const maxF = Math.max(1, p.floors);
         if (kind === 'apartment') {
-            apartment(T, F, fp, rng, { floors: geo.clamp(rng.int(3, Math.max(5, maxF)), Math.min(3, maxF), maxF) });
+            apartment(T, F, fp, rng, { floors: geo.clamp(rng.int(3, Math.max(5, maxF)), Math.min(3, maxF), maxF), shops: lot.t > 0.35 && rng.chance(0.7) });
+        } else if (kind === 'terrace') {
+            S.kind = BUILDING;
+            terrace(T, F, fp, rng, { floors: maxF, shops: lot.t > 0.3 ? 0.6 : 0 });
         } else if (kind === 'aframe') {
             aframe(T, F, fp, rng);
         } else if (kind === 'modern') {
@@ -946,7 +984,7 @@
         const fr = new PG.RNG(hash(...keys, 6));
         // picket fence along the front, with gaps for the drive and the path
         S.kind = THING;
-        if (o.kind !== 'court' && fr.chance(p.fences)) {
+        if (o.kind !== 'court' && fr.chance(p.fences * (1 - 0.7 * (lot.t || 0)))) {
             const cuts = [];
             if (o.drive) cuts.push(o.drive);
             if (o.fp) {
@@ -1057,13 +1095,25 @@
     }
 
     // Street between two blocks: lane dashes, crosswalks and parked cars.
-    // (x, y) is the start of the centre line, (dx, dy) its direction.
-    function street(T, x, y, dx, dy, len, keys) {
+    // (x, y) is the start of the centre line, (dx, dy) its direction and st its
+    // width. A boulevard gets a planted strip down the middle instead of dashes.
+    function street(T, x, y, dx, dy, len, keys, st = T.p.street, boulevard = false) {
         const { S, p } = T;
-        const st = p.street, nx = -dy, ny = dx;
+        const nx = -dy, ny = dx;
         const at = (s, t) => [x + dx * s + nx * t, y + dy * s + ny * t, 0];
         const rng = new PG.RNG(hash(...keys, 12));
         S.kind = GROUND;
+        if (boulevard && len > 8) {
+            const hw = 1.4, a = 2.5, c = [at(a, -hw), at(len - a, hw)];
+            const x0 = Math.min(c[0][0], c[1][0]), x1 = Math.max(c[0][0], c[1][0]), y0 = Math.min(c[0][1], c[1][1]), y1 = Math.max(c[0][1], c[1][1]);
+            S.prism(roundRect(x0, y0, x1, y1, hw, 4).map(([px, py]) => [px, py, 0]), [0, 0, T.curb], true);
+            const tr = new PG.RNG(hash(...keys, 14)), n = Math.max(1, Math.round((len - 2 * a) / 7));
+            for (let i = 0; i < n; i++) {
+                const [tx, ty] = at(a + ((len - 2 * a) * (i + 0.5)) / n, 0);
+                if (tr.chance(0.25 + p.trees)) tree(T, tx, ty, T.curb, tr, 1.1);
+            }
+            S.kind = GROUND;
+        }
         const cw = 3.2, m = 0.8;
         const ends = [rng.chance(p.crosswalks), rng.chance(p.crosswalks)];
         const zebra = s0 => {
@@ -1076,7 +1126,7 @@
         };
         if (ends[0]) zebra(m);
         if (ends[1]) zebra(len - m - cw);
-        if (p.dashes) {
+        if (p.dashes && !boulevard) {
             const s0 = (ends[0] ? m + cw : 0) + 2.2, s1 = len - (ends[1] ? m + cw : 0) - 2.2;
             const dash = 1.8, period = 4.6;
             const n = Math.floor((s1 - s0 + period - dash) / period);
@@ -1112,20 +1162,371 @@
         }
     }
 
+    // ------------------------------------------------------------------
+    // Squares, the churchyard and roundabouts
+    // ------------------------------------------------------------------
+
+    // How far (x, y) is into the town centre: 1 in the middle, 0 outside it
+    function centreness(T, x, y) {
+        if (!T.centre || !T.p.downtown) return 0;
+        return T.p.downtown * geo.smoothstep(1, 0.2, Math.hypot(x - T.centre[0], y - T.centre[1]) / T.centreR);
+    }
+
+    // A block paved over for a square: a fountain, bandstand, obelisk, the
+    // clock tower or a market hall in the middle, trees round the edge, benches,
+    // market carts, café tables and people about
+    function plaza(T, F, W, D, keys, o) {
+        const { S, p } = T;
+        const rng = new PG.RNG(hash(...keys, 21));
+        const occ = new Occupancy(W, D), z = F.P(0, 0, 0)[2], ca = W / 2, cb = D / 2;
+        const at = (a, b) => F.P(a, b, 0);
+        S.kind = GROUND;
+        S.loop([at(1, 1), at(W - 1, 1), at(W - 1, D - 1), at(1, D - 1)]);
+        const kind = o.tower ? 'tower' : rng.weighted([[3, 'fountain'], [2, 'bandstand'], [1.5, 'obelisk'], [Math.min(W, D) >= 22 ? 1.5 : 0, 'market']]);
+        const [cx, cy] = at(ca, cb);
+        S.kind = BUILDING;
+        let rad = 0;
+        if (kind === 'market') {
+            const L = Math.min(W - 8, 16), H = Math.min(D - 9, 8);
+            marketHall(T, F, [ca - L / 2, cb - H / 2, ca + L / 2, cb + H / 2], rng);
+            occ.add(ca - L / 2 - 1, cb - H / 2 - 1, ca + L / 2 + 1, cb + H / 2 + 1);
+        } else {
+            if (kind === 'tower') { clockTower(T, F, ca, cb, rng); rad = 2.3; }
+            else if (kind === 'fountain') rad = fountain(T, cx, cy, z, rng);
+            else if (kind === 'bandstand') rad = bandstand(T, cx, cy, z, rng);
+            else rad = obelisk(T, cx, cy, z, rng);
+            occ.add(ca - rad - 0.4, cb - rad - 0.4, ca + rad + 0.4, cb + rad + 0.4);
+            // a ring of paving round it with paths out to each side
+            const rr = rad + 1.6;
+            if (rr < Math.min(W, D) / 2 - 2.5) {
+                S.kind = GROUND;
+                S.loop(ring(T.segs(rr), (c, s) => at(ca + rr * c, cb + rr * s)));
+                const e = Math.sqrt(rr * rr - 0.8 * 0.8);
+                for (const o2 of [-0.8, 0.8]) {
+                    S.line([at(ca + o2, cb - e), at(ca + o2, 1)]);
+                    S.line([at(ca + o2, cb + e), at(ca + o2, D - 1)]);
+                    S.line([at(ca - e, cb + o2), at(1, cb + o2)]);
+                    S.line([at(ca + e, cb + o2), at(W - 1, cb + o2)]);
+                }
+                occ.add(ca - 1, 0, ca + 1, D);
+                occ.add(0, cb - 1, W, cb + 1);
+                // benches round the ring, facing in
+                S.kind = THING;
+                for (let i = 0; i < 4; i++) {
+                    if (!rng.chance(0.3 + p.props * 0.6)) continue;
+                    const a = Math.PI / 4 + (i * Math.PI) / 2, bx = ca + (rr + 0.6) * Math.cos(a), by = cb + (rr + 0.6) * Math.sin(a);
+                    if (!occ.free(bx - 0.9, by - 0.9, bx + 0.9, by + 0.9, 0)) continue;
+                    const [x, y] = at(bx, by);
+                    bench(T, x, y, z, nearestDir(Math.sin(a), -Math.cos(a)));
+                    occ.add(bx - 0.9, by - 0.9, bx + 0.9, by + 0.9);
+                }
+            }
+        }
+        // trees down each side, leaving the middle of the side open for the path
+        const edge = [[0, 1, 0, 2.2], [0, 1, 0, D - 2.2], [1, 0, 2.2, 0], [1, 0, W - 2.2, 0]];
+        for (const [ua, ub, a0, b0] of edge) {
+            const L = ua ? D : W, n = Math.max(1, Math.round((L - 4) / 6.5));
+            for (let i = 0; i < n; i++) {
+                const s = 2 + ((L - 4) * (i + 0.5)) / n;
+                if (Math.abs(s - L / 2) < 2.2) continue;
+                const a = ua ? a0 : s, b = ua ? s : b0;
+                if (!rng.chance(0.35 + p.trees * 0.6) || !occ.free(a - 0.6, b - 0.6, a + 0.6, b + 0.6, 0)) continue;
+                const [x, y] = at(a, b);
+                tree(T, x, y, z, rng);
+                occ.add(a - 0.6, b - 0.6, a + 0.6, b + 0.6);
+            }
+        }
+        S.kind = THING;
+        if (rng.chance(0.3 + p.props * 0.6)) {
+            for (let i = rng.int(1, 3); i > 0; i--) {
+                const s = occ.place(rng, 2.1, 1.5, 1, 1, W - 1, D - 1);
+                if (s) cart(T, ...at(s[0] + 1.05, s[1] + 0.75).slice(0, 2), z, rng);
+            }
+        }
+        if (rng.chance(p.props)) {
+            for (let i = rng.int(1, 3); i > 0; i--) {
+                const s = occ.place(rng, 2.2, 2.2, 1, 1, W - 1, D - 1);
+                if (s) bistro(T, ...at(s[0] + 1.1, s[1] + 1.1).slice(0, 2), z, rng, rng.chance(0.6));
+            }
+        }
+        for (let i = Math.round(((W * D) / 60) * p.people * rng.range(0.6, 1.4)); i > 0; i--) {
+            const s = occ.place(rng, 0.6, 0.6, 1, 1, W - 1, D - 1);
+            if (s) person(T, ...at(s[0] + 0.3, s[1] + 0.3).slice(0, 2), z, rng);
+        }
+    }
+
+    function headstone(T, F, a, b, rng) {
+        const h = rng.range(0.6, 1);
+        if (rng.chance(0.2)) {
+            T.S.box(F, a - 0.06, b - 0.06, 0, a + 0.06, b + 0.06, h + 0.35);
+            T.S.box(F, a - 0.28, b - 0.06, h - 0.05, a + 0.28, b + 0.06, h + 0.08);
+        } else {
+            const w = rng.range(0.45, 0.65);
+            T.S.box(F, a - w / 2, b - 0.08, 0, a + w / 2, b + 0.08, h);
+        }
+    }
+
+    // Church in its churchyard: the church facing the street at the front, a
+    // path to the door, rows of headstones, a few trees and a low wall round it
+    function churchyard(T, F, W, D, keys) {
+        const { S, p } = T;
+        const rng = new PG.RNG(hash(...keys, 22));
+        const occ = new Occupancy(W, D), z = F.P(0, 0, 0)[2];
+        const Lc = Math.min(W - 5, rng.range(9, 11.5)), Dc = Math.min(D - 7, rng.range(14, 19));
+        const a0 = (W - Lc) / 2 + rng.range(-1, 1) * Math.max(0, (W - Lc) / 2 - 3), fp = [a0, 3, a0 + Lc, 3 + Dc];
+        const am = (fp[0] + fp[2]) / 2;
+        S.kind = BUILDING;
+        church(T, F, fp, rng);
+        occ.add(fp[0] - 0.8, 0, fp[2] + 0.8, fp[3] + 0.8);
+        S.kind = GROUND;
+        for (const s of [-0.8, 0.8]) S.line([F.P(am + s, 0.4, 0), F.P(am + s, fp[1] - 0.1, 0)]);
+        // low wall round the yard, open where the path comes in
+        S.kind = BUILDING;
+        const h = 0.8, t = 0.3, e = 0.1;
+        S.box(F, e, e, 0, am - 1.2, e + t, h);
+        S.box(F, am + 1.2, e, 0, W - e, e + t, h);
+        S.box(F, e, D - e - t, 0, W - e, D - e, h);
+        S.box(F, e, e + t, 0, e + t, D - e - t, h);
+        S.box(F, W - e - t, e + t, 0, W - e, D - e - t, h);
+        occ.add(0, 0, W, 0.6);
+        // headstones in a few rows beside and behind the church, grass between
+        S.kind = THING;
+        for (let b = 2.2; b < D - 1.4; b += 2.4) {
+            for (let a = 1.6; a < W - 1.6; a += 1.9) {
+                if (!rng.chance(0.4)) continue;
+                const aa = a + rng.range(-0.25, 0.25);
+                if (!occ.free(aa - 0.35, b - 0.25, aa + 0.35, b + 0.25, 0)) continue;
+                headstone(T, F, aa, b, rng);
+            }
+        }
+        for (let i = rng.int(2, 5); i > 0; i--) {
+            const s = occ.place(rng, 1.4, 1.4, 0.6, 0.6, W - 0.6, D - 0.6);
+            if (s) tree(T, ...F.P(s[0] + 0.7, s[1] + 0.7, 0).slice(0, 2), z, rng);
+        }
+        if (rng.chance(p.people)) {
+            S.kind = THING;
+            person(T, ...F.P(am + rng.range(-3, 3), rng.range(0.8, 1.6), 0).slice(0, 2), z, rng);
+        }
+    }
+
+    // Island in the middle of a crossing, with a tree or a statue on it
+    function roundabout(T, x, y, r, rng) {
+        const S = T.S, hc = T.curb;
+        S.kind = GROUND;
+        S.frustum(x, y, 0, hc, r, r, T.segs(r));
+        if (r > 1.2) S.loop(ring(T.segs(r - 0.45), (c, s) => [x + (r - 0.45) * c, y + (r - 0.45) * s, hc]));
+        if (rng.chance(0.5)) {
+            tree(T, x, y, hc, rng, 1.2);
+            return;
+        }
+        // somebody on a plinth
+        S.kind = BUILDING;
+        const F = frame(x, y, hc, 0);
+        S.box(F, -0.6, -0.6, 0, 0.6, 0.6, 0.25);
+        S.box(F, -0.45, -0.45, 0.25, 0.45, 0.45, 1.6);
+        S.box(F, -0.55, -0.55, 1.6, 0.55, 0.55, 1.75);
+        person(T, x, y, hc + 1.75, rng);
+    }
+
+    // ------------------------------------------------------------------
+    // The river
+    // ------------------------------------------------------------------
+
+    const ZW = -1.5;  // river level, below the streets (m)
+    const PROM = 3.5; // walk along each side of the water (m)
+
+    // River through the town, along x or y. R has the strip [lo, hi] across it
+    // and the water between w0 and w1, `cross` the stretches along it where
+    // streets go over on bridges, and s0..s1 how far it runs. Returns the
+    // patches of water the wakes cover.
+    function river(T, R, cross, s0, s1, seed) {
+        const { S, p, cam } = T;
+        const rng = new PG.RNG(hash(seed, 30));
+        const X = R.alongX, Wp = (s, t, z) => (X ? [s, t, z] : [t, s, z]);
+        const { w0, w1, lo, hi } = R, hc = T.curb, nt = X ? [0, 1] : [1, 0];
+        S.kind = GROUND;
+        // the far wall is the one we see, the near one only hides the water behind it
+        S.face([Wp(s0, w1, ZW), Wp(s1, w1, ZW), Wp(s1, w1, 0), Wp(s0, w1, 0)], false);
+        S.face([Wp(s0, w0, ZW), Wp(s1, w0, ZW), Wp(s1, w0, 0), Wp(s0, w0, 0)], false);
+        S.line([Wp(s0, w1, ZW), Wp(s1, w1, ZW)]);
+        S.line([Wp(s0, w1, -0.3), Wp(s1, w1, -0.3)]);
+        if (T.detail) for (let s = Math.ceil(s0 / 4.5) * 4.5; s < s1; s += 4.5) S.line([Wp(s, w1, ZW + 0.05), Wp(s, w1, -0.3)]);
+        // walks either side between the crossings, and the bare wall top where a street meets the water
+        const walks = [];
+        let s = s0;
+        for (const [c0, c1] of cross) {
+            if (c0 - s > 3) walks.push([s, c0]);
+            for (const t of [w0, w1]) S.line([Wp(c0, t, 0), Wp(c1, t, 0)]);
+            s = c1;
+        }
+        if (s1 - s > 3) walks.push([s, s1]);
+        const benchDir = X ? 0 : 3;
+        for (const [a, b] of walks) {
+            S.kind = GROUND;
+            for (const [t0, t1] of [[lo, w0], [w1, hi]]) {
+                const c = [Wp(a, t0, 0), Wp(b, t1, 0)];
+                const rr = roundRect(Math.min(c[0][0], c[1][0]), Math.min(c[0][1], c[1][1]), Math.max(c[0][0], c[1][0]), Math.max(c[0][1], c[1][1]), 1, 4);
+                S.prism(rr.map(([x, y]) => [x, y, 0]), [0, 0, hc], true);
+            }
+            // railings along the water
+            S.kind = THING;
+            for (const t of [w0 - 0.2, w1 + 0.2]) {
+                const n = Math.max(1, Math.round((b - a - 1.5) / 2));
+                S.line([Wp(a + 0.8, t, hc + 1), Wp(b - 0.8, t, hc + 1)]);
+                if (T.detail) S.line([Wp(a + 0.8, t, hc + 0.55), Wp(b - 0.8, t, hc + 0.55)]);
+                for (let i = 0; i <= n; i++) {
+                    const q = a + 0.8 + ((b - a - 1.6) * i) / n;
+                    S.line([Wp(q, t, hc), Wp(q, t, hc + 1)]);
+                }
+            }
+            // trees along the far side (on the near side they'd hide the river), lamps along the near
+            const n = Math.max(1, Math.round((b - a - 2) / 7));
+            for (let i = 0; i < n; i++) {
+                const q = a + 1 + ((b - a - 2) * (i + 0.5)) / n;
+                if (i % 3 !== 2 && rng.chance(0.3 + p.trees)) tree(T, ...Wp(q, w1 + PROM * 0.6, 0).slice(0, 2), hc, rng);
+                else if (rng.chance(0.3 + p.props * 0.5)) {
+                    S.kind = THING;
+                    bench(T, ...Wp(q, w1 + 1.1, 0).slice(0, 2), hc, benchDir);
+                }
+                if (i % 2 === 0) lamp(T, ...Wp(q, w0 - 1, 0).slice(0, 2), hc);
+            }
+            if (rng.chance(p.people)) {
+                S.kind = THING;
+                person(T, ...Wp(rng.range(a + 1, b - 1), rng.chance(0.5) ? w1 + 1.8 : w0 - 1.8, 0).slice(0, 2), hc, rng);
+            }
+        }
+        // stone bridges where the streets cross
+        for (const [c0, c1] of cross) {
+            const F = X ? { P: (a, b, c) => [c0 + b, a, c], V: (a, b, c) => [b, a, c] } : { P: (a, b, c) => [a, c0 + b, c], V: (a, b, c) => [a, b, c] };
+            S.kind = GROUND;
+            bridge(T, F, w0, w1, c1 - c0, 0, ZW, true);
+        }
+        // boats tied up along both walls between the bridges, and one or two going along
+        S.kind = THING;
+        const kinds = [[3, 'row'], [2, 'launch'], [1.2, 'sail']];
+        const stretches = [];
+        s = s0;
+        for (const [c0, c1] of cross.concat([[s1, s1]])) {
+            if (c0 - s > 6) stretches.push([s + 1.5, c0 - 1.5]);
+            s = c1;
+        }
+        for (const [a, b] of stretches) {
+            const [u, v] = rng.chance(0.5) ? [a, b] : [b, a];
+            moorRow(T, Wp(u, w1, 0), Wp(v, w1, 0), [-nt[0], -nt[1]], null, rng, kinds, 0, ZW);
+            moorRow(T, Wp(u, w0, 0), Wp(v, w0, 0), nt, null, rng, kinds, 0, ZW);
+        }
+        const wakes = [];
+        const n = rng.chance(p.boats) ? rng.int(1, 2) : 0;
+        for (let i = 0, tries = 0; i < n && tries < 20; tries++) {
+            const [a, b] = rng.pick(stretches.length ? stretches : [[s0, s1]]);
+            if (b - a < 24) continue;
+            const q = rng.range(a + 10, b - 10), [x, y] = Wp(q, (w0 + w1) / 2 + rng.range(-0.8, 0.8), 0);
+            const qp = cam.project(x, y, ZW);
+            if (qp[0] < 8 || qp[1] < 8 || qp[0] > S.W - 8 || qp[1] > S.H - 8) continue;
+            const ang = (X ? 0 : Math.PI / 2) + (rng.chance(0.5) ? Math.PI : 0) + rng.range(-0.08, 0.08);
+            wakes.push(underway(T, x, y, ang, rng, ZW));
+            i++;
+        }
+        return wakes;
+    }
+
+    // Short dashes across the river in rows, in page space like a printed
+    // map, left out where they'd touch anything
+    function riverMarks(T, R, wakes, seed) {
+        const { S, cam } = T;
+        const rng = new PG.RNG(hash(seed, 31));
+        const rowGap = 5.2, colGap = 15, dash = 4, t = q => (R.alongX ? q[1] : q[0]);
+        const wet = q => t(q) > R.w0 + 0.8 && t(q) < R.w1 - 0.8 && !wakes.some(P => geo.pointInPolygon(q[0], q[1], P));
+        S.kind = GROUND;
+        for (let row = 0, sy = rowGap * 0.6; sy < S.H; row++, sy += rowGap) {
+            const off = (row % 2 ? colGap / 2 : 0) + rng.range(-2, 2);
+            for (let sx = off - colGap; sx < S.W + colGap; sx += colGap) {
+                const cx = sx + rng.range(-0.18, 0.18) * colGap, len = dash * rng.range(0.75, 1.2);
+                const a = cam.ground(cx - len / 2, sy, ZW), b = cam.ground(cx + len / 2, sy, ZW);
+                if (!wet(cam.ground(cx, sy, ZW)) || !wet(a) || !wet(b)) continue;
+                S.line([[a[0], a[1], ZW], [b[0], b[1], ZW]], true);
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Layout
+    // ------------------------------------------------------------------
+
+    // The town is rows of blocks along x. Through streets run along y across
+    // every row and each row gets its own cross streets between them, so with
+    // `irregular` up the rows stop lining up. The street under a row can be a
+    // boulevard, and one of those or one of the through streets can be a river.
+    function plan(T, rng, X0, X1, Y0, Y1, mid) {
+        const p = T.p, bw = p.blockW, bd = p.blockD, st = p.street, irr = p.irregular, ux = bw + st;
+        // through streets, up to three blocks apart, and one past the far edge so the last blocks close off
+        const mains = [];
+        for (let x = X0 - rng.range(0, ux); ; ) {
+            mains.push({ x, w: st });
+            if (x > X1 + ux) break;
+            x += rng.weighted([[1.2 - irr, 1], [irr * 1.5, 2], [irr * 0.6, 3]]) * ux * (1 + irr * rng.range(-0.12, 0.12));
+        }
+        let R = null;
+        if (rng.chance(p.river)) {
+            R = { alongX: rng.chance(0.5), w: rng.range(12, 18) };
+            if (!R.alongX) {
+                const m = mains.reduce((b, q) => (Math.abs(q.x - mid[0]) < Math.abs(b.x - mid[0]) ? q : b));
+                // a street down each bank, then the walks and the water
+                m.w = R.w + 2 * PROM + 2 * st;
+                m.river = true;
+                R.lo = m.x - m.w / 2 + st;
+                R.hi = m.x + m.w / 2 - st;
+            }
+        }
+        const riverY = R && R.alongX ? mid[1] + rng.range(-25, 25) : null;
+        const rows = [];
+        for (let y = Y0 - rng.range(0, bd + st), i = 0; y < Y1 + bd; i++) {
+            let gap = { kind: 'street', w: st };
+            if (riverY !== null && R.lo === undefined && y + bd > riverY) {
+                gap = { kind: 'river', w: R.w + 2 * PROM + 2 * st };
+                R.lo = y + st;
+                R.hi = y + gap.w - st;
+            } else if (i > 0 && rng.chance(p.boulevards * 0.3)) {
+                gap = { kind: 'boulevard', w: st * 2 + 3 };
+            }
+            const d = bd * (1 + irr * rng.range(-0.2, 0.25));
+            rows.push({ i, gap, y0: y + gap.w, y1: y + gap.w + d, cuts: [], blocks: [] });
+            y += gap.w + d;
+        }
+        if (R) {
+            R.w0 = R.lo + PROM;
+            R.w1 = R.hi - PROM;
+        }
+        for (const row of rows) {
+            mains.forEach((m, k) => {
+                row.cuts.push({ x: m.x, w: m.w, main: true, river: m.river });
+                if (k + 1 === mains.length) return;
+                const span = mains[k + 1].x - m.x;
+                let n = Math.round(span / ux);
+                if (rng.chance(irr * 0.45)) n += rng.pick([-1, 1]);
+                n = Math.max(1, Math.min(n, Math.floor(span / 24)));
+                for (let q = 1; q < n; q++) {
+                    const c = { x: m.x + (span * (q + irr * rng.range(-0.25, 0.25))) / n, w: rng.chance(irr * 0.25) ? Math.max(4, st * 0.6) : st };
+                    // keep clear of the through streets either side, the river's especially
+                    if (Math.abs(c.x - m.x) > m.w / 2 + c.w / 2 + 12 && Math.abs(mains[k + 1].x - c.x) > mains[k + 1].w / 2 + c.w / 2 + 12) row.cuts.push(c);
+                }
+            });
+            for (let k = 0; k + 1 < row.cuts.length; k++) {
+                const x0 = row.cuts[k].x + row.cuts[k].w / 2, x1 = row.cuts[k + 1].x - row.cuts[k + 1].w / 2;
+                if (x1 - x0 >= 12) row.blocks.push({ x0, x1, y0: row.y0, y1: row.y1 });
+            }
+        }
+        return { mains, rows, R };
+    }
+
     function buildTown(T, seed) {
         const { S, p, cam } = T;
-        const bw = p.blockW, bd = p.blockD, st = p.street;
-        const PX = bw + st, PY = bd + st;
         const ph = new PG.RNG(hash(seed, 99));
-        const gx = ph.range(-PX, 0), gy = ph.range(-PY, 0);
         // the ground visible on the page, plus room for tall things standing below it
         const tall = 16 * cam.ce * cam.k;
         const corners = [[0, 0], [S.W, 0], [S.W, S.H + tall], [0, S.H + tall]].map(([x, y]) => cam.ground(x, y));
         const xs = corners.map(c => c[0]), ys = corners.map(c => c[1]);
-        const i0 = Math.floor((Math.min(...xs) - gx) / PX) - 1, i1 = Math.ceil((Math.max(...xs) - gx) / PX);
-        const j0 = Math.floor((Math.min(...ys) - gy) / PY) - 1, j1 = Math.ceil((Math.max(...ys) - gy) / PY);
-        // can't happen within the parameter limits, but don't loop forever if it does
-        if ((i1 - i0 + 1) * (j1 - j0 + 1) > 20000) return;
+        const X0 = Math.min(...xs), X1 = Math.max(...xs), Y0 = Math.min(...ys), Y1 = Math.max(...ys);
         const pad = 12;
         const seen = (x0, y0, x1, y1, h) => {
             const q = [];
@@ -1136,14 +1537,83 @@
             for (const v of q) { a = Math.min(a, v[0]); c = Math.max(c, v[0]); b = Math.min(b, v[1]); e = Math.max(e, v[1]); }
             return c > -pad && e > -pad && a < S.W + pad && b < S.H + pad;
         };
-        for (let i = i0; i <= i1; i++) {
-            for (let j = j0; j <= j1; j++) {
-                const x0 = gx + i * PX, y0 = gy + j * PY;
-                const keys = [seed, i, j];
-                if (seen(x0 - st, y0 - st, x0, y0 + bd, 3)) street(T, x0 - st / 2, y0 + bd, 0, -1, bd, [...keys, 1]);
-                if (seen(x0, y0 - st, x0 + bw, y0, 3)) street(T, x0, y0 - st / 2, 1, 0, bw, [...keys, 2]);
-                if (seen(x0, y0, x0 + bw, y0 + bd, 16)) block(T, x0, y0, x0 + bw, y0 + bd, keys);
+        // the town centre, where it's built up most
+        T.centre = cam.ground(S.W * ph.range(0.3, 0.7), S.H * ph.range(0.3, 0.6));
+        T.centreR = ph.range(55, 90);
+        const { mains, rows, R } = plan(T, ph, X0, X1, Y0, Y1, cam.ground(S.W / 2, S.H / 2));
+        // can't happen within the parameter limits, but don't loop forever if it does
+        if (rows.reduce((n, r) => n + r.blocks.length, 0) > 20000) return;
+        // squares near the centre, then a church a little way off
+        const near = b => Math.hypot((b.x0 + b.x1) / 2 - T.centre[0], (b.y0 + b.y1) / 2 - T.centre[1]);
+        const cands = [];
+        for (const row of rows) for (const b of row.blocks) if (seen(b.x0 + 4, b.y0 + 4, b.x1 - 4, b.y1 - 4, 0)) cands.push({ b, d: near(b) + ph.range(0, 50) });
+        cands.sort((u, v) => u.d - v.d);
+        const want = ph.chance(p.plazas) ? (ph.chance(p.plazas * 0.6) ? 2 : 1) : 0, picked = [];
+        const apart = (b, m) => picked.every(q => Math.hypot((q.x0 + q.x1 - b.x0 - b.x1) / 2, (q.y0 + q.y1 - b.y0 - b.y1) / 2) > m);
+        for (const { b } of cands) {
+            const w = b.x1 - b.x0, d = b.y1 - b.y0;
+            if (picked.length >= want) break;
+            if (w < 18 || d < 18 || w > 60 || d > 60 || !apart(b, 55)) continue;
+            b.plaza = true;
+            picked.push(b);
+        }
+        if (p.tower && picked.length) picked[0].tower = true;
+        if (p.church) {
+            for (const { b } of cands.slice().sort((u, v) => Math.abs(u.d - T.centreR * 0.8) - Math.abs(v.d - T.centreR * 0.8))) {
+                if (b.plaza || b.x1 - b.x0 < 22 || b.y1 - b.y0 < 28 || !apart(b, 40)) continue;
+                b.church = true;
+                break;
             }
+        }
+        // streets up each row, then the streets between rows, broken where the rows' streets meet them
+        const st = p.street;
+        const streetX = (yc, w, cuts, keys, boulevard) => {
+            const iv = cuts.map(c => [c.x - c.w / 2, c.x + c.w / 2]).sort((u, v) => u[0] - v[0]);
+            let x = X0 - 30;
+            iv.concat([[X1 + 30, X1 + 30]]).forEach(([c0, c1], k) => {
+                if (c0 - x > 3 && seen(x, yc - w / 2, c0, yc + w / 2, 3)) street(T, x, yc, 1, 0, c0 - x, [...keys, k], w, boulevard);
+                x = Math.max(x, c1);
+            });
+        };
+        rows.forEach((row, r) => {
+            const len = row.y1 - row.y0;
+            row.cuts.forEach((c, k) => {
+                if (!c.river) {
+                    if (seen(c.x - c.w / 2, row.y0, c.x + c.w / 2, row.y1, 3)) street(T, c.x, row.y1, 0, -1, len, [seed, r, k, 1], c.w);
+                    return;
+                }
+                for (const [xc, e] of [[R.lo - st / 2, 3], [R.hi + st / 2, 4]]) {
+                    if (seen(xc - st / 2, row.y0, xc + st / 2, row.y1, 3)) street(T, xc, row.y1, 0, -1, len, [seed, r, k, e], st);
+                }
+            });
+            const gap = row.gap, yc = row.y0 - gap.w / 2, below = r > 0 ? rows[r - 1].cuts : [];
+            if (gap.kind === 'river') {
+                streetX(R.lo - st / 2, st, below, [seed, r, 5]);
+                streetX(R.hi + st / 2, st, row.cuts, [seed, r, 6]);
+                return;
+            }
+            streetX(yc, gap.w, row.cuts.concat(below), [seed, r, 2], gap.kind === 'boulevard');
+            // the odd roundabout where two through streets cross
+            if (r > 0 && gap.kind === 'street') {
+                const rr = new PG.RNG(hash(seed, r, 15));
+                for (const m of mains) {
+                    if (m.river || !rr.chance(p.roundabouts * 0.35) || !seen(m.x - 3, yc - 3, m.x + 3, yc + 3, 4)) continue;
+                    roundabout(T, m.x, yc, Math.min(m.w, gap.w) * 0.32, rr);
+                }
+            }
+        });
+        rows.forEach((row, r) => {
+            row.blocks.forEach((b, j) => {
+                if (seen(b.x0, b.y0, b.x1, b.y1, 16)) block(T, b.x0, b.y0, b.x1, b.y1, [seed, r, j], b);
+            });
+        });
+        if (R && R.lo !== undefined) {
+            const cross = R.alongX
+                ? mains.map(m => [m.x - m.w / 2, m.x + m.w / 2])
+                : rows.map(row => [row.y0 - row.gap.w, row.y0]);
+            const [s0, s1] = R.alongX ? [X0 - 30, X1 + 30] : [Y0 - 30, Y1 + 30];
+            const wakes = river(T, R, cross.filter(([c0, c1]) => c1 > s0 && c0 < s1).sort((u, v) => u[0] - v[0]), s0, s1, seed);
+            riverMarks(T, R, wakes, seed);
         }
     }
 
@@ -1170,11 +1640,27 @@
                 hint: 'Spacing of the joints across the sidewalk, 0 for none' },
             { id: 'crosswalks', label: 'Crosswalks', type: 'range', min: 0, max: 1, step: 0.01, value: 0.35, random: [0.1, 0.6] },
             { id: 'dashes', label: 'Lane dashes', type: 'checkbox', value: true },
+            { id: 'irregular', label: 'Staggered streets', type: 'range', min: 0, max: 1, step: 0.01, value: 0.5, random: [0, 1],
+                hint: 'At 0 the cross streets all line up. Higher and each row of blocks gets its own' },
+            { id: 'boulevards', label: 'Boulevards', type: 'range', min: 0, max: 1, step: 0.01, value: 0.35, random: [0, 0.8],
+                hint: 'Wide streets with trees down the middle' },
+            { id: 'roundabouts', label: 'Roundabouts', type: 'range', min: 0, max: 1, step: 0.01, value: 0.3, random: [0, 0.7] },
+            { type: 'section', label: 'Town' },
+            { id: 'downtown', label: 'Town centre', type: 'range', min: 0, max: 1, step: 0.01, value: 0.7, random: [0.3, 1],
+                hint: 'How built up the middle of town gets: apartments, terraces and shops' },
+            { id: 'plazas', label: 'Squares', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.2, 1] },
+            { id: 'tower', label: 'Clock tower', type: 'checkbox', value: true, random: 0.6, hint: 'On a square, when there is one' },
+            { id: 'church', label: 'Church', type: 'checkbox', value: true, random: 0.7 },
+            { id: 'river', label: 'River', type: 'range', min: 0, max: 1, step: 0.01, value: 0.4, random: [0, 1],
+                hint: 'Chance of a river through town, with bridges over it' },
+            { id: 'boats', label: 'Boats', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.2, 1], show: p => p.river > 0 },
             { type: 'section', label: 'Buildings' },
             { id: 'houses', label: 'Pitched-roof houses', type: 'range', min: 0, max: 1, step: 0.01, value: 1, random: [0.5, 1] },
             { id: 'flats', label: 'Flat-roof houses', type: 'range', min: 0, max: 1, step: 0.01, value: 0.35, random: [0, 0.6] },
             { id: 'aframes', label: 'A-frames', type: 'range', min: 0, max: 1, step: 0.01, value: 0.2, random: [0, 0.4] },
             { id: 'apartments', label: 'Apartments', type: 'range', min: 0, max: 1, step: 0.01, value: 0.35, random: [0, 0.6] },
+            { id: 'terraces', label: 'Terraced rows', type: 'range', min: 0, max: 1, step: 0.01, value: 0.35, random: [0, 0.7],
+                hint: 'Narrow gable-fronted houses in a row, mostly in the town centre' },
             { id: 'windmills', label: 'Windmills', type: 'range', min: 0, max: 1, step: 0.01, value: 0.05, random: [0, 0.12] },
             { id: 'parks', label: 'Parks & gardens', type: 'range', min: 0, max: 1, step: 0.01, value: 0.1, random: [0, 0.25] },
             { id: 'floors', label: 'Max storeys', type: 'range', min: 1, max: 8, step: 1, value: 4, random: [3, 5] },
@@ -1209,6 +1695,8 @@
                 // keep the two curb lines apart on paper
                 curb: Math.max(0.2, 0.45 / (k * cam.ce)),
                 cornerR: 3.5,
+                // no roof hatching here (see isokit's shade), and the river goes with the streets
+                waterKind: GROUND,
             };
             buildTown(T, ctx.seed | 0);
             const kinds = render(S);

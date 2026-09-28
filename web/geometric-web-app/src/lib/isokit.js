@@ -1,6 +1,8 @@
 /*
  * Parts for building towns in an isometric scene (see iso.js): walls,
  * windows, doors and roofs, plus vehicles, fences, furniture and people.
+ * Further down are the bigger pieces Town and Harbour share: the church,
+ * clock tower, terraces, market hall, things for a square, boats and bridges.
  *
  * Builders take a context T with S (the scene), cam, k (mm per m), detail
  * (draw small line work), sees(normal), segs(r) and picket (fence spacing).
@@ -513,9 +515,711 @@
         }
     }
 
+    // ------------------------------------------------------------------
+    // Shading. A scene that hatches its roofs (Harbour) sets T.tones to the
+    // line kinds for lit faces, shaded faces and canopies, with T.hLit and
+    // T.hDark (spacing in mm) and T.lit(n). Without T.tones nothing is hatched.
+    // T.waterKind is the kind for water (fountain jets, wakes).
+    // ------------------------------------------------------------------
+
+    const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+    const unit = v => {
+        const l = Math.hypot(v[0], v[1], v[2]) || 1;
+        return [v[0] / l, v[1] / l, v[2] / l];
+    };
+
+    // Outward normal of a flat face (world points) on a solid around `centre`
+    function outward(pts, centre) {
+        const n = newell(pts);
+        let cx = 0, cy = 0, cz = 0;
+        for (const p of pts) { cx += p[0] / pts.length; cy += p[1] / pts.length; cz += p[2] / pts.length; }
+        const s = n[0] * (cx - centre[0]) + n[1] * (cy - centre[1]) + n[2] * (cz - centre[2]) < 0 ? -1 : 1;
+        return [n[0] * s, n[1] * s, n[2] * s];
+    }
+
+    // Draw in another kind for a moment, when there is one
+    function inKind(S, kind, fn) {
+        const keep = S.kind;
+        if (kind !== undefined && kind !== null) S.kind = kind;
+        fn();
+        S.kind = keep;
+    }
+
+    // Hatch a roof face down its fall line (flat roofs along x), shaded faces
+    // closer together. tone 'roof' is lit or shaded by the sun, 'canopy' is the
+    // same with the canopy kind on the lit side, and 'lit' always counts as lit.
+    // n is the outward normal.
+    function shade(T, pts, n, tone = 'roof') {
+        const K = T.tones;
+        if (!K || !T.sees(n)) return;
+        const lit = tone === 'lit' || T.lit(n);
+        const flat = Math.hypot(n[0], n[1]) < 1e-6 * Math.abs(n[2]);
+        const n2 = n[0] * n[0] + n[1] * n[1] + n[2] * n[2];
+        const dir = flat ? [1, 0, 0] : [n[0] * n[2], n[1] * n[2], n[2] * n[2] - n2];
+        inKind(T.S, lit ? (tone === 'canopy' ? K.canopy : K.lit) : K.dark, () => T.S.hatch(pts, dir, lit ? T.hLit : T.hDark));
+    }
+
+    function shadeGable(T, F, R, tone) {
+        for (const side of [-1, 1]) {
+            const sl = gableSlope(F, R, side);
+            shade(T, [sl.at(0, 0), sl.at(sl.len, 0), sl.at(sl.len, sl.up), sl.at(0, sl.up)], sl.n, tone);
+        }
+    }
+
+    // Upright lines down the shaded side of a round tower (radius r0 at z0 to
+    // r1 at z1), the same idea as the hatching on a roof out of the sun
+    function shadeRound(T, x, y, z0, z1, r0, r1) {
+        if (!T.tones) return;
+        const c = T.cam;
+        const at = (r, f, z) => {
+            const s = r * f, d = Math.sqrt(r * r - s * s);
+            return [x + c.rx * s - c.fx * d, y + c.ry * s - c.fy * d, z];
+        };
+        for (let f = 0.45; f < 0.97; f += T.hLit / (T.k * r0)) T.S.line([at(r0 + 0.01, f, z0), at(r1 + 0.01, f, z1)]);
+    }
+
+    // ------------------------------------------------------------------
+    // Town centre buildings, shared by Town and Harbour
+    // ------------------------------------------------------------------
+
+    // Striped canvas awning over a shop front, with a scalloped valance. Every
+    // other stripe is filled with lines close enough to read as solid.
+    function awning(T, F, a0, a1, b, z, depth) {
+        const S = T.S, P = F.P, drop = depth * 0.42, val = 0.3, lo = z - drop - val;
+        S.prism([P(a0, b, z), P(a0, b - depth, z - drop), P(a0, b - depth, lo), P(a0, b, lo)], F.V(a1 - a0, 0, 0));
+        const n = Math.max(3, Math.round((a1 - a0) / 0.34) | 1), sw = (a1 - a0) / n;
+        const fill = T.detail ? Math.max(1, Math.ceil((sw * T.k) / 0.3)) : 1;
+        for (let i = 1; i < n; i += 2) {
+            for (let j = 0; j <= fill; j++) {
+                const a = a0 + sw * (i + j / fill);
+                S.line([P(a, b, z), P(a, b - depth, z - drop), P(a, b - depth, lo)]);
+            }
+        }
+        if (!T.detail) return;
+        const pts = [];
+        for (let i = 0; i < n; i++) {
+            for (let k = i ? 1 : 0; k <= 6; k++) pts.push(P(a0 + sw * (i + k / 6), b - depth, lo - 0.1 * Math.sin((Math.PI * k) / 6)));
+        }
+        S.line(pts);
+    }
+
+    // Barrel vault over a footprint. The arch spans u (alongV) or v, and the
+    // barrel runs along the other axis. arc(y) gives the curve over the vault
+    // at position y along the barrel, a hair above the facets.
+    function vault(T, F, fp, zb, alongV, rise, oh = 0.3) {
+        const [a0, b0, a1, b1] = fp;
+        const x0 = (alongV ? a0 : b0) - oh, x1 = (alongV ? a1 : b1) + oh;
+        const y0 = (alongV ? b0 : a0) - oh, y1 = (alongV ? b1 : a1) + oh;
+        const P = alongV ? (x, y, c) => F.P(x, y, c) : (x, y, c) => F.P(y, x, c);
+        const c = x1 - x0, xm = (x0 + x1) / 2, R = (c * c / 4 + rise * rise) / (2 * rise), zc = zb + rise - R;
+        const th0 = Math.acos(Math.min(1, c / 2 / R)), sweep = Math.PI - 2 * th0;
+        const at = (y, th, lift) => P(xm + (R + lift) * Math.cos(th), y, zc + (R + lift) * Math.sin(th));
+        const n = 14, prof = [];
+        for (let i = 0; i <= n; i++) prof.push(at(y0, th0 + (sweep * i) / n, 0));
+        T.S.prism(prof, alongV ? F.V(0, y1 - y0, 0) : F.V(y1 - y0, 0, 0), true);
+        return {
+            y0, y1, ridge: zb + rise,
+            arc: (y, m = 24) => {
+                const pts = [];
+                for (let i = 0; i <= m; i++) pts.push(at(y, th0 + (sweep * i) / m, 0.03));
+                return pts;
+            },
+        };
+    }
+
+    // Lines over a vault, a few like seams or close enough to read as hatching.
+    // In the lit tone by default, so a scene without tones gets none.
+    function ribs(T, V, gap, kind = T.tones ? T.tones.lit : null) {
+        if (kind === null || kind === undefined) return;
+        const n = Math.max(1, Math.round((V.y1 - V.y0) / gap));
+        inKind(T.S, kind, () => {
+            for (let i = 0; i < n; i++) T.S.line(V.arc(V.y0 + ((V.y1 - V.y0) * (i + 0.5)) / n));
+        });
+    }
+
+    // Open market hall: posts, beams and a double barrel roof, stalls underneath
+    function marketHall(T, F, fp, rng) {
+        const S = T.S;
+        const [a0, b0, a1, b1] = fp, L = a1 - a0, h = 3.3;
+        const nPost = Math.max(2, Math.round(L / 4) + 1);
+        for (const b of [b0, b1 - 0.3]) {
+            for (let i = 0; i < nPost; i++) {
+                const a = a0 + ((L - 0.3) * i) / (nPost - 1);
+                S.box(F, a, b, 0, a + 0.3, b + 0.3, h);
+            }
+            S.box(F, a0 - 0.1, b - 0.05, h, a1 + 0.1, b + 0.35, h + 0.35);
+        }
+        const bm = (b0 + b1) / 2, rise = (bm - b0) * 0.42;
+        for (const half of [[a0, b0, a1, bm], [a0, bm, a1, b1]]) {
+            const V = vault(T, F, half, h + 0.35, false, rise, 0.2);
+            if (T.tones) ribs(T, V, T.hLit / T.k);
+            else ribs(T, V, 1.6, S.kind);
+        }
+        // stalls with crates on them
+        const n = Math.max(1, Math.floor(L / 3.6));
+        for (let i = 0; i < n; i++) {
+            const a = a0 + (L * (i + 0.5)) / n - 0.75;
+            S.box(F, a, bm - 0.45, 0, a + 1.5, bm + 0.45, 0.8);
+            for (let c = 0; c < 2; c++) S.box(F, a + 0.1 + c * 0.7, bm - 0.35, 0.8, a + 0.65 + c * 0.7, bm + 0.2, 1.1);
+        }
+        return { doors: [L / 2], awning: null };
+    }
+
+    // Square clock tower with a pyramid roof, standing on (a, b)
+    function clockTower(T, F, a, b, rng) {
+        const S = T.S, P = F.P;
+        const w = 3.2, r = w / 2, h1 = 4.2, h2 = 8.2, h3 = 11;
+        S.box(F, a - r - 0.3, b - r - 0.3, 0, a + r + 0.3, b + r + 0.3, 0.45);
+        S.box(F, a - r, b - r, 0.45, a + r, b + r, h3);
+        for (const z of [h1, h2]) S.box(F, a - r - 0.12, b - r - 0.12, z, a + r + 0.12, b + r + 0.12, z + 0.25);
+        S.box(F, a - r - 0.25, b - r - 0.25, h3, a + r + 0.25, b + r + 0.25, h3 + 0.35);
+        // pyramid roof
+        const e = r + 0.55, zb = h3 + 0.35, apex = P(a, b, zb + e * 1.1);
+        const corners = [P(a - e, b - e, zb), P(a + e, b - e, zb), P(a + e, b + e, zb), P(a - e, b + e, zb)];
+        S.solid(corners.concat([apex]), [[0, 3, 2, 1], [0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4]]);
+        const centre = P(a, b, zb + e * 0.3);
+        for (let i = 0; i < 4; i++) {
+            const tri = [corners[i], corners[(i + 1) % 4], apex];
+            shade(T, tri, outward(tri, centre));
+        }
+        // clock faces, door and windows on the sides the camera sees
+        for (let side = 0; side < 4; side++) {
+            const W = wall(F, side, [a - r, b - r, a + r, b + r]);
+            if (!T.sees(W.n)) continue;
+            const cr = 0.85, cz = (h2 + 0.25 + h3) / 2;
+            S.loop(ring(T.segs(cr), (x, y) => W.at(r + cr * x, cz + cr * y)));
+            if (T.detail) S.line([W.at(r, cz + cr * 0.7), W.at(r, cz), W.at(r + cr * 0.45, cz - cr * 0.3)]);
+            if (side === 0) door(T, W.at, r, 0.45, 1.3, 2.6, true);
+            else pane(T, W.at, r - 0.35, h1 + 1.2, 0.7, 1.6, 'frame');
+        }
+        return { doors: [0], awning: null };
+    }
+
+    // Gable wall standing up in front of a roof, from an outline [s, c] that
+    // runs from (0, zb) over the top to (L, zb). Built from upright slices that
+    // stay quiet, and drawn front and back with a line across at each corner.
+    function gableWall(T, F, a0, b0, t, outline) {
+        const S = T.S, P = F.P, zb = outline[0][1];
+        for (let i = 0; i + 1 < outline.length; i++) {
+            const [s0, c0] = outline[i], [s1, c1] = outline[i + 1];
+            if (s1 - s0 < 1e-6) continue;
+            S.prism([P(a0 + s0, b0, zb), P(a0 + s1, b0, zb), P(a0 + s1, b0, c1), P(a0 + s0, b0, c0)], F.V(0, t, 0), false, true);
+        }
+        S.line(outline.map(([s, c]) => P(a0 + s, b0, c)));
+        S.line(outline.map(([s, c]) => P(a0 + s, b0 + t, c)));
+        for (const [s, c] of outline.slice(1, -1)) S.line([P(a0 + s, b0, c), P(a0 + s, b0 + t, c)]);
+    }
+
+    // Stepped gable over a roof of this width and rise, each step clear of the slope
+    function stepGable(L, zb, rise, n) {
+        const sw = L / (2 * n + 1), roof = s => zb + rise * (1 - Math.abs(s - L / 2) / (L / 2)), cap = zb + rise + 0.55;
+        const hs = Array.from({ length: n }, (_, k) => roof((k + 1) * sw) + 0.35);
+        const out = [[0, zb]];
+        hs.forEach((h, k) => out.push([k * sw, h], [(k + 1) * sw, h]));
+        out.push([n * sw, cap], [L - n * sw, cap]);
+        for (let k = n - 1; k >= 0; k--) out.push([L - (k + 1) * sw, hs[k]], [L - k * sw, hs[k]]);
+        out.push([L, zb]);
+        return out;
+    }
+
+    // Neck gable: rounded shoulders up to an upright neck with a little pediment
+    function neckGable(L, zb, rise) {
+        const nw = L * 0.3, out = [];
+        for (let i = 0; i <= 8; i++) out.push([nw * (i / 8), zb + rise * 0.6 * Math.sin((Math.PI / 2) * (i / 8))]);
+        out.push([nw, zb + rise + 0.25], [L / 2, zb + rise + 0.85], [L - nw, zb + rise + 0.25]);
+        for (let i = 8; i >= 0; i--) out.push([L - nw * (i / 8), zb + rise * 0.6 * Math.sin((Math.PI / 2) * (i / 8))]);
+        return out;
+    }
+
+    // Beam sticking out under the peak of a gable with a rope down from it
+    function hoist(T, F, a, b, c) {
+        T.S.box(F, a - 0.09, b - 1, c - 0.09, a + 0.09, b, c + 0.09);
+        if (T.detail) T.S.line([F.P(a, b - 0.85, c - 0.09), F.P(a, b - 0.85, c - 1.6)]);
+    }
+
+    // Row of narrow houses sharing their side walls, each with its gable to
+    // the street: plain, stepped or a neck gable, some with a hoist beam.
+    // o.shops puts a shop front with an awning on some of them.
+    function terrace(T, F, fp, rng, o) {
+        const S = T.S;
+        const [a0, b0, a1, b1] = fp, L = a1 - a0, base = 0.3, t = 0.35;
+        const n = Math.max(2, Math.round(L / rng.range(3.8, 4.8)));
+        const ws = Array.from({ length: n }, () => rng.range(0.85, 1.15)), sum = ws.reduce((u, v) => u + v, 0);
+        plinth(T, F, fp, base, 0.15);
+        const doors = [];
+        let a = a0;
+        for (let i = 0; i < n; i++) {
+            const w = (ws[i] * L) / sum, h = [a, b0, a + w, b1];
+            const floors = Math.max(1, Math.min(o.floors, rng.int(2, 4))), top = base + floors * FLOOR;
+            S.box(F, a, b0, base, a + w, b1, top);
+            const style = rng.weighted([[3, 'plain'], [2, 'step'], [1.5, 'neck']]);
+            // the roof stops at the side walls, and behind the gable wall when there is one
+            const rf = [a + 0.4, style === 'plain' ? b0 : b0 + t + 0.3, a + w - 0.4, b1];
+            const R = gableRoof(T, F, rf, top + 0.25, false, geo.rad(rng.range(50, 58)), rng, { attic: style === 'plain' && rng.chance(0.6) });
+            shadeGable(T, F, R);
+            const front = wall(F, 0, h);
+            if (style !== 'plain') {
+                gableWall(T, F, a, b0, t, style === 'step' ? stepGable(w, top, R.rise, w > 4.4 ? 3 : 2) : neckGable(w, top, R.rise));
+                if (T.sees(front.n)) pane(T, front.at, w / 2 - 0.35, top + R.rise * 0.25, 0.7, 0.9, 'cross');
+            }
+            if (rng.chance(0.4)) hoist(T, F, a + w / 2, style === 'plain' ? b0 - 0.4 : b0, top + R.rise * (style === 'plain' ? 0.55 : 0.75));
+            if (rng.chance(0.3)) chimney(T, F, a + w / 2 + rng.range(-0.3, 0.3), b1 - 1, R.zb, R.ridge + rng.range(0.2, 0.5));
+            const d = w * rng.range(0.25, 0.35);
+            doors.push(a - a0 + d);
+            // a shop takes the ground floor: wide window beside the door, awning over both
+            const shop = o.shops && floors > 1 && w > 3.6 && rng.chance(o.shops);
+            if (T.sees(front.n)) {
+                door(T, front.at, d, base, 0.95, 2.2);
+                steps(T, F, a + d, b0, 1.1, 2);
+                if (shop) pane(T, front.at, d + 0.75, base + 0.6, w - d - 1.05, 1.7, 'wide');
+            }
+            windows(T, front, { base: shop ? base + FLOOR : base, floors: shop ? floors - 1 : floors, style: 'frame', winW: 0.85, winH: 1.4, gap: 0.55, doors: shop ? [] : [d] });
+            if (shop) awning(T, F, a + 0.15, a + w - 0.15, b0, base + 2.75, 1.1);
+            windows(T, wall(F, 2, h), { base, floors, style: 'frame', winW: 0.85, winH: 1.3, gap: 0.8 });
+            // only the ends of the row have windows down the side
+            if (i === 0) windows(T, wall(F, 3, h), { base, floors, style: 'frame', winW: 0.85, winH: 1.3, gap: 1.2 });
+            if (i === n - 1) windows(T, wall(F, 1, h), { base, floors, style: 'frame', winW: 0.85, winH: 1.3, gap: 1.2 });
+            a += w;
+        }
+        return { doors, awning: null };
+    }
+
+    // Round-headed window or opening on a wall
+    function arch(T, at, s, c, w, h) {
+        const r = w / 2, pts = [at(s - r, c + h - r), at(s - r, c), at(s + r, c), at(s + r, c + h - r)];
+        for (let i = 1; i < 12; i++) pts.push(at(s + r * Math.cos((Math.PI * i) / 12), c + h - r + r * Math.sin((Math.PI * i) / 12)));
+        T.S.loop(pts);
+    }
+
+    // Church: a nave with its gable to the street and a tower in front of it
+    // under a tall eight-sided spire
+    function church(T, F, fp, rng) {
+        const S = T.S, P = F.P;
+        const [a0, b0, a1, b1] = fp, am = (a0 + a1) / 2, tw = 3.6, base = 0.4;
+        const nave = [a0, b0 + tw - 0.6, a1, b1], eaves = base + rng.range(5.5, 6.5);
+        plinth(T, F, fp, base, 0.2);
+        S.box(F, nave[0], nave[1], base, nave[2], nave[3], eaves);
+        shadeGable(T, F, gableRoof(T, F, nave, eaves, false, geo.rad(rng.range(46, 52)), rng, { attic: false }));
+        for (const side of [1, 3]) {
+            const W = wall(F, side, nave);
+            if (!T.sees(W.n)) continue;
+            const n = Math.max(2, Math.floor(W.len / 2.4));
+            for (let i = 0; i < n; i++) arch(T, W.at, ((i + 0.5) * W.len) / n, base + 1.3, 0.9, 3.2);
+        }
+        // tower with a belfry and a cornice, then the spire
+        const th = base + rng.range(11, 13.5), tf = [am - tw / 2, b0, am + tw / 2, b0 + tw];
+        S.box(F, tf[0], tf[1], base, tf[2], tf[3], th);
+        S.box(F, tf[0] - 0.18, tf[1] - 0.18, th, tf[2] + 0.18, tf[3] + 0.18, th + 0.35);
+        for (let side = 0; side < 4; side++) {
+            const W = wall(F, side, tf);
+            if (!T.sees(W.n)) continue;
+            arch(T, W.at, tw / 2, th - 3, 1.1, 2.3);
+            if (T.detail) for (let c = th - 2.6; c < th - 1.2; c += 0.35) S.line([W.at(tw / 2 - 0.55, c), W.at(tw / 2 + 0.55, c)]);
+            if (side === 0) {
+                arch(T, W.at, tw / 2, base, 1.4, 2.8);
+                S.loop(ring(T.segs(0.5), (x, y) => W.at(tw / 2 + 0.5 * x, base + 4.4 + 0.5 * y)));
+            } else {
+                arch(T, W.at, tw / 2, base + 5, 0.6, 1.6);
+            }
+        }
+        // world coordinates from here, the spire is a hand-built solid
+        const rs = tw / 2 + 0.1, hs = rng.range(8, 10.5), [cx, cy, zs] = P(am, b0 + tw / 2, th + 0.35);
+        // turned so its flat sides line up with the tower's
+        const rim = Array.from({ length: 8 }, (_, i) => {
+            const a = Math.PI / 8 + (TAU * i) / 8;
+            return [cx + rs * Math.cos(a), cy + rs * Math.sin(a), zs];
+        });
+        const apex = [cx, cy, zs + hs];
+        S.solid(rim.concat([apex]), [rim.map((_, i) => i), ...rim.map((_, i) => [i, (i + 1) % 8, 8])]);
+        const centre = [cx, cy, zs + hs * 0.2];
+        for (let i = 0; i < 8; i++) {
+            const tri = [rim[i], rim[(i + 1) % 8], apex];
+            shade(T, tri, outward(tri, centre));
+        }
+        // cross on top
+        S.line([apex, [cx, cy, apex[2] + 1.3]]);
+        const [ux, uy] = [T.cam.rx, T.cam.ry];
+        S.line([[cx - ux * 0.4, cy - uy * 0.4, apex[2] + 0.9], [cx + ux * 0.4, cy + uy * 0.4, apex[2] + 0.9]]);
+        return { doors: [am - a0], awning: null };
+    }
+
+    // Market cart: a counter on two wheels under a small gable canopy
+    function cart(T, x, y, z, rng) {
+        const S = T.S, F = frame(x, y, z, 3), L = 1.7, D = 0.9, zb = 0.45, zc = zb + 0.8, zt = zc + 1.15;
+        S.box(F, -L / 2, -D / 2, zb, L / 2, D / 2, zc);
+        const r = 0.36;
+        for (const a of [-L / 2 + 0.4, L / 2 - 0.4]) {
+            const pts = ring(T.segs(r), (c, s) => F.P(a + r * c, -D / 2 - 0.05, r + r * s));
+            S.face(pts);
+            S.loop(pts);
+        }
+        for (const [a, b] of [[-L / 2, -D / 2], [L / 2, -D / 2], [L / 2, D / 2], [-L / 2, D / 2]]) S.line([F.P(a, b, zc), F.P(a, b, zt - 0.25)]);
+        const R = gableRoof(T, F, [-L / 2, -D / 2, L / 2, D / 2], zt, true, geo.rad(24), rng, { attic: false });
+        shadeGable(T, F, R, 'canopy');
+        if (T.detail) S.line([F.P(-L / 2, -D / 2, zb + 0.4), F.P(L / 2, -D / 2, zb + 0.4)]);
+    }
+
+    // Round café table with a couple of chairs, under an umbrella if asked
+    function bistro(T, x, y, z, rng, umbrella) {
+        const S = T.S;
+        S.frustum(x, y, z + 0.72, z + 0.78, 0.32, 0.32, T.segs(0.32));
+        S.line([[x, y, z], [x, y, z + 0.72]]);
+        if (umbrella) {
+            S.line([[x, y, z + 0.78], [x, y, z + 2]]);
+            S.lathe(x, y, [[1, z + 2], [0.9, z + 2.12], [0.08, z + 2.35], [0, z + 2.4]], T.segs(1));
+        }
+        const t = rng.range(0, TAU);
+        for (const s of [-1, 1]) {
+            const cx = Math.cos(t) * 0.6 * s, cy = Math.sin(t) * 0.6 * s;
+            chair(T, x + cx, y + cy, z, nearestDir(-cx, -cy));
+        }
+    }
+
+    // Round basin, a bowl on a stem, and water falling from both. Returns its radius.
+    function fountain(T, x, y, z, rng) {
+        const S = T.S, R = rng.range(2, 2.7), n = T.segs(R), b = 0.95;
+        S.lathe(x, y, [[R + 0.15, z], [R, z + 0.55]], n);
+        S.loop(ring(n, (c, s) => [x + (R - 0.25) * c, y + (R - 0.25) * s, z + 0.55]));
+        S.frustum(x, y, z + 0.55, z + 1.5, 0.3, 0.2, 12);
+        S.lathe(x, y, [[0.2, z + 1.5], [b, z + 1.8], [b, z + 1.9]], T.segs(b));
+        S.frustum(x, y, z + 1.9, z + 2.5, 0.12, 0.08, 10);
+        S.lathe(x, y, [[0.16, z + 2.5], [0.2, z + 2.62], [0, z + 2.8]], 10);
+        const a0 = rng.range(0, TAU);
+        inKind(S, T.waterKind, () => {
+            for (let k = 0; k < 6; k++) {
+                const a = a0 + (TAU * k) / 6, c = Math.cos(a), s = Math.sin(a);
+                const arc = (r0, z0, r1, z1, lift) => {
+                    const pts = [];
+                    for (let i = 0; i <= 8; i++) {
+                        const t = i / 8, r = geo.lerp(r0, r1, t);
+                        pts.push([x + r * c, y + r * s, z + geo.lerp(z0, z1, t) + lift * 4 * t * (1 - t)]);
+                    }
+                    S.line(pts);
+                };
+                arc(0.1, 2.75, b - 0.12, 1.95, 0.35);
+                arc(b + 0.05, 1.85, b + 0.8, 0.6, 0.15);
+            }
+        });
+        return R + 0.15;
+    }
+
+    // Obelisk on a stepped base. Returns its radius.
+    function obelisk(T, x, y, z, rng) {
+        const S = T.S, F = frame(x, y, z, 0), h = rng.range(5.5, 7.5);
+        S.box(F, -1.6, -1.6, 0, 1.6, 1.6, 0.3);
+        S.box(F, -1.2, -1.2, 0.3, 1.2, 1.2, 0.6);
+        S.box(F, -0.8, -0.8, 0.6, 0.8, 0.8, 1.9);
+        S.box(F, -0.92, -0.92, 1.9, 0.92, 0.92, 2.1);
+        S.lathe(x, y, [[0.45 * Math.SQRT2, z + 2.1], [0.3 * Math.SQRT2, z + 2.1 + h], [0, z + 2.7 + h]], 4, false, Math.PI / 4);
+        return 1.7;
+    }
+
+    // Octagonal bandstand. Returns its radius.
+    function bandstand(T, x, y, z, rng) {
+        const S = T.S, r = rng.range(2.8, 3.3), h = 2.9, n = 8, rot = Math.PI / 8;
+        const at = (i, rr, c) => { const a = rot + (TAU * i) / n; return [x + rr * Math.cos(a), y + rr * Math.sin(a), c]; };
+        S.lathe(x, y, [[r + 0.2, z], [r + 0.2, z + 0.7]], n, false, rot);
+        for (let i = 0; i < n; i++) {
+            const [px, py] = at(i, r, 0);
+            S.frustum(px, py, z + 0.7, z + 0.7 + h, 0.09, 0.09, 6);
+        }
+        S.loop(Array.from({ length: n }, (_, i) => at(i, r, z + 1.6)));
+        const zr = z + 0.7 + h, R = r + 0.6, apex = [x, y, zr + R * 0.6];
+        const base = Array.from({ length: n }, (_, i) => at(i, R, zr));
+        S.solid(base.concat([apex]), [base.map((_, i) => i), ...base.map((_, i) => [i, (i + 1) % n, n])]);
+        const centre = [x, y, zr + R * 0.2];
+        for (let i = 0; i < n; i++) {
+            const tri = [base[i], base[(i + 1) % n], apex];
+            shade(T, tri, outward(tri, centre));
+        }
+        S.frustum(x, y, apex[2] - 0.1, apex[2] + 0.5, 0.06, 0.03, 6);
+        return R;
+    }
+
+    // ------------------------------------------------------------------
+    // Boats and bridges. Boats float at their frame's origin, with the bow
+    // at +u.
+    // ------------------------------------------------------------------
+
+    // Half breadth along the hull, as a share of the beam, from the stern
+    // (t = 0) to the bow (t = 1). Concave, so the outline stays convex.
+    const breadth = t => t < 0.62 ? 0.8 + 0.2 * Math.sin((Math.PI / 2) * (t / 0.62))
+        : Math.pow(Math.cos((Math.PI / 2) * ((t - 0.62) / 0.38)), 0.75);
+
+    // Hull along u (bow at +u) floating at F's origin: the waterline outline,
+    // a deck outline `free` higher that rises by `sheer` towards the bow, and
+    // faceted sides between them. An open boat gets a flat deck to draw the
+    // inside on. Returns deck height and half breadth along the boat.
+    function hullSolid(T, F, L, B, free, sheer, open) {
+        const n = 12, deckZ = t => free + sheer * t * t;
+        const outline = (len, beam, zf, shift) => {
+            const pts = [];
+            for (let i = 0; i <= n; i++) {
+                const t = i / n;
+                pts.push(F.P(-len / 2 + shift + t * len, -(beam / 2) * breadth(t), zf(t)));
+            }
+            for (let i = n - 1; i >= 0; i--) {
+                const t = i / n;
+                pts.push(F.P(-len / 2 + shift + t * len, (beam / 2) * breadth(t), zf(t)));
+            }
+            return pts;
+        };
+        const deck = outline(L, B, open ? () => free : deckZ, 0);
+        const water = outline(L * 0.88, B * 0.84, () => 0, -L * 0.03);
+        const m = deck.length, v = deck.concat(water), f = [], g = [];
+        f.push(water.map((_, i) => m + i));
+        g.push(0);
+        for (let i = 0; i < m; i++) {
+            const j = (i + 1) % m;
+            // the transom (from the last port point back round to the first) is flat
+            if (i === m - 1) {
+                f.push([i, j, m + j, m + i]);
+                g.push(0);
+            } else {
+                f.push([i, j, m + j], [i, m + j, m + i]);
+                g.push(1, 1);
+            }
+        }
+        if (open) {
+            f.push(deck.map((_, i) => i));
+            g.push(0);
+        } else {
+            let cx = 0, cy = 0, cz = 0;
+            for (const p of deck) { cx += p[0] / m; cy += p[1] / m; cz += p[2] / m; }
+            v.push([cx, cy, cz + sheer * 0.1]);
+            for (let i = 0; i < m; i++) { f.push([2 * m, i, (i + 1) % m]); g.push(2); }
+        }
+        T.S.solid(v, f, g);
+        return {
+            deck,
+            z: u => (open ? free : deckZ(geo.clamp((u + L / 2) / L, 0, 1))),
+            half: u => (B / 2) * breadth(geo.clamp((u + L / 2) / L, 0, 1)),
+        };
+    }
+
+    // Box on deck, from the deck up to height h, with windows round it
+    function deckhouse(T, F, Hl, u0, u1, w, h) {
+        const S = T.S, P = F.P;
+        const z0 = Math.min(Hl.z(u0), Hl.z(u1)) - 0.1, top = z0 + h;
+        const fp = [u0, -w, u1, w];
+        S.box(F, u0, -w, z0, u1, w, top);
+        S.box(F, u0 - 0.15, -w - 0.15, top, u1 + 0.15, w + 0.15, top + 0.12);
+        if (T.tones && T.tones.canopy !== undefined && T.sees([0, 0, 1])) {
+            const roof = [P(u0 + 0.15, -w + 0.1, top + 0.12), P(u1 - 0.15, -w + 0.1, top + 0.12), P(u1 - 0.15, w - 0.1, top + 0.12), P(u0 + 0.15, w - 0.1, top + 0.12)];
+            inKind(S, T.tones.canopy, () => S.hatch(roof, F.V(0, 1, 0), T.hLit * 0.8));
+        }
+        for (let side = 0; side < 4; side++) {
+            const W = wall(F, side, fp);
+            if (!T.sees(W.n)) continue;
+            const n = Math.max(1, Math.floor(W.len / 1.1));
+            for (let i = 0; i < n; i++) {
+                const s = ((i + 0.5) * W.len) / n;
+                pane(T, W.at, s - 0.35, z0 + h * 0.5, 0.7, h * 0.32, null);
+            }
+        }
+        return top + 0.12;
+    }
+
+    function fishingBoat(T, F, rng) {
+        const S = T.S, L = rng.range(8, 11), B = rng.range(3, 3.6);
+        const Hl = hullSolid(T, F, L, B, 1.1, 0.55, false);
+        const u0 = -L * 0.12, u1 = u0 + rng.range(2.2, 2.8);
+        const top = deckhouse(T, F, Hl, u0, u1, B * 0.3, 2.1);
+        // mast with a cross spar, and a gantry over the stern
+        const mu = u1 + 0.8, mz = Hl.z(mu);
+        S.line([F.P(mu, 0, mz), F.P(mu, 0, top + 2.4)]);
+        S.line([F.P(mu, -0.8, top + 1.9), F.P(mu, 0.8, top + 1.9)]);
+        if (rng.chance(0.6)) {
+            const su = -L / 2 + 0.6, sz = Hl.z(su), hw = Hl.half(su) * 0.8;
+            S.line([F.P(su, -hw, sz), F.P(su, -hw * 0.7, sz + 2.3), F.P(su, hw * 0.7, sz + 2.3), F.P(su, hw, sz)]);
+        }
+        return L;
+    }
+
+    function launch(T, F, rng) {
+        const L = rng.range(6, 7.5), B = rng.range(2.3, 2.7);
+        const Hl = hullSolid(T, F, L, B, 0.85, 0.35, false);
+        const u0 = -L * 0.05;
+        const top = deckhouse(T, F, Hl, u0, u0 + rng.range(1.6, 2.1), B * 0.32, 1.5);
+        T.S.line([F.P(u0 + 0.5, 0, top), F.P(u0 + 0.5, 0, top + 1.1)]);
+        return L;
+    }
+
+    function sailboat(T, F, rng) {
+        const S = T.S, L = rng.range(6.5, 8), B = rng.range(2.3, 2.6);
+        const Hl = hullSolid(T, F, L, B, 0.8, 0.3, false);
+        const cu = -L * 0.2;
+        deckhouse(T, F, Hl, cu, cu + 1.8, B * 0.28, 0.7);
+        const mu = L * 0.12, mz = Hl.z(mu);
+        const sail = [F.P(mu - 0.1, 0, mz + 0.9), F.P(mu - 0.1, 0, mz + 5.6), F.P(mu - 2.8, 0, mz + 7.1), F.P(mu - 3.5, 0, mz + 1)];
+        S.line([F.P(mu, 0, mz), F.P(mu, 0, mz + 6)]);
+        S.face(sail);
+        S.loop(sail);
+        S.line([F.P(mu, 0, mz + 0.9), F.P(mu - 3.8, 0, mz + 0.95)]);
+        if (T.detail) {
+            for (const f of [0.35, 0.65]) S.line([lerp3(sail[0], sail[1], f), lerp3(sail[3], sail[2], f)]);
+        }
+        return L;
+    }
+
+    // Open rowing boat, dark inside, with thwarts
+    function rowboat(T, F, rng) {
+        const S = T.S, L = rng.range(3.4, 4.2), B = rng.range(1.35, 1.55);
+        const Hl = hullSolid(T, F, L, B, 0.5, 0, true);
+        const inner = inset3(Hl.deck, 0.1);
+        if (inner.length < 3) return L;
+        S.loop(inner);
+        for (const f of [-0.28, 0, 0.26]) {
+            const u = L * f, h = Hl.half(u) - 0.1;
+            S.box(F, u - 0.1, -h, 0.38, u + 0.1, h, 0.5);
+        }
+        return L;
+    }
+
+    // Boat of a kind (row, sail, launch or fishing) in frame F. Returns its length.
+    function boat(T, F, kind, rng) {
+        if (kind === 'row') return rowboat(T, F, rng);
+        if (kind === 'sail') return sailboat(T, F, rng);
+        if (kind === 'launch') return launch(T, F, rng);
+        return fishingBoat(T, F, rng);
+    }
+
+    const BEAM = { row: 1.45, fishing: 3.3, launch: 2.5, sail: 2.5 };
+    const LENGTH = { row: 4, fishing: 9.5, launch: 7.2, sail: 7.2 };
+
+    // Frame turned to any angle (radians from +x), for boats under way
+    function turned(ox, oy, oz, ang) {
+        const c = Math.cos(ang), s = Math.sin(ang);
+        return {
+            P: (a, b, h) => [ox + a * c - b * s, oy + a * s + b * c, oz + h],
+            V: (a, b, h) => [a * c - b * s, a * s + b * c, h],
+        };
+    }
+
+    // Boat out on the water (at height z) with its wake behind it. Returns the
+    // patch of water the wake covers, for water marks to keep out of.
+    function underway(T, x, y, ang, rng, z = 0) {
+        const S = T.S, F = turned(x, y, z, ang);
+        const kind = rng.weighted([[3, 'fishing'], [2, 'launch'], [2, 'sail']]);
+        const L = kind === 'sail' ? sailboat(T, F, rng) : kind === 'launch' ? launch(T, F, rng) : fishingBoat(T, F, rng);
+        const c = Math.cos(ang), s = Math.sin(ang);
+        const bow = [x + (c * L) / 2, y + (s * L) / 2], len = L * rng.range(2, 3.2);
+        const ends = [];
+        inKind(S, T.waterKind, () => {
+            // the two arms spread from the bow, in dashes that get shorter further back
+            for (const side of [-1, 1]) {
+                const a = ang + Math.PI + side * geo.rad(19.5), dx = Math.cos(a), dy = Math.sin(a);
+                for (let t = L * 0.3; t < len; ) {
+                    const dl = geo.lerp(1.8, 0.6, t / len);
+                    S.line([[bow[0] + dx * t, bow[1] + dy * t, z], [bow[0] + dx * (t + dl), bow[1] + dy * (t + dl), z]]);
+                    t += dl + geo.lerp(0.4, 1.6, t / len);
+                }
+                ends.push([bow[0] + dx * len * 1.08, bow[1] + dy * len * 1.08]);
+            }
+            // churned water straight behind the stern
+            for (let t = L + 0.6; t < L + len * 0.4; t += rng.range(1.6, 2.4)) {
+                const o = rng.range(-0.4, 0.4), px = bow[0] - c * t - s * o, py = bow[1] - s * t + c * o;
+                S.line([[px, py, z], [px - c * 1.1, py - s * 1.1, z]]);
+            }
+        });
+        return [[bow[0] + c * 2, bow[1] + s * 2], ends[0], ends[1]];
+    }
+
+    // Boats in a row along the edge from p0 to p1 (world), bows towards p1,
+    // lying off the edge on the side n points to, on water at height z. They
+    // can run `over` past p1. With posts, each is tied up to the nearest one.
+    function moorRow(T, p0, p1, n, posts, rng, kinds, over = 0, z = 0) {
+        const S = T.S;
+        const len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+        if (len < 2) return;
+        const d = [(p1[0] - p0[0]) / len, (p1[1] - p0[1]) / len];
+        const dir = nearestDir(d[0], d[1]);
+        let s = 0;
+        while (s < len) {
+            if (!rng.chance(0.25 + 0.7 * T.p.boats)) { s += rng.range(3, 6); continue; }
+            const kind = rng.weighted(kinds), beam = BEAM[kind], L0 = LENGTH[kind];
+            if (s + L0 > len + over) break;
+            const c = s + L0 / 2, off = 0.35 + beam / 2;
+            const cx = p0[0] + d[0] * c + n[0] * off, cy = p0[1] + d[1] * c + n[1] * off;
+            const Lb = boat(T, frame(cx, cy, z, dir), kind, rng);
+            if (posts && posts.length && T.detail) {
+                // mooring line from the bow to the nearest post
+                const f = Lb / 2 - 0.3;
+                const bow = [cx + d[0] * f - n[0] * beam * 0.1, cy + d[1] * f - n[1] * beam * 0.1, z + (kind === 'row' ? 0.5 : 1.4)];
+                const dist = q => Math.hypot(q[0] - bow[0], q[1] - bow[1]);
+                const best = posts.reduce((u, v) => (dist(v) < dist(u) ? v : u));
+                if (dist(best) < 5) S.line([bow, [(bow[0] + best[0]) / 2, (bow[1] + best[1]) / 2, Math.min(bow[2], best[2]) - 0.35], best]);
+            }
+            s += Lb + rng.range(0.8, 2.5);
+        }
+    }
+
+    // How far a bridge over `span` metres of water runs on over the land each side
+    const bridgeRamp = span => Math.min(3.5, 1 + span * 0.2);
+
+    // Humped stone bridge. F is a frame with a along the road, b across it and
+    // c the world height: the water runs between a = a0 and a1, and the bridge
+    // is w wide from b = 0, which is the side we see. zr is the road and zw the
+    // water. The slices it's built from stay quiet and the outline, arch and
+    // voussoirs are drawn by hand. `ground` draws where it meets the ground,
+    // off when that's already a quay edge.
+    function bridge(T, F, a0, a1, w, zr, zw, ground) {
+        const S = T.S, P = F.P, span = a1 - a0, ramp = bridgeRamp(span), hump = geo.clamp(span * 0.07, 0.45, 0.9);
+        const A0 = a0 - ramp, A1 = a1 + ramp, pw = 0.3, ph = 0.85;
+        const top = a => zr + 0.08 + hump * Math.pow(Math.max(0, Math.sin((Math.PI * (a - A0)) / (A1 - A0))), 0.7);
+        // segmental arch springing just above the water, 0.5 m under the deck at the crown
+        const am = (a0 + a1) / 2, spring = zw + 0.25, crown = top(am) - 0.5, rise = crown - spring;
+        const R = (span * span) / (8 * rise) + rise / 2, zc = crown - R;
+        const arch = a => zc + Math.sqrt(Math.max(0, R * R - (a - am) * (a - am)));
+        const as = [];
+        const run = (u, v, n) => { for (let i = 0; i < n; i++) as.push(u + ((v - u) * i) / n); };
+        run(A0, a0, 4);
+        run(a0, a1, 16);
+        run(a1, A1, 4);
+        as.push(A1);
+        for (let i = 0; i + 1 < as.length; i++) {
+            const a = as[i], b = as[i + 1], ta = top(a), tb = top(b);
+            const over = a >= a0 - 1e-6 && b <= a1 + 1e-6;
+            const ba = over ? arch(a) : zr - 0.05, bb = over ? arch(b) : zr - 0.05;
+            S.prism([P(a, 0, ba), P(b, 0, bb), P(b, 0, tb), P(a, 0, ta)], F.V(0, w, 0), false, true);
+            for (const pb of [0, w - pw]) S.prism([P(a, pb, ta), P(b, pb, tb), P(b, pb, tb + ph), P(a, pb, ta + ph)], F.V(0, pw, 0), false, true);
+        }
+        const along = (b, dz) => as.map(a => P(a, b, top(a) + dz));
+        S.line(along(0, ph));
+        S.line(along(pw, ph));
+        S.line(along(w - pw, ph));
+        S.line(along(w - pw, 0));
+        S.line(along(w, ph));
+        if (T.detail) S.line(along(0, 0));
+        const t0 = top(A0), t1 = top(A1);
+        S.line([P(A0, 0, zr), P(A0, 0, t0 + ph), P(A0, pw, t0 + ph), P(A0, pw, t0), P(A0, w - pw, t0), P(A0, w - pw, t0 + ph), P(A0, w, t0 + ph), P(A0, w, zr)]);
+        S.line([P(A1, 0, zr), P(A1, 0, t1 + ph), P(A1, pw, t1 + ph)]);
+        S.line([P(A1, pw, t1), P(A1, w - pw, t1), P(A1, w - pw, t1 + ph), P(A1, w, t1 + ph)]);
+        if (ground) {
+            S.line([P(A0, 0, zr), P(a0, 0, zr)]);
+            S.line([P(a1, 0, zr), P(A1, 0, zr)]);
+        }
+        // the arch with a ring of voussoirs round it
+        const f1 = Math.atan2(spring - zc, a1 - am), f0 = Math.PI - f1;
+        const on = (f, r) => P(am + r * Math.cos(f), 0, zc + r * Math.sin(f));
+        const curve = r => Array.from({ length: 25 }, (_, i) => on(geo.lerp(f0, f1, i / 24), r));
+        S.line(curve(R));
+        if (T.detail) {
+            S.line(curve(R + 0.45));
+            const n = Math.max(5, Math.round((R * (f0 - f1)) / 0.55));
+            for (let i = 1; i < n; i++) {
+                const f = geo.lerp(f0, f1, i / n);
+                S.line([on(f, R), on(f, R + 0.45)]);
+            }
+        }
+    }
+
     PG.isokit = {
         FLOOR, wall, rect, pane, door, garageDoor, windows, fascia, gableRoof, gableWindow, gableSlope,
         roofExtras, dormer, chimney, roofUnit, flatRoof, plinth, steps, porch, downpipe, hipRoof, cabin,
         wheels, car, fence, railing, patioSet, nearestDir, chair, bench, clothesline, bike, person, Occupancy,
+        lerp3, unit, outward, shade, shadeGable, shadeRound, awning, vault, ribs, marketHall, clockTower,
+        gableWall, stepGable, neckGable, hoist, terrace, arch, church, cart, bistro, fountain, obelisk, bandstand,
+        hullSolid, boat, BEAM, LENGTH, turned, underway, moorRow, bridgeRamp, bridge,
     };
 })();

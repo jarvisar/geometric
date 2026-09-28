@@ -51,8 +51,8 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 * **Voronoi**: relaxed Voronoi cells with spiral insets, hatching or rounded "pebble" outlines.
 
 **Scenes**
-* **Town**: an isometric suburb built as a small 3D scene, with houses, apartments, A-frames, windmills, cars, fences, trees and yard clutter. Hidden lines are removed exactly, so only the visible outlines get plotted. The camera angle, scale, block size and how busy the streets are can all be changed.
-* **Harbour**: a fishing town on the quay with piers, moored boats, a breakwater and lighthouse, market halls and a clock tower. Drawn for four pens: red and black roof hatching, blue shadows and water, yellow canopies.
+* **Town**: an isometric town built as a small 3D scene, with houses, apartments, A-frames, windmills, cars, fences, trees and yard clutter. The middle gets built up with terraces, shops and squares, and there can be a church, a clock tower, boulevards, roundabouts and a river with bridges and boats. Hidden lines are removed exactly, so only the visible outlines get plotted. The camera angle, scale, block size and how busy the streets are can all be changed.
+* **Harbour**: a fishing town on the quay with piers, moored boats, canals, docks, wharves with cranes, canal houses, a church and a clock tower. The lighthouse sits on a straight or bent breakwater or on its own island. Drawn for four pens: red and black roof hatching, blue shadows and water, yellow canopies.
 
 **Image**
 * **Image**: turns a photo into a squiggle spiral, squiggled rows, cross-hatching or a single-line TSP portrait. Works with a built-in demo scene until you drop in a picture.
