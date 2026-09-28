@@ -11,7 +11,7 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 
 ## Designs
 
-30 designs, each with its own controls, seeded randomness and a curated **Randomize**.
+31 designs, each with its own controls, seeded randomness and a curated **Randomize**.
 
 **Curves** — centred figures, mostly single continuous strokes
 * **Spirograph**: hypotrochoids and epitrochoids with real tooth counts, so every curve closes exactly. Nested pen-hole rings.
@@ -49,6 +49,9 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 * **Apollonian Gasket**: every gap between tangent circles filled by Descartes' theorem, including the integral gaskets.
 * **Subdivision**: recursive rectangles and triangles, each hatched, cross-hatched or nested at its own tone.
 * **Voronoi**: relaxed Voronoi cells with spiral insets, hatching or rounded "pebble" outlines.
+
+**Scenes**
+* **Town**: an isometric suburb built as a small 3D scene, with houses, apartments, A-frames, windmills, cars, fences, trees and yard clutter. Hidden lines are removed exactly, so only the visible outlines get plotted. The camera angle, scale, block size and how busy the streets are can all be changed.
 
 **Image**
 * **Image**: turns a photo into a squiggle spiral, squiggled rows, cross-hatching or a single-line TSP portrait. Works with a built-in demo scene until you drop in a picture.

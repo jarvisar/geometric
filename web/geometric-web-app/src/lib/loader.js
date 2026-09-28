@@ -16,6 +16,8 @@
         'truchet', 'islamic', 'penrose', 'hyperbolic', 'celtic', 'whirl', 'maze', 'lsystem',
         // Packing
         'circlepack', 'apollonian', 'subdivide', 'voronoi',
+        // Scenes
+        'town',
         // Image
         'image',
     ];

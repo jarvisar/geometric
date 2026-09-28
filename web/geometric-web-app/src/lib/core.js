@@ -28,7 +28,7 @@
     // })
     PG.generators = [];
     PG.byId = {};
-    PG.categories = ['Curves', 'Fields', 'Tiles', 'Packing', 'Image'];
+    PG.categories = ['Curves', 'Fields', 'Tiles', 'Packing', 'Scenes', 'Image'];
 
     PG.register = function (def) {
         if (!def.id || !def.generate) throw new Error('Generator needs id and generate()');

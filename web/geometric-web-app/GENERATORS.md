@@ -12,7 +12,7 @@ and it shows up in the app with an auto-built control panel.
     PG.register({
         id: 'example',             // unique, matches the file name
         name: 'Example',           // shown in the UI
-        category: 'Curves',        // Curves | Fields | Tiles | Packing | Image
+        category: 'Curves',        // Curves | Fields | Tiles | Packing | Scenes | Image
         description: 'One sentence shown under the name.',
         fit: true,                 // see "Coordinates" below
         params: [
