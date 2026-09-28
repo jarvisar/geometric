@@ -6,13 +6,13 @@ Visit the [Plotter Geometry web app](https://geometric.ajarvis.co/) to access th
 
 ## Designs
 
-Currently supports 32 designs:
+Currently supports 33 designs:
 
 - Curves: spirograph, mystery curves, harmonograph, Maurer rose, superformula, guilloché, times table, flower, phyllotaxis and strange attractors (Lorenz, Aizawa, Thomas and more)
 - Fields: flow fields, ridgelines, topographic contour maps, Chladni patterns, electric and magnetic field lines, moiré and op-art warp
 - Tiles: Truchet tiles, Islamic star patterns, Penrose tiling, hyperbolic tiling, Celtic knots, whirls, mazes and L-system fractals
 - Packing: circle packing, Apollonian gaskets, recursive subdivision and Voronoi
-- Scenes: an isometric town of houses, apartments, A-frames, windmills, cars and trees, and a harbour town with boats and a lighthouse shaded for four pens, both with hidden lines removed
+- Scenes: an isometric town of houses, apartments, A-frames, windmills, cars and trees, a harbour town with boats and a lighthouse, and a fairground of rides and tents, the last two shaded for four pens, all with hidden lines removed
 - Image: converts photos into spiral, squiggle, cross-hatch or single-line TSP art
 
 ## Usage

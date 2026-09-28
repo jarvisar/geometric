@@ -25,7 +25,7 @@
         steps, car, bike, person, bench, clothesline, Occupancy,
         lerp3, unit, outward, shade, shadeGable, shadeRound, awning, vault, ribs, marketHall, clockTower,
         gableWall, stepGable, hoist, terrace, church, cart, bistro, fountain, obelisk, bandstand,
-        hullSolid, turned, underway, moorRow, bridgeRamp, LENGTH,
+        hullSolid, turned, underway, moorRow, bridgeRamp, LENGTH, crookLamp: lamp, railFence,
     } = PG.isokit;
 
     // line kinds
@@ -344,25 +344,6 @@
     // Props
     // ------------------------------------------------------------------
 
-    // Crook lamp post with a lantern hanging from it
-    function lamp(T, x, y, z) {
-        const S = T.S, P = card(T, x, y, z, 0);
-        const h = 3.1, w = 0.07, r = 0.32;
-        S.face([P(-w, 0), P(w, 0), P(w, h), P(-w, h)]);
-        S.line([P(-w, h), P(-w, 0), P(w, 0), P(w, h)]);
-        const crook = [];
-        for (let i = 0; i <= 10; i++) {
-            const t = Math.PI - (Math.PI * i) / 10;
-            crook.push(P(r + (r + w) * Math.cos(t), h + (r + w) * Math.sin(t)));
-        }
-        S.line(crook);
-        const lx = 2 * r, lan = [P(lx - 0.13, h - 0.12), P(lx + 0.13, h - 0.12), P(lx + 0.17, h - 0.55), P(lx - 0.17, h - 0.55)];
-        S.face(lan);
-        S.loop(lan);
-        if (T.detail) S.line([P(lx, h - 0.12), P(lx, h - 0.55)]);
-        S.line([P(-0.18, 0), P(-0.18, 0.3), P(0.18, 0.3), P(0.18, 0)]);
-    }
-
     // Low clipped hedge: a scalloped outline round a rounded strip along u
     function hedge(T, F, a0, a1, b, wid) {
         const S = T.S, h = 0.6, r = wid / 2, cam = T.cam;
@@ -402,18 +383,6 @@
             if (sx > hiv) { hiv = sx; hi = [a, v]; }
         }
         for (const [a, v] of [lo, hi]) S.line([F.P(a, v, 0.02), F.P(a, v, h)]);
-    }
-
-    // Post and rail fence between two points on the same level
-    function railFence(T, p0, p1, h = 1, grid = false) {
-        const S = T.S, L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
-        if (L < 0.6) return;
-        const ux = (p1[0] - p0[0]) / L, uy = (p1[1] - p0[1]) / L;
-        const at = (s, c) => [p0[0] + ux * s, p0[1] + uy * s, p0[2] + c];
-        const n = Math.max(1, Math.round(L / (grid ? 0.45 : 1.5)));
-        for (let i = 0; i <= n; i++) S.line([at((L * i) / n, 0), at((L * i) / n, h)]);
-        const rails = grid ? [0.3, 0.65, 1] : [0.5, 0.9];
-        for (const f of rails) S.line([at(0, h * f), at(L, h * f)]);
     }
 
     // A few crates, maybe one stacked, and a barrel
@@ -867,37 +836,9 @@
     // Squares
     // ------------------------------------------------------------------
 
-    // Round-headed tree, drawn as a card facing the camera like the people
     function tree(T, x, y, z, rng) {
-        const S = T.S, ce = T.cam.ce, h = rng.range(5, 7);
-        S.kind = INK;
-        const R = h * rng.range(0.27, 0.32), cz = h - R / ce;
-        const P = card(T, x, y, z, 0.25);
-        const lobes = rng.int(7, 10), a0 = rng.range(0, TAU), seg = Math.max(3, Math.round(T.segs(R) / lobes));
-        const pts = [];
-        for (let l = 0; l < lobes; l++) {
-            const bump = R * rng.range(0.06, 0.12);
-            for (let i = 0; i < seg; i++) {
-                const t = i / seg, a = a0 + ((l + t) * TAU) / lobes, rr = R + bump * Math.sin(Math.PI * t);
-                pts.push([rr * Math.cos(a), cz + (rr * Math.sin(a)) / ce]);
-            }
-        }
-        S.face(hull(pts).map(([u, w]) => P(u, w)));
-        S.loop(pts.map(([u, w]) => P(u, w)));
-        if (T.p.roofHatch) {
-            // shade the side away from the sun like a roof: canopy less the same circle
-            // nudged up and left, working in page-round units (v = height * ce)
-            const round = pts.map(([u, w]) => [u, (w - cz) * ce]);
-            const lit = ring(24, (c, s) => [R * (c - 0.45), R * (s + 0.4)]);
-            for (const [a, b] of geo.hatch([round, lit], T.hDark / T.k, 0.9)) {
-                const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-                if (m[0] * m[0] + m[1] * m[1] > R * R) continue;
-                S.line([P(a[0], cz + a[1] / ce), P(b[0], cz + b[1] / ce)]);
-            }
-        }
-        const tw = Math.max(0.1, R * 0.08), B = card(T, x, y, z, 0);
-        S.face([B(-tw, 0), B(tw, 0), B(tw, cz), B(-tw, cz)]);
-        S.line([B(-tw, cz), B(-tw, 0), B(tw, 0), B(tw, cz)]);
+        T.S.kind = INK;
+        PG.isokit.roundTree(T, x, y, z, rng);
     }
 
     // Town square in place of a block: paving round a fountain, monument or
