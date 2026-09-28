@@ -148,7 +148,8 @@
                 if (r < 0.15) continue;
                 let pen = 0;
                 if (pens > 1) {
-                    if (p.penMode === 'size') pen = Math.min(pens - 1, Math.floor((Math.log(R / r) / lnSpan) * pens));
+                    // the outer circle (R + gap) and a minR above R both land below 0
+                    if (p.penMode === 'size') pen = geo.clamp(Math.floor((Math.log(R / r) / lnSpan) * pens), 0, pens - 1);
                     else if (p.penMode === 'random') pen = rng.int(0, pens - 1);
                     // cycle, so each circle differs from the newest circle of its gap
                     // (banding by depth left the later pens a few specks in the cusps)

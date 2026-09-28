@@ -75,9 +75,11 @@
             if (circle) {
                 // inscribed radius of the visible area (the canvas grows when rotated)
                 R = Math.max(1, ctx.shape.dist(cx, cy)) || Math.min(W, H) / 2;
-                const k1 = besselZero(n, Math.max(1, m)), n2 = Math.max(1, m), k2 = besselZero(n2, Math.max(1, n));
+                const n2 = Math.max(1, m);
+                const k1 = cached(`z${n},${n2}`, () => besselZero(n, n2)), k2 = cached(`z${n2},${Math.max(1, n)}`, () => besselZero(n2, Math.max(1, n)));
                 const kMax = Math.max(k1, k2) * 1.02;
-                const J1 = besselTable(n, kMax), J2 = mix ? besselTable(n2, kMax) : null;
+                const J1 = cached(`t${n},${kMax}`, () => besselTable(n, kMax));
+                const J2 = mix ? cached(`t${n2},${kMax}`, () => besselTable(n2, kMax)) : null;
                 fn = (x, y) => {
                     const dx = (x - cx) / R, dy = (y - cy) / R;
                     const r = Math.min(1.01, Math.hypot(dx, dy)), th = Math.atan2(dy, dx);
@@ -150,6 +152,17 @@
             s += Math.cos(n * t - x * Math.sin(t));
         }
         return s / M;
+    }
+
+    // Zeros and tables only depend on n and m, but cost 25-140 ms to build, so keep
+    // them. Otherwise a grid of circle plates rebuilds the same ones for every cell.
+    const memo = new Map();
+    function cached(key, make) {
+        if (!memo.has(key)) {
+            if (memo.size > 40) memo.clear(); // tables can be ~200 KB each
+            memo.set(key, make());
+        }
+        return memo.get(key);
     }
 
     // Lookup table of J_n on [0, xMax] with linear interpolation.

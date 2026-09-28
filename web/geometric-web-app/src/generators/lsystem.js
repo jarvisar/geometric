@@ -2,7 +2,7 @@
  * L-systems (Lindenmayer; Prusinkiewicz & Lindenmayer, "The Algorithmic
  * Beauty of Plants", 1990) drawn with turtle graphics. The string is expanded
  * lazily, depth first, so it never has to be held in memory; the iteration
- * count is clamped so the expansion stays below ~2M symbols / 400k strokes.
+ * count is clamped so the expansion stays below ~1M symbols / 150k strokes.
  *
  * Turtle: F G A B draw a unit step, f moves with the pen up, + − turn by the
  * angle, | turns 180°, [ ] push / pop the state; any other letter is only a
@@ -47,7 +47,8 @@
     };
     const TWEAKABLE = ['dragon', 'levy', 'terdragon', 'koch', 'pentigree', 'arrowhead'];
     const DRAW = { F: 1, G: 1, A: 1, B: 1 };
-    const MAX_LEN = 2e6, MAX_DRAW = 4e5;
+    // 150k strokes is Hilbert at 8 iterations (39 m of line). Any more is solid ink at A4 and takes seconds to build.
+    const MAX_LEN = 1e6, MAX_DRAW = 1.5e5;
 
     function parseRules(text) {
         const rules = {};

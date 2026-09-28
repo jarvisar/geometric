@@ -45,7 +45,7 @@
                 show: p => p.layout === 'random', hint: 'Chance that a random source is positive' },
             { type: 'section', label: 'Lines' },
             { id: 'density', label: 'Lines per unit', type: 'range', min: 2, max: 60, step: 1, value: 18, random: [10, 28],
-                hint: 'Field lines per unit of charge, or contour count for wires' },
+                hint: 'Field lines per unit of charge. For wires, about 1.5× this many contours' },
             { id: 'equip', label: 'Equipotentials (pen 2)', type: 'checkbox', value: true, random: 0.6,
                 show: p => p.kind === 'electric' },
             { id: 'equipCount', label: 'Equipotentials', type: 'range', min: 4, max: 80, step: 1, value: 24, random: [12, 40],
@@ -53,7 +53,7 @@
             { id: 'marker', label: 'Marker radius (mm)', type: 'range', min: 0, max: 8, step: 0.1, value: 2.4, random: [1.5, 3.5],
                 hint: '0 hides the charge / wire symbols' },
             { id: 'step', label: 'Step (mm)', type: 'range', min: 0.1, max: 2, step: 0.05, value: 0.5, random: false,
-                hint: 'Integration step for the field lines' },
+                show: p => p.kind === 'electric', hint: 'Integration step for the field lines' },
         ],
 
         randomize(rng, p) {
@@ -127,8 +127,10 @@
             };
             // contours of ψ at equal steps, cut away inside the markers
             const contours = (count, out) => {
-                const pad = 2, cell = 0.5;
-                const f = PG.sampleField(psi, bb.minX - pad, bb.minY - pad, bb.w + 2 * pad, bb.h + 2 * pad, cell);
+                const pad = 2, w = bb.w + 2 * pad, h = bb.h + 2 * pad;
+                // 0.5 mm up to A3, coarser past 500k samples so big paper doesn't take seconds per contour set
+                const cell = Math.max(0.5, Math.sqrt((w * h) / 5e5));
+                const f = PG.sampleField(psi, bb.minX - pad, bb.minY - pad, w, h, cell);
                 // levels spanning the page, not the singular values right at the sources
                 const vals = Float64Array.from(f.values).sort();
                 const lo = vals[Math.floor(vals.length * 0.01)], hi = vals[Math.floor(vals.length * 0.99)];

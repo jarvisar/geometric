@@ -47,7 +47,8 @@
                 random: ['eccentric', 'eccentric', 'spiral', 'rings', 'hatch', 'hatch', 'mixed', 'mixed', 'outline'],
                 options: [['eccentric', 'Eccentric bubbles'], ['spiral', 'Spiral'], ['rings', 'Concentric rings'],
                     ['hatch', 'Hatch'], ['outline', 'Outline'], ['mixed', 'Mixed']] },
-            { id: 'spacing', label: 'Fill spacing (mm)', type: 'range', min: 0.6, max: 5, step: 0.05, value: 1.4, random: [1.1, 2.4] },
+            { id: 'spacing', label: 'Fill spacing (mm)', type: 'range', min: 0.6, max: 5, step: 0.05, value: 1.4, random: [1.1, 2.4],
+                show: p => p.style !== 'outline' },
             { id: 'ecc', label: 'Eccentricity', type: 'range', min: 0, max: 1, step: 0.01, value: 0.72, random: [0.45, 0.8],
                 show: p => p.style === 'eccentric' || p.style === 'mixed' },
             { id: 'shift', label: 'Shift direction°', type: 'range', min: 0, max: 360, step: 1, value: 45,
@@ -140,7 +141,8 @@
                 let pen = 0;
                 if (p.pens > 1) {
                     if (p.penMode === 'size') pen = Math.min(p.pens - 1, Math.floor((1 - Math.log(r / minR) / lnSpan) * p.pens));
-                    else if (p.penMode === 'style') pen = STYLES.indexOf(style);
+                    // with one style there's nothing to split by, so spread the circles like 'random'
+                    else if (p.penMode === 'style' && p.style === 'mixed') pen = STYLES.indexOf(style);
                     else pen = rng.int(0, p.pens - 1);
                 }
                 for (const path of paths) out.push([path, pen]);

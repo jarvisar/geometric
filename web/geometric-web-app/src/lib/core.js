@@ -49,11 +49,14 @@
     };
 
     // Uniformly randomise every param that allows it, then apply the generator's
-    // curated overrides. `rng` only needs a random() method.
-    PG.randomParams = function (def, current, rng) {
+    // curated overrides. `rng` only needs a random() method. Locked ids keep their
+    // current value, and they're already in place when randomize() runs so values
+    // it derives from them (e.g. amplitudes that must fit a gap) still fit.
+    PG.randomParams = function (def, current, rng, locked = []) {
         const p = Object.assign({}, current);
+        const keep = new Set(locked);
         for (const q of def.params) {
-            if (!q.id || q.random === false) continue;
+            if (!q.id || q.random === false || keep.has(q.id)) continue;
             if (q.show && !q.show(p)) continue;
             if (q.type === 'range') {
                 const [lo, hi] = Array.isArray(q.random) ? q.random : [q.min, q.max];
@@ -67,6 +70,7 @@
             }
         }
         if (def.randomize) Object.assign(p, def.randomize(rng, p) || {});
+        for (const id of keep) if (id in current) p[id] = current[id];
         return p;
     };
 
@@ -419,13 +423,18 @@
     // turns onto it, so the fill winds inward as a true polygon spiral with an even
     // gap everywhere. The innermost ring closes. `round` (0..1) rounds the corners.
     geo.insetSpiral = function (poly, spacing, round = 0) {
-        // start at the sharpest corner
-        let start = 0, bestCos = Infinity;
+        // Start at the corner closest to square. The step inward leaves a gap of
+        // spacing / sin(angle) in the outline, so very sharp or very flat corners
+        // leave long gaps, and a corner next to a short edge gets dropped by the next
+        // inset. Corners with both edges at least 2 spacings long win if there are any.
+        let start = 0, best = -Infinity;
         for (let i = 0, n = poly.length; i < n; i++) {
             const a = poly[(i + n - 1) % n], b = poly[i], c = poly[(i + 1) % n];
             const ux = a[0] - b[0], uy = a[1] - b[1], vx = c[0] - b[0], vy = c[1] - b[1];
-            const cs = (ux * vx + uy * vy) / (Math.hypot(ux, uy) * Math.hypot(vx, vy) || 1);
-            if (cs < bestCos - 1e-6) { bestCos = cs; start = i; }
+            const lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
+            const sin = Math.abs(ux * vy - uy * vx) / (lu * lv || 1);
+            const score = sin + (lu >= 2 * spacing && lv >= 2 * spacing ? 1 : 0);
+            if (score > best + 1e-6) { best = score; start = i; }
         }
         const rings = [];
         let cur = poly;
@@ -447,8 +456,11 @@
             const a = prev[prev.length - 1], b = prev[0], w0 = ring[0], w1 = ring[1];
             // where the previous ring's closing edge (a -> b) meets the line w0 -> w1
             const X = geo.lineIntersect(a, [b[0] - a[0], b[1] - a[1]], w0, [w1[0] - w0[0], w1[1] - w0[1]]);
-            // if it misses (the inset dropped the start corner), step straight to w0
-            out.push(X && X.t > 1e-9 && X.t <= 1 && X.u <= 1e-9 ? [X.x, X.y] : w0);
+            // If it misses (the inset dropped a short edge at the start corner, so the next
+            // ring starts on a different edge), finish the closing edge and step in from its
+            // corner. Cutting straight across to w0 left a diagonal the next ring runs into.
+            if (X && X.t > 1e-9 && X.t <= 1 && X.u <= 1e-9) out.push([X.x, X.y]);
+            else out.push(b, w0);
             for (let i = 1; i < ring.length; i++) out.push(ring[i]);
         }
         const last = rings[rings.length - 1];

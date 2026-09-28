@@ -168,7 +168,8 @@
     function applyPaperSize() {
         const P = state.paper;
         if (P.size === 'custom') return;
-        const e = PAPERS.find(x => x[0] === P.size) || PAPERS[2];
+        let e = PAPERS.find(x => x[0] === P.size);
+        if (!e) { e = PAPERS[2]; P.size = e[0]; }
         P.w = P.landscape ? e[2] : e[1];
         P.h = P.landscape ? e[1] : e[2];
     }
@@ -194,7 +195,7 @@
         const def = currentDef();
         return {
             app: 'plotter-geometry', v: 1, gen: def.id, params: { [def.id]: currentParams(def) }, seed: state.seed,
-            paper: state.paper, comp: state.comp,
+            paper: state.paper, comp: state.comp, locks: state.locks[def.id] || [],
             pens: state.pens.map(p => ({ name: p.name, color: p.color, width: p.width })),
         };
     }
@@ -207,6 +208,8 @@
         });
         if (obj.gen && PG.byId[obj.gen]) next.gen = obj.gen;
         if (obj.params) for (const [id, p] of Object.entries(obj.params)) next.params[id] = Object.assign({}, next.params[id] || {}, p);
+        // locks decide what a grid with random parameters per cell looks like
+        if (Array.isArray(obj.locks) && PG.byId[obj.gen]) next.locks[obj.gen] = obj.locks.slice();
         state = next;
     }
 
@@ -221,9 +224,10 @@
     const undoStack = { items: [], index: -1 };
     let commitTimer = 0;
 
+    // Locks stay out of undo, otherwise undoing a randomize also unlocks whatever was locked since the last step.
     function snapshotForUndo() {
         const s = Object.assign({}, state);
-        delete s.ui; delete s.view;
+        delete s.ui; delete s.view; delete s.locks;
         return JSON.stringify(s);
     }
     function commit() {
@@ -242,7 +246,7 @@
     }
     function restoreUndo(i) {
         if (i < 0 || i >= undoStack.items.length) return;
-        const keep = { ui: state.ui, view: state.view };
+        const keep = { ui: state.ui, view: state.view, locks: state.locks };
         state = mergeInto(defaultState(), JSON.parse(undoStack.items[i]));
         state.params = JSON.parse(undoStack.items[i]).params || {};
         Object.assign(state, keep);
@@ -480,7 +484,7 @@
                 state.gen = 'image';
                 def = currentDef();
                 q = def.params.find(p => p.type === 'image');
-                rebuildAll();
+                designChanged();
             }
             if (q) loadImageFile(file, def.id, q.id);
             else toast('This design does not use images', true);
@@ -532,7 +536,8 @@
             range.addEventListener('input', () => { num.value = fmtNum(range.value, step); paint(); set(+range.value, true); });
             range.addEventListener('change', () => set(+range.value, false));
             num.addEventListener('change', () => {
-                let v = +num.value;
+                // a cleared box reads as 0, so put the old value back instead of jumping to the minimum
+                let v = num.value.trim() === '' ? NaN : +num.value;
                 if (!isFinite(v)) v = get();
                 v = PG.snap(clamp(v, q.min, q.max), step, q.min);
                 range.value = v; num.value = fmtNum(v, step); paint();
@@ -639,6 +644,7 @@
                     set.has(q.id) ? set.delete(q.id) : set.add(q.id);
                     state.locks[def.id] = [...set];
                     scheduleSave();
+                    if (isGrid(state) && state.comp.cellVary === 'params') requestGenerate();
                     return set.has(q.id);
                 },
                 onReset() {
@@ -784,16 +790,23 @@
             const body = el('div', { class: 'controls' });
             det.append(body);
             if (sec.custom) sec.custom(body);
+            const rows = [];
             for (const q of sec.controls || []) {
                 const row = makeControl(q, () => getPath(state, q.key), (v, live) => {
                     setPath(state, q.key, v);
-                    if (q.then) q.then();
+                    if (q.then) {
+                        q.then();
+                        // e.g. paper size and orientation also change the custom width and height
+                        for (const r of rows) if (r !== row) r.sync();
+                    }
                     updateVisibility(body, state);
                     if (sec.badge) summary.querySelector('.badge').textContent = sec.badge();
                     applyEffect(q.effect || 'generate', live);
                     if (!live) commit();
                 });
                 if (q.show) row.showFn = q.show;
+                row.dataset.key = q.key;
+                rows.push(row);
                 body.append(row);
             }
             if (sec.note) body.append(sec.note);
@@ -822,7 +835,6 @@
             state.pens.forEach((p, i) => { p.color = set.colors[i]; });
             state.paper.color = set.paper;
             buildOutputPanel();
-            thumbCache.clear();
             draw();
             commit();
         });
@@ -837,16 +849,21 @@
                 eye.replaceChildren(icon(pen.visible ? 'eye' : 'eye-off'));
                 draw();
                 renderStats();
-                scheduleSave();
+                commit();
             });
             const color = el('input', { type: 'color', class: 'color-input', value: pen.color, title: 'Pen colour' });
             color.addEventListener('input', () => { pen.color = color.value; draw(); });
-            color.addEventListener('change', () => { thumbCache.clear(); commit(); });
+            color.addEventListener('change', commit);
             const name = el('input', { class: 'pen-name', value: pen.name, spellcheck: 'false', title: 'Pen name (used for SVG layer names)' });
-            name.addEventListener('change', () => { pen.name = name.value || `Pen ${i + 1}`; commit(); });
+            name.addEventListener('change', () => {
+                pen.name = name.value || `Pen ${i + 1}`;
+                const opt = document.querySelector(`[data-key="comp.framePen"] option[value="${i}"]`);
+                if (opt) opt.textContent = `${i + 1} · ${pen.name}`;
+                commit();
+            });
             const width = el('input', { type: 'number', class: 'num', min: 0.05, max: 5, step: 0.05, value: pen.width, title: 'Pen width in mm' });
             width.addEventListener('change', () => {
-                pen.width = clamp(+width.value || 0.35, 0.05, 5);
+                pen.width = clamp(+width.value || pen.width, 0.05, 5);
                 width.value = pen.width;
                 draw();
                 commit();
@@ -864,11 +881,14 @@
         if (!rows.length) return;
         const usage = {};
         if (result) for (const l of result.layers) usage[l.pen] = PG.optimize.stats([l]);
+        // most designs start on one pen, so recolouring pens 2-6 does nothing until Pens goes up
+        const pensParam = currentDef().params.find(q => q.id === 'pens');
+        const unused = pensParam ? `unused, raise ${pensParam.label} to use it` : 'not used by this design';
         rows.forEach(row => {
             const i = +row.dataset.pen;
             const u = usage[i];
             row.classList.toggle('unused', !u);
-            row.querySelector('.pen-meta').textContent = u ? `${fmtCount(u.paths)} ${u.paths === 1 ? 'path' : 'paths'}` : 'not used by this design';
+            row.querySelector('.pen-meta').textContent = u ? `${fmtCount(u.paths)} ${u.paths === 1 ? 'path' : 'paths'}` : unused;
         });
     }
 
@@ -934,6 +954,7 @@
     // ------------------------------------------------------------------ gallery
 
     const thumbCache = new Map();
+    let thumbColors = '';
     let thumbQueue = [];
     let thumbTimer = 0;
 
@@ -956,6 +977,9 @@
         const body = $('#galleryBody');
         body.replaceChildren();
         thumbQueue = [];
+        // Thumbnails use the current pen and paper colours, which can also change through undo or loaded settings
+        const colors = JSON.stringify([state.paper.color, state.pens.map(p => p.color)]);
+        if (colors !== thumbColors) { thumbCache.clear(); thumbColors = colors; }
         const cats = PG.categories.concat([...new Set(PG.generators.map(g => g.category))].filter(c => !PG.categories.includes(c)));
         for (const cat of cats) {
             const gens = PG.generators.filter(g => g.category === cat);
@@ -1055,10 +1079,7 @@
     function randomize() {
         const def = currentDef();
         const current = currentParams(def);
-        const locked = state.locks[def.id] || [];
-        const next = PG.randomParams(def, current, new PG.RNG(randomSeed() * 7919));
-        for (const id of locked) next[id] = current[id];
-        state.params[def.id] = next;
+        state.params[def.id] = PG.randomParams(def, current, new PG.RNG(randomSeed() * 7919), state.locks[def.id] || []);
         state.seed = randomSeed();
         buildParams();
         syncSeed();
@@ -1126,7 +1147,8 @@
             const c = el('canvas', { width: Math.round(paper.w * k), height: Math.round(paper.h * k) });
             PG.drawResult(c.getContext('2d'), res, { scale: k, ox: 0, oy: 0 },
                 { paper, paperColor: state.paper.color, pens: state.pens, minLinePx: 1, hairline: !state.view.penWidth });
-            c.toBlob(b => download(`${fileBase()}.png`, b));
+            // toBlob hands back null when the canvas is over the browser's size limit (big custom paper, iOS)
+            c.toBlob(b => (b ? download(`${fileBase()}.png`, b) : toast('Paper is too large for a PNG export', true)));
         }
     }
 

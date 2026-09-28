@@ -13,7 +13,7 @@ const vm = require('vm');
 const SRC = path.resolve(__dirname, '..', 'src');
 // Run in this context (a vm sandbox makes global lookups several times slower and skews timings).
 const load = f => vm.runInThisContext(fs.readFileSync(path.join(SRC, f), 'utf8'), { filename: f });
-['lib/core.js', 'lib/noise.js', 'lib/contours.js', 'lib/optimize.js', 'lib/pipeline.js', 'lib/export.js', 'lib/loader.js'].forEach(load);
+['lib/core.js', 'lib/noise.js', 'lib/contours.js', 'lib/iso.js', 'lib/isokit.js', 'lib/optimize.js', 'lib/pipeline.js', 'lib/export.js', 'lib/loader.js'].forEach(load);
 
 const PG = globalThis.PG;
 const only = process.argv.slice(2);

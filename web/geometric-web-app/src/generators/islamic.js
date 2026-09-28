@@ -394,7 +394,7 @@
             { id: 'showTiling', label: 'Show tiling (own pen)', type: 'checkbox', value: false, random: 0.2 },
             { type: 'section', label: 'Straps' },
             { id: 'strap', label: 'Strap width (mm)', type: 'range', min: 0, max: 8, step: 0.1, value: 1.8, random: false,
-                hint: '0 = single lines. Otherwise every strand is drawn as a band of this width' },
+                hint: '0 = single lines. Otherwise every strand is drawn as a band of this width (at most 40% of the tile edge)' },
             { id: 'weave', label: 'Crossings', type: 'select', value: 'weave', random: ['weave', 'weave', 'weave', 'flat'],
                 show: p => p.strap > 0,
                 options: [['weave', 'Interlaced over / under'], ['flat', 'Flat (outline only)'], ['overlap', 'Overlapping']] },
@@ -466,7 +466,9 @@
                     for (const v of unit[c.pi]) { pieces.push(place(v, c.dx, c.dy)); group.push(ci); }
                 });
                 const strands = chain(pieces, keyOf, group);
-                return p.strap > 0 ? straps(strands, p.strap, p.gap, p.weave) : strands.map(s => [s]);
+                // a strap wider than ~40% of the tile edge eats the whole pattern on small tiles
+                const sw = Math.min(p.strap, 0.4 * k);
+                return sw > 0 ? straps(strands, sw, p.gap, p.weave) : strands.map(s => [s]);
             };
 
             // strands (and so whole straps) are coloured at random across the pattern pens

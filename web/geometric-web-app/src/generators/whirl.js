@@ -118,9 +118,15 @@
                 const n = Math.max(3, p.sides | 0);
                 const poly = geo.ngon(0, 0, 1, n, Math.PI / 2 - Math.PI / n); // flat bottom edge
                 const bb = geo.bbox([poly]);
-                const k = Math.min(W / bb.w, H / bb.h);
-                const cx = W / 2 - ((bb.minX + bb.maxX) / 2) * k, cy = H / 2 - ((bb.minY + bb.maxY) / 2) * k;
-                cells.push({ poly: poly.map(q => [cx + q[0] * k, cy + q[1] * k]), cls: 0 });
+                // fit the visible area, not the canvas: with page rotation the canvas is
+                // bigger than the page, and round crops cut the corners off
+                const rb = geo.bbox([ctx.shape.polygon()]);
+                const mx = (bb.minX + bb.maxX) / 2, my = (bb.minY + bb.maxY) / 2;
+                const cx = (rb.minX + rb.maxX) / 2, cy = (rb.minY + rb.maxY) / 2;
+                const at = k => poly.map(q => [cx + (q[0] - mx) * k, cy + (q[1] - my) * k]);
+                let k = Math.min(rb.w / bb.w, rb.h / bb.h);
+                while (k > 1 && !at(k).every(q => ctx.shape.inside(q[0], q[1]))) k *= 0.99;
+                cells.push({ poly: at(k), cls: 0 });
             } else {
                 const T = TILINGS[p.layout] || TILINGS.square;
                 const k = p.cell;

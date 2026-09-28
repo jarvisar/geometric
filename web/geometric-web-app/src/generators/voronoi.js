@@ -187,7 +187,8 @@
                 if (style === 'mixed') style = rng.weighted([[5, 'nested'], [3, 'hatch'], [1.5, 'outline']]);
                 let pen = 0;
                 if (pens > 1) {
-                    if (p.penMode === 'style') pen = STY.indexOf(style);
+                    // with one style there's nothing to split by, so spread the cells like 'random'
+                    if (p.penMode === 'style' && p.style === 'mixed') pen = STY.indexOf(style);
                     else if (p.penMode === 'region') {
                         const s = seeds[i], v = noise.noise2(s[0] * 0.006 + 31, s[1] * 0.006 - 17);
                         pen = Math.floor(geo.clamp((v + 1) / 2, 0, 0.999) * pens);

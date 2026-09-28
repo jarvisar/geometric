@@ -200,14 +200,16 @@
             const lines = [];
             const queue = [];
 
+            // returns the number of steps integrated, which the seeding loop budgets
             function tryLine(x, y) {
-                if (!inBounds(x, y) || !clear(x, y, sepAt(x, y) * 0.999)) return;
+                if (!inBounds(x, y) || !clear(x, y, sepAt(x, y) * 0.999)) return 0;
                 own = new Map();
                 ownAdd(x, y, 0);
                 const fwd = integrate(x, y, 1);
                 const back = integrate(x, y, -1);
+                const work = fwd.length + back.length;
                 const pts = back.reverse().concat([[x, y]], fwd);
-                if (pts.length < 2 || geo.pathLength(pts) < Math.max(Math.min(p.minLen, p.maxLen), h * 2)) return;
+                if (pts.length < 2 || geo.pathLength(pts) < Math.max(Math.min(p.minLen, p.maxLen), h * 2)) return work;
                 for (const q of pts) addPoint(q[0], q[1]);
                 lines.push(pts);
                 // seed candidates one spacing to either side
@@ -219,6 +221,7 @@
                     queue.push([pts[i][0] - (ty / L) * d, pts[i][1] + (tx / L) * d]);
                     queue.push([pts[i][0] + (ty / L) * d, pts[i][1] - (tx / L) * d]);
                 }
+                return work;
             }
 
             // Seed from the centre, flood outwards, then sweep a jittered grid for gaps.
@@ -231,11 +234,12 @@
                 }
             }
             rng.shuffle(sweep);
-            let si = 0, qi = 0;
-            const budget = performance.now() + 2500;
-            while ((qi < queue.length || si < sweep.length) && performance.now() < budget) {
+            // Budget integration steps, not wall time, so a seed gives the same drawing on
+            // any machine. A2 at 0.6 mm spacing needs ~2.4M, about 1 s on a desktop.
+            let si = 0, qi = 0, work = 0;
+            while ((qi < queue.length || si < sweep.length) && work < 3e6) {
                 const q = qi < queue.length ? queue[qi++] : sweep[si++];
-                tryLine(q[0], q[1]);
+                work += 1 + tryLine(q[0], q[1]);
             }
 
             if (p.pens <= 1) return lines;

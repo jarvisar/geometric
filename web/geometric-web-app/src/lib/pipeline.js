@@ -281,7 +281,8 @@
     // ------------------------------------------------------------------
     PG.run = function (def, params, S, extra = {}) {
         const T0 = performance.now();
-        const m = S.margin;
+        // A margin over half the paper (80 mm on A6) would push the drawing area off-centre or off the sheet
+        const m = Math.max(0, Math.min(S.margin, Math.min(S.paperW, S.paperH) / 2 - 0.5));
         const W = Math.max(1, S.paperW - 2 * m), H = Math.max(1, S.paperH - 2 * m);
         const cols = Math.max(1, S.cols | 0 || 1), rows = Math.max(1, S.rows | 0 || 1);
         const n = cols * rows;
@@ -298,8 +299,7 @@
             let p = params;
             if (vary === 'params' && k > 0) {
                 // every cell but the first gets its own random parameters; locked ones stay put
-                p = PG.randomParams(def, params, new PG.RNG(seed * 7919 + k));
-                for (const id of S.locks || []) p[id] = params[id];
+                p = PG.randomParams(def, params, new PG.RNG(seed * 7919 + k), S.locks || []);
             }
             if (n > 1) p = sweepParams(def, p, S.sweep, k / (n - 1));
             const cell = placeCell(def, p, S, extra, m + c * (cw + gut), m + r * (ch + gut), cw, ch, seed);

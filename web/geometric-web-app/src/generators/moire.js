@@ -94,7 +94,8 @@
             for (let k = 0; k < sets; k++) {
                 const sp = Math.max(0.5, p.spacing * Math.pow(1 + p.stretch / 100, k));
                 const c = p.pattern === 'lines' ? [cx, cy] : centres[k];
-                const R = reach(c);
+                // wobble (below) can pull a set up to ~1.4× its amplitude back from the corners
+                const R = reach(c) + (p.wobble > 0 && k > 0 ? 1.5 * p.wobble : 0);
                 const rot = rotStep * k;
                 let paths = [];
 

@@ -11,7 +11,7 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 
 ## Designs
 
-31 designs, each with its own controls, seeded randomness and a curated **Randomize**.
+32 designs, each with its own controls, seeded randomness and a curated **Randomize**.
 
 **Curves** — centred figures, mostly single continuous strokes
 * **Spirograph**: hypotrochoids and epitrochoids with real tooth counts, so every curve closes exactly. Nested pen-hole rings.
@@ -52,13 +52,14 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 
 **Scenes**
 * **Town**: an isometric suburb built as a small 3D scene, with houses, apartments, A-frames, windmills, cars, fences, trees and yard clutter. Hidden lines are removed exactly, so only the visible outlines get plotted. The camera angle, scale, block size and how busy the streets are can all be changed.
+* **Harbour**: a fishing town on the quay with piers, moored boats, a breakwater and lighthouse, market halls and a clock tower. Drawn for four pens: red and black roof hatching, blue shadows and water, yellow canopies.
 
 **Image**
 * **Image**: turns a photo into a squiggle spiral, squiggled rows, cross-hatching or a single-line TSP portrait. Works with a built-in demo scene until you drop in a picture.
 
 Any design can also be laid out as a **grid** on one sheet. Each cell gets its own seed or its own random parameters, or one parameter sweeps from cell to cell.
 
-## Plotting workflow
+## Plotting
 
 1. **Paper**: pick a size (A6–A2, US sizes, cards, squares or custom) and a margin.
    Nothing is ever drawn outside the margin.
@@ -81,7 +82,7 @@ Every exported SVG carries its full recipe (design, parameters, seed, paper,
 pens). Drop an SVG or a saved `.json` back onto the preview to restore it. **Copy share link**
 does the same through a URL.
 
-## Handy bits
+## Usage
 
 * **Seeds**: every random choice comes from the seed, so the same seed and settings
   always give the same drawing. `Space` rolls a new seed; `R` randomizes the
@@ -94,7 +95,7 @@ does the same through a URL.
   single-line TSP art. Drop a picture onto the preview.
 * Press `?` in the app for all keyboard shortcuts.
 
-## Project layout
+## Code layout
 
 ```
 src/
@@ -103,6 +104,8 @@ src/
     core.js        registry, seeded RNG, geometry helpers (hatching, insetting, …)
     noise.js       seeded simplex noise, fBm, curl noise
     contours.js    marching-squares iso-lines stitched into polylines
+    iso.js         3D scenes for the Scenes designs: camera, solids, hidden-line removal, shadows
+    isokit.js      walls, windows, roofs, cars, fences and people shared by the Scenes designs
     pipeline.js    fit / rotate / clip to the drawing area / frame
     optimize.js    simplify, merge, travel ordering, stats
     export.js      SVG export

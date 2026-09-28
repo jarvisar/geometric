@@ -87,14 +87,15 @@
         return (demo = { width: w, height: h, data });
     }
 
-    // Bilinear luminance sampler fitted into a box; outside the image is paper white.
+    // Bilinear luminance sampler fitted into a box. Outside the image it returns -1,
+    // so contrast and invert can't turn the letterbox bars into ink.
     function sampler(img, bb, fit) {
         const iw = img.width, ih = img.height, D = img.data;
         const s = fit === 'contain' ? Math.min(bb.w / iw, bb.h / ih) : Math.max(bb.w / iw, bb.h / ih);
         const ox = bb.minX + (bb.w - iw * s) / 2, oy = bb.minY + (bb.h - ih * s) / 2;
         return (x, y) => {
             const u = (x - ox) / s - 0.5, v = (y - oy) / s - 0.5;
-            if (u < -0.5 || v < -0.5 || u > iw - 0.5 || v > ih - 0.5) return 1;
+            if (u < -0.5 || v < -0.5 || u > iw - 0.5 || v > ih - 0.5) return -1;
             const uu = geo.clamp(u, 0, iw - 1), vv = geo.clamp(v, 0, ih - 1);
             const i0 = Math.floor(uu), j0 = Math.floor(vv);
             const i1 = Math.min(i0 + 1, iw - 1), j1 = Math.min(j0 + 1, ih - 1);
@@ -107,10 +108,10 @@
 
     // Push each base point (even arc-length steps) along its unit normal by a
     // sine wave whose amplitude, and optionally frequency, follow darkness.
-    function squiggleLine(pts0, normals, dark, p, s) {
+    function squiggleLine(pts0, normals, dark, p, s, wave) {
         const out = [];
         let ph = 0;
-        const k = TAU / p.wave;
+        const k = TAU / wave;
         for (let i = 0; i < pts0.length; i++) {
             const [x, y] = pts0[i];
             const d = dark(x, y);
@@ -130,7 +131,7 @@
         const g = Math.max(0.5, Math.sqrt((bb.w * bb.h) / 20000));
         let sum = 0, wmax = 0;
         for (let y = bb.minY + g / 2; y < bb.maxY; y += g) for (let x = bb.minX + g / 2; x < bb.maxX; x += g) {
-            const w = weight(x, y);
+            const w = inside(x, y) ? weight(x, y) : 0;
             sum += w * g * g;
             if (w > wmax) wmax = w;
         }
@@ -433,7 +434,9 @@
             const lum = sampler(img, bb, p.fit);
             const gamma = Math.pow(2, -1.5 * p.brightness);
             const dark = (x, y) => {
-                let l = (lum(x, y) - 0.5) * p.contrast + 0.5;
+                const v = lum(x, y);
+                if (v < 0) return 0;
+                let l = (v - 0.5) * p.contrast + 0.5;
                 l = Math.pow(geo.clamp(l, 0, 1), gamma);
                 return p.invert ? l : 1 - l;
             };
@@ -442,6 +445,8 @@
             // ~10 samples per wave, coarser if the whole drawing would pass 300k points
             const baseLen = (p.mode === 'spiral' && p.extent === 'page' ? Math.PI * (bb.w * bb.w + bb.h * bb.h) / 4 : bb.w * bb.h) / s;
             const step = Math.max(Math.min(0.25, p.wave / 10), baseLen / 3e5);
+            // when the point cap coarsens the step, a short wave would alias into a much longer one
+            const wave = Math.max(p.wave, 4 * step);
 
             if (p.mode === 'spiral') {
                 // 'circle': the largest circle inside the clip shape around its centre
@@ -455,7 +460,7 @@
                     nrm.push([c, sn]);
                     th += step / Math.hypot(r, b);
                 }
-                return [squiggleLine(base, nrm, dark, p, s)];
+                return [squiggleLine(base, nrm, dark, p, s, wave)];
             }
 
             if (p.mode === 'squiggle') {
@@ -477,7 +482,7 @@
                         nrm.push([0, 1]);
                     }
                     if (p.join && k % 2) base.reverse();
-                    rows.push(squiggleLine(base, nrm, dark, p, s));
+                    rows.push(squiggleLine(base, nrm, dark, p, s, wave));
                 }
                 if (!p.join) return rows;
                 return [[].concat(...rows)];

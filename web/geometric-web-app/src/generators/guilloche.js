@@ -19,7 +19,7 @@
         const lines = [];
         // ~40 samples per wave (more for loops and sharp crests) keep the chord error
         // near 0.02 mm at A4 size; the pipeline simplifies the flat stretches away
-        const M = Math.min(30000, Math.ceil(Math.max(720, o.N * 40 * (1 + Math.min(o.loop, 3) * 0.6) * Math.max(1, Math.min(o.pw, 3))) * o.quality));
+        const M = Math.min(30000, o.cap || Infinity, Math.ceil(Math.max(720, o.N * 40 * (1 + Math.min(o.loop, 3) * 0.6) * Math.max(1, Math.min(o.pw, 3))) * o.quality));
         for (let k = 0; k < o.K; k++) {
             const ph = (TAU * k) / o.K;
             const pts = new Array(M + 1);
@@ -99,7 +99,9 @@
             // otherwise crest can meet trough and the sum must fit inside it.
             const room = p.gap * 0.9;
             const parallel = !out.twist && out.lobesIn === lobes;
-            const need = parallel ? Math.abs(out.ampOut - out.ampIn) : out.ampOut + out.ampIn;
+            let need = parallel ? Math.abs(out.ampOut - out.ampIn) : out.ampOut + out.ampIn;
+            // the innermost band's scallops also face the central rosette across one gap
+            if (p.centre) need = Math.max(need, out.ampIn);
             if (need > room) {
                 const k = room / need;
                 out.ampOut = +(out.ampOut * k).toFixed(3); out.ampIn = +(out.ampIn * k).toFixed(3);
@@ -123,6 +125,8 @@
 
             const mo = Math.round(p.lobesOut), mi = Math.round(p.lobesIn);
             const mid0 = 1 - avail / wsum / 2;
+            // points per line, shared out so 4 bands × 60 lines of looped waves stay near 1.5M points instead of 7M
+            const cap = Math.ceil(1.5e6 / (B * K));
             let ro = 1;
             for (let b = 0; b < B; b++) {
                 const w = (avail * Math.pow(p.taper, b)) / wsum;
@@ -131,7 +135,7 @@
                 let N = b === 0 ? N0 : Math.max(1, Math.round((N0 * (ro + ri)) / 2 / mid0));
                 if (b > 0 && mo > 0 && N >= mo) N = mo * Math.round(N / mo);
                 const lines = band({
-                    K, N, pw: p.shape, loop: p.loop, quality: p.quality,
+                    K, N, pw: p.shape, loop: p.loop, quality: p.quality, cap,
                     ro, ri, ao: p.ampOut, ai: p.ampIn, mo, mi,
                     rot: (geo.rad(p.twist) * b) / (mo || N), // twist is measured in lobes (or waves)
                 });
