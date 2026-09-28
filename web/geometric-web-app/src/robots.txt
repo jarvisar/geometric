@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://geometric.ajarvis.co/sitemap.xml
+Sitemap: https://geometric.jarvisar.com/sitemap.xml
