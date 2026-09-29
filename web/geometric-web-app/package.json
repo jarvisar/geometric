@@ -7,8 +7,10 @@
     "start": "live-server src",
     "check": "node scripts/check.js",
     "check:pens": "node scripts/check-pens.js",
+    "check:state": "node scripts/check-state.js",
     "smoke": "node scripts/drive.js scripts/smoke.steps.js shots",
     "smoke:pens": "node scripts/drive.js scripts/pen-colors.steps.js shots",
+    "smoke:state": "node scripts/drive.js scripts/state.steps.js shots/state",
     "sheet": "node scripts/shot.js dev/sheet.html \"variants=2&size=220\" shots/sheet.png 1100 6000"
   },
   "devDependencies": {

@@ -277,17 +277,28 @@
     // }
     // extra: { images } – non-serialisable inputs handed to the generator.
     // ------------------------------------------------------------------
+    PG.layoutSizes = function (S) {
+        if (!Number.isFinite(S.paperW) || !Number.isFinite(S.paperH) || S.paperW < 1 || S.paperH < 1) {
+            throw new Error('Invalid paper dimensions');
+        }
+        const m = Math.max(0, Math.min(S.margin, Math.min(S.paperW, S.paperH) / 2 - 0.5));
+        const W = Math.max(1, S.paperW - 2 * m), H = Math.max(1, S.paperH - 2 * m);
+        const cols = Math.min(8, Math.floor(W), Math.max(1, S.cols | 0 || 1));
+        const rows = Math.min(10, Math.floor(H), Math.max(1, S.rows | 0 || 1));
+        // Reserve at least 1 mm for each cell. Round the limit down to a UI gutter step.
+        const limit = Math.max(0, Math.min(cols > 1 ? (W - cols) / (cols - 1) : 40,
+            rows > 1 ? (H - rows) / (rows - 1) : 40));
+        const gutter = Math.min(Math.max(0, S.gutter || 0), Math.floor((limit + 1e-9) * 2) / 2);
+        const gut = cols * rows > 1 ? gutter : 0;
+        return { m, W, H, cols, rows, gutter, gut, cw: (W - gut * (cols - 1)) / cols, ch: (H - gut * (rows - 1)) / rows };
+    };
+
     PG.run = function (def, params, S, extra = {}) {
         params = Object.assign(PG.defaultParams(def), PG.pens.migrate(def, { ...params }));
         params.pens = PG.pens.count(params.pens);
         const T0 = performance.now();
-        // A margin over half the paper (80 mm on A6) would push the drawing area off-centre or off the sheet
-        const m = Math.max(0, Math.min(S.margin, Math.min(S.paperW, S.paperH) / 2 - 0.5));
-        const W = Math.max(1, S.paperW - 2 * m), H = Math.max(1, S.paperH - 2 * m);
-        const cols = Math.max(1, S.cols | 0 || 1), rows = Math.max(1, S.rows | 0 || 1);
+        const { m, W, H, cols, rows, gut, cw, ch } = PG.layoutSizes(S);
         const n = cols * rows;
-        const gut = n > 1 ? Math.max(0, S.gutter || 0) : 0;
-        const cw = Math.max(1, (W - gut * (cols - 1)) / cols), ch = Math.max(1, (H - gut * (rows - 1)) / rows);
 
         const byPen = new Map();
         const outlines = [];
@@ -319,6 +330,8 @@
         // ---- optimise
         const o = S.opt || {};
         const O = PG.optimize;
+        const paperBounds = shapes.rect(m, m, m + W, m + H);
+        const outsidePaper = p => p[0] < m - 1e-6 || p[0] > m + W + 1e-6 || p[1] < m - 1e-6 || p[1] > m + H + 1e-6;
         layers = layers.map(l => {
             let paths = l.paths;
             paths = paths.map(p => O.dedupe(p, 0.001));
@@ -332,6 +345,8 @@
                 const travel = ps => O.stats([{ paths: ps }]).travel;
                 if (travel(sorted) < travel(paths)) paths = sorted;
             }
+            // Don't split already clipped strokes again for floating-point roundoff.
+            if (paths.some(p => p.some(outsidePaper))) paths = PG.clipPaths(paths, paperBounds);
             return { pen: l.pen, paths };
         }).filter(l => l.paths.length);
 

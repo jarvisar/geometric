@@ -100,48 +100,9 @@
     const SNAPS_KEY = 'plotter-geometry:snapshots:v1';
     const MM_PER_CSS_PX = 25.4 / 96;
 
-    const PAPERS = [
-        ['A6', 105, 148], ['A5', 148, 210], ['A4', 210, 297], ['A3', 297, 420], ['A2', 420, 594],
-        ['Letter', 215.9, 279.4], ['Legal', 215.9, 355.6], ['Tabloid', 279.4, 431.8],
-        ['4×6 in', 101.6, 152.4], ['5×7 in', 127, 177.8], ['9×12 in', 228.6, 304.8], ['11×14 in', 279.4, 355.6],
-        ['Square 20 cm', 200, 200], ['Square 12 in', 304.8, 304.8], ['custom', 0, 0],
-    ];
-
+    const PAPERS = PG.settings.papers;
     const PEN_SETS = PG.pens.sets;
-
-    function defaultState() {
-        return {
-            v: 1,
-            gen: 'spirograph',
-            params: {},
-            locks: {},
-            seed: 1,
-            paper: { size: 'A4', landscape: false, w: 210, h: 297, margin: 15, color: '#fbfaf6' },
-            comp: {
-                scale: 100, rotate: 0, offsetX: 0, offsetY: 0, clip: 'rect', frame: false, framePen: 0, frameInset: 0,
-                cols: 1, rows: 1, gutter: 8, cellVary: 'seed', sweepId: '', sweepAmount: 50,
-            },
-            pens: PEN_SETS.fineliner.colors.map((color, i) => ({ name: `Pen ${i + 1}`, color, width: 0.35, visible: true })),
-            opt: { merge: true, mergeTol: 0.1, simplify: true, simplifyTol: 0.02, sort: true, minLength: 0 },
-            view: { margin: false, penWidth: true },
-            ui: { tab: 'design', open: { paper: true, comp: true, pens: true } },
-        };
-    }
-
-    function mergeInto(base, over) {
-        if (!over || typeof over !== 'object') return base;
-        for (const k of Object.keys(over)) {
-            const b = base[k], o = over[k];
-            if (k === 'pens' && Array.isArray(o)) {
-                base.pens = base.pens.map((p, i) => Object.assign({}, p, o[i] || {}));
-            } else if (b && typeof b === 'object' && !Array.isArray(b) && o && typeof o === 'object' && !Array.isArray(o)) {
-                mergeInto(b, o);
-            } else if (o !== undefined) {
-                base[k] = o;
-            }
-        }
-        return base;
-    }
+    const defaultState = PG.settings.defaults;
 
     // ------------------------------------------------------------------ state
 
@@ -174,38 +135,75 @@
         return `${P.size === 'custom' ? 'Custom' : P.size} · ${fmtMM(P.w)} × ${fmtMM(P.h)} mm`;
     }
 
-    function pipelineSettings() {
-        const c = state.comp;
+    function pipelineSettings(s = state) {
+        const c = s.comp;
         return {
-            seed: state.seed, paperW: state.paper.w, paperH: state.paper.h, margin: state.paper.margin,
+            seed: s.seed, paperW: s.paper.w, paperH: s.paper.h, margin: s.paper.margin,
             scale: c.scale, rotate: c.rotate, offsetX: c.offsetX, offsetY: c.offsetY, clip: c.clip,
-            frame: c.frame, framePen: c.framePen, frameInset: c.frameInset, opt: state.opt,
-            cols: c.cols, rows: c.rows, gutter: c.gutter, cellVary: c.cellVary, locks: state.locks[state.gen] || [],
+            frame: c.frame, framePen: c.framePen, frameInset: c.frameInset, opt: s.opt,
+            cols: c.cols, rows: c.rows, gutter: c.gutter, cellVary: c.cellVary, locks: s.locks[s.gen] || [],
             sweep: c.sweepId ? { id: c.sweepId, amount: c.sweepAmount / 100 } : null,
         };
+    }
+
+    function constrainLayout(s = state) {
+        const L = PG.layoutSizes(pipelineSettings(s));
+        s.paper.margin = L.m;
+        s.comp.cols = L.cols; s.comp.rows = L.rows; s.comp.gutter = L.gutter;
+        if (s === state) {
+            for (const key of ['paper.margin', 'comp.cols', 'comp.rows', 'comp.gutter']) {
+                const row = $(`[data-key="${key}"]`);
+                if (row) row.sync();
+            }
+            const badge = $('[data-sec="grid"] .badge');
+            if (badge) badge.textContent = L.cols * L.rows > 1 ? `${L.cols} × ${L.rows}` : 'off';
+            const controls = $('[data-sec="grid"] .controls');
+            if (controls) updateVisibility(controls, s);
+        }
     }
 
     // What travels in share links, exported SVGs and settings files.
     function shareable() {
         const def = currentDef();
-        return {
-            app: 'plotter-geometry', v: 1, gen: def.id, params: { [def.id]: currentParams(def) }, seed: state.seed,
+        return JSON.parse(JSON.stringify({
+            app: 'plotter-geometry', v: 2, gen: def.id, params: { [def.id]: currentParams(def) }, seed: state.seed,
             paper: state.paper, comp: state.comp, locks: state.locks[def.id] || [],
-            pens: state.pens.map(p => ({ name: p.name, color: p.color, width: p.width })),
-        };
+            pens: state.pens, opt: state.opt, view: state.view,
+        }));
     }
 
-    function applyShared(obj) {
-        if (!obj || typeof obj !== 'object') throw new Error('Not a settings file');
-        const next = mergeInto(JSON.parse(JSON.stringify(state)), {
-            seed: obj.seed, paper: obj.paper, comp: obj.comp, pens: obj.pens,
-            opt: obj.opt,
-        });
-        if (obj.gen && PG.byId[obj.gen]) next.gen = obj.gen;
-        if (obj.params) for (const [id, p] of Object.entries(obj.params)) next.params[id] = Object.assign({}, next.params[id] || {}, p);
-        // locks decide what a grid with random parameters per cell looks like
-        if (Array.isArray(obj.locks) && PG.byId[obj.gen]) next.locks[obj.gen] = obj.locks.slice();
-        state = next;
+    function sharedState(obj) {
+        const next = PG.settings.read(obj);
+        next.params = { ...state.params, ...next.params };
+        next.locks = { ...state.locks, ...next.locks };
+        next.ui = state.ui;
+        constrainLayout(next);
+        return next;
+    }
+
+    function restoreShared(obj) {
+        const next = sharedState(obj), def = PG.byId[next.gen];
+        const nextResult = PG.run(def, next.params[def.id], pipelineSettings(next), { images: imageStore[def.id] || {} });
+        const previous = { state, result, lastGenMs };
+        clearTimeout(commitTimer);
+        pushUndo();
+        try {
+            state = next;
+            result = nextResult;
+            lastGenMs = nextResult.timing.total;
+            rebuildAll();
+        } catch (err) {
+            ({ state, result, lastGenMs } = previous);
+            rebuildAll();
+            throw err;
+        }
+        clearTimeout(genTimer);
+        genTimer = 0;
+        setError(null);
+        setBusy(false);
+        draw();
+        commit();
+        scheduleSave();
     }
 
     let saveTimer = 0;
@@ -242,8 +240,7 @@
     function restoreUndo(i) {
         if (i < 0 || i >= undoStack.items.length) return;
         const keep = { ui: state.ui, view: state.view, locks: state.locks };
-        state = mergeInto(defaultState(), JSON.parse(undoStack.items[i]));
-        state.params = JSON.parse(undoStack.items[i]).params || {};
+        state = PG.settings.read(JSON.parse(undoStack.items[i]), true);
         Object.assign(state, keep);
         undoStack.index = i;
         rebuildAll();
@@ -264,12 +261,15 @@
 
     function requestGenerate(live) {
         clearTimeout(genTimer);
+        constrainLayout();
         const slow = lastGenMs > 90;
         if (slow) setBusy(true);
         genTimer = setTimeout(regenerate, slow ? (live ? 150 : 20) : 0);
     }
 
     function regenerate() {
+        clearTimeout(genTimer);
+        genTimer = 0;
         const def = currentDef();
         if (!def) return;
         const t0 = performance.now();
@@ -567,8 +567,8 @@
             head.style.marginBottom = '0';
         } else if (q.type === 'text') {
             const input = q.multiline
-                ? el('textarea', { id, rows: q.rows || 2, spellcheck: 'false' })
-                : el('input', { type: 'text', id, class: 'text-input', spellcheck: 'false' });
+                ? el('textarea', { id, rows: q.rows || 2, spellcheck: 'false', maxlength: 10000 })
+                : el('input', { type: 'text', id, class: 'text-input', spellcheck: 'false', maxlength: 10000 });
             let t = 0;
             row.sync = () => { input.value = get(); };
             input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => set(input.value, true), 450); });
@@ -853,7 +853,7 @@
             const color = el('input', { type: 'color', class: 'color-input', value: pen.color, title: 'Pen colour' });
             color.addEventListener('input', () => { pen.color = color.value; draw(); });
             color.addEventListener('change', commit);
-            const name = el('input', { class: 'pen-name', value: pen.name, spellcheck: 'false', title: 'Pen name (used for SVG layer names)' });
+            const name = el('input', { class: 'pen-name', value: pen.name, spellcheck: 'false', maxlength: 200, title: 'Pen name (used for SVG layer names)' });
             name.addEventListener('change', () => {
                 pen.name = name.value || `Pen ${i + 1}`;
                 const opt = document.querySelector(`[data-key="comp.framePen"] option[value="${i}"]`);
@@ -896,7 +896,11 @@
 
     // ---- snapshots
 
-    function loadSnaps() { return storageGet(SNAPS_KEY) || []; }
+    function loadSnaps() {
+        const snaps = storageGet(SNAPS_KEY);
+        return Array.isArray(snaps) ? snaps.filter(s => s && Number.isFinite(s.time) && typeof s.title === 'string' &&
+            typeof s.thumb === 'string' && s.state && typeof s.state === 'object').slice(0, 30) : [];
+    }
 
     function buildSnapshotsSection(body) {
         const btn = el('button', { class: 'btn', type: 'button' }, icon('camera'), el('span', { text: 'Save snapshot' }));
@@ -904,11 +908,10 @@
         body.append(el('div', { class: 'ctl' }, btn));
         const grid = el('div', { class: 'snaps', id: 'snapGrid' });
         body.append(grid);
-        renderSnaps();
+        renderSnaps(grid);
     }
 
-    function renderSnaps() {
-        const grid = $('#snapGrid');
+    function renderSnaps(grid = $('#snapGrid')) {
         if (!grid) return;
         grid.replaceChildren();
         const snaps = loadSnaps();
@@ -926,26 +929,26 @@
             });
             b.append(del);
             b.addEventListener('click', () => {
-                applyShared(s.state);
-                rebuildAll();
-                requestGenerate();
-                commit();
-                toast(`Restored ${s.title}`);
+                try {
+                    restoreShared(s.state);
+                    toast(`Restored ${s.title}`);
+                } catch (err) { toast(`Could not restore snapshot: ${err.message}`, true); }
             });
             grid.append(b);
         }
     }
 
     function saveSnapshot() {
-        if (!result) return;
-        const P = state.paper;
+        const { recipe, res } = captureDrawing();
+        if (!res) return;
+        const P = recipe.paper;
         const k = 160 / Math.max(P.w, P.h);
         const c = el('canvas', { width: Math.round(P.w * k * 1.5), height: Math.round(P.h * k * 1.5) });
-        PG.drawResult(c.getContext('2d'), visibleResult(), { scale: k * 1.5, ox: 0, oy: 0 },
-            { paper: { w: P.w, h: P.h }, paperColor: P.color, pens: state.pens, minLinePx: 0.6, hairline: true });
+        PG.drawResult(c.getContext('2d'), res, { scale: k * 1.5, ox: 0, oy: 0 },
+            { paper: { w: P.w, h: P.h }, paperColor: P.color, pens: recipe.pens, minLinePx: 0.6, hairline: true });
         const def = currentDef();
         const snaps = loadSnaps();
-        snaps.unshift({ time: Date.now(), title: `${def.name} #${state.seed}`, thumb: c.toDataURL('image/png'), state: shareable() });
+        snaps.unshift({ time: Date.now(), title: `${def.name} #${recipe.seed}`, thumb: c.toDataURL('image/png'), state: recipe });
         while (snaps.length > 30) snaps.pop();
         if (!storageSet(SNAPS_KEY, snaps)) { toast('Browser storage is full — delete some snapshots', true); return; }
         state.ui.open.snaps = true;
@@ -1142,48 +1145,49 @@
 
     // ------------------------------------------------------------------ export
 
-    const fileBase = () => `${currentDef().id}-${state.seed}`;
-    const exportMeta = () => ({
-        title: `${currentDef().name} — seed ${state.seed}`,
-        description: 'plotter-geometry:' + JSON.stringify(shareable()),
-    });
+    function captureDrawing() {
+        if (genTimer) regenerate();
+        const recipe = shareable();
+        return { recipe, res: visibleResult(), base: `${recipe.gen}-${recipe.seed}` };
+    }
 
     function doExport(kind) {
         $('#exportMenu').hidden = true;
         if (kind === 'load') { $('#settingsFile').value = ''; $('#settingsFile').click(); return; }
+        if (kind === 'install') { installApp(); return; }
+        const { recipe, res, base } = captureDrawing();
         if (kind === 'json') {
-            const data = Object.assign(shareable(), { opt: state.opt });
-            download(`${fileBase()}.json`, JSON.stringify(data, null, 2), 'application/json');
+            download(`${base}.json`, JSON.stringify(recipe, null, 2), 'application/json');
             return;
         }
-        if (kind === 'link') { copyLink(); return; }
-        if (kind === 'install') { installApp(); return; }
-        const res = visibleResult();
+        if (kind === 'link') { copyLink(recipe); return; }
         if (!res || !res.layers.length) { toast('Nothing to export', true); return; }
-        const paper = { w: state.paper.w, h: state.paper.h };
+        const paper = { w: recipe.paper.w, h: recipe.paper.h };
+        const meta = { title: `${PG.byId[recipe.gen].name} — seed ${recipe.seed}`,
+            description: 'plotter-geometry:' + JSON.stringify(recipe) };
         if (kind === 'svg') {
-            download(`${fileBase()}.svg`, PG.exporters.svg(res, paper, state.pens, exportMeta()), 'image/svg+xml');
+            download(`${base}.svg`, PG.exporters.svg(res, paper, recipe.pens, meta), 'image/svg+xml');
         } else if (kind === 'svg-split') {
             res.layers.forEach((l, i) => setTimeout(() => {
-                download(`${fileBase()}-pen${l.pen + 1}.svg`, PG.exporters.svg(res, paper, state.pens, exportMeta(), l.pen), 'image/svg+xml');
+                download(`${base}-pen${l.pen + 1}.svg`, PG.exporters.svg(res, paper, recipe.pens, meta, l.pen), 'image/svg+xml');
             }, i * 300));
         } else if (kind === 'png') {
             const k = 200 / 25.4;
             const c = el('canvas', { width: Math.round(paper.w * k), height: Math.round(paper.h * k) });
             PG.drawResult(c.getContext('2d'), res, { scale: k, ox: 0, oy: 0 },
-                { paper, paperColor: state.paper.color, pens: state.pens, minLinePx: 1, hairline: !state.view.penWidth });
+                { paper, paperColor: recipe.paper.color, pens: recipe.pens, minLinePx: 1, hairline: !recipe.view.penWidth });
             // toBlob hands back null when the canvas is over the browser's size limit (big custom paper, iOS)
-            c.toBlob(b => (b ? download(`${fileBase()}.png`, b) : toast('Paper is too large for a PNG export', true)));
+            c.toBlob(b => (b ? download(`${base}.png`, b) : toast('Paper is too large for a PNG export', true)));
         }
     }
 
-    function shareUrl() {
+    function shareUrl(recipe) {
         const base = location.href.split('#')[0];
-        return `${base}#s=${b64encode(JSON.stringify(shareable()))}`;
+        return `${base}#s=${b64encode(JSON.stringify(recipe))}`;
     }
 
-    function copyLink() {
-        const url = shareUrl();
+    function copyLink(recipe) {
+        const url = shareUrl(recipe);
         const done = () => toast('Share link copied');
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(url).then(done, () => { window.prompt('Copy this link:', url); });
@@ -1204,10 +1208,7 @@
                     if (!d.startsWith('plotter-geometry:')) throw new Error('This SVG was not made here (no embedded settings)');
                     text = d.slice('plotter-geometry:'.length);
                 }
-                applyShared(JSON.parse(text));
-                rebuildAll();
-                requestGenerate();
-                commit();
+                restoreShared(JSON.parse(text));
                 toast(`Loaded settings from ${file.name}`);
             } catch (e) {
                 toast(`Could not load ${file.name}: ${e.message}`, true);
@@ -1295,6 +1296,7 @@
     // ------------------------------------------------------------------ wiring
 
     function rebuildAll() {
+        constrainLayout();
         buildParams();
         buildOutputPanel();
         syncSeed();
@@ -1427,21 +1429,31 @@
     // Initial state: share link (#s=…) > saved state > defaults. `#gen=<id>` picks a design.
     function loadInitialState() {
         const saved = storageGet(STORAGE_KEY);
-        if (saved && saved.v === 1) {
-            state = mergeInto(defaultState(), saved);
-            state.params = saved.params || {};
-            state.locks = saved.locks || {};
+        if (saved) {
+            try { state = PG.settings.read(saved, true); }
+            catch (err) { toast(`Saved settings could not be restored. Using defaults. ${err.message}`, true); }
         }
         const hash = location.hash.slice(1);
         if (hash) {
             const q = new URLSearchParams(hash);
             try {
-                if (q.get('s')) applyShared(JSON.parse(b64decode(q.get('s'))));
-                if (q.get('gen') && PG.byId[q.get('gen')]) state.gen = q.get('gen');
-                if (q.get('seed')) state.seed = +q.get('seed') || 1;
-                if (q.get('tab')) state.ui.tab = q.get('tab');
+                const next = q.get('s') ? sharedState(JSON.parse(b64decode(q.get('s')))) : JSON.parse(JSON.stringify(state));
+                if (q.has('gen')) {
+                    if (!Object.prototype.hasOwnProperty.call(PG.byId, q.get('gen'))) throw new Error('Unknown design');
+                    next.gen = q.get('gen');
+                }
+                if (q.has('seed')) {
+                    const seed = Number(q.get('seed'));
+                    if (!q.get('seed').trim() || !Number.isInteger(seed) || seed < 0 || seed > 999999999) throw new Error('Invalid seed');
+                    next.seed = seed;
+                }
+                if (q.has('tab')) {
+                    if (!['design', 'output', 'preview'].includes(q.get('tab'))) throw new Error('Invalid tab');
+                    next.ui.tab = q.get('tab');
+                }
+                state = next;
             } catch (e) {
-                console.warn('Bad share link', e);
+                toast(`Could not open share link: ${e.message}`, true);
             }
             // Drop the hash so later reloads use the live (saved) state.
             try { history.replaceState(null, '', location.href.split('#')[0]); } catch (e) { /* file:// */ }
