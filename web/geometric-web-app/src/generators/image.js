@@ -417,8 +417,7 @@
             { id: 'budget', label: 'Tour optimisation (ms)', type: 'range', min: 0, max: 3000, step: 50, value: 400, random: false,
                 show: p => p.mode === 'tsp' },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false, show: p => p.mode === 'hatch',
-                hint: 'Hatch layers are shared out over the pens' },
+            { id: 'pens' },
         ],
 
         randomize(rng, p) {
@@ -440,6 +439,7 @@
                 l = Math.pow(geo.clamp(l, 0, 1), gamma);
                 return p.invert ? l : 1 - l;
             };
+            const color = paths => PG.pens.tones(paths, PG.pens.count(p.pens), dark);
             const s = p.spacing;
             const cx = (bb.minX + bb.maxX) / 2, cy = (bb.minY + bb.maxY) / 2;
             // ~10 samples per wave, coarser if the whole drawing would pass 300k points
@@ -460,7 +460,7 @@
                     nrm.push([c, sn]);
                     th += step / Math.hypot(r, b);
                 }
-                return [squiggleLine(base, nrm, dark, p, s, wave)];
+                return color([squiggleLine(base, nrm, dark, p, s, wave)]);
             }
 
             if (p.mode === 'squiggle') {
@@ -484,8 +484,7 @@
                     if (p.join && k % 2) base.reverse();
                     rows.push(squiggleLine(base, nrm, dark, p, s, wave));
                 }
-                if (!p.join) return rows;
-                return [[].concat(...rows)];
+                return color(p.join ? [[].concat(...rows)] : rows);
             }
 
             if (p.mode === 'hatch') {
@@ -528,7 +527,7 @@
                         }
                     }
                 }
-                return pens > 1 ? { layers } : layers[0];
+                return color(layers.flat());
             }
 
             // ---- TSP
@@ -539,7 +538,7 @@
             if (!pts.length || pts[0].length < 2) return [];
             const [X, Y] = pts;
             const order = tour(X, Y, p.budget);
-            return [order.map(i => [X[i], Y[i]])];
+            return color([order.map(i => [X[i], Y[i]])]);
         },
     });
 })();

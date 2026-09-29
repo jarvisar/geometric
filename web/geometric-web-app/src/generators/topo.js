@@ -152,10 +152,12 @@
             const delta = (1 - lo) / (L + 1);
             const gradAt = p.minGap > 0 ? gradientSampler(field) : null;
 
-            const plain = [], index = [];
+            const pens = PG.pens.count(p.pens), layers = PG.pens.layers(pens);
+            const reserve = N > 0 && pens > 1 ? 1 : 0;
             for (let i = 1; i <= L; i++) {
                 const level = lo + delta * i;
                 const isIndex = N > 0 && i % N === 0;
+                const out = layers[isIndex ? 0 : reserve + PG.pens.band((i - 1) / L, pens - reserve)];
                 // On steep slopes the gap between neighbouring contours is
                 // delta / |grad h|. A contour of multiplicity m only has neighbours
                 // m levels away once finer ones are cut, so it is kept while
@@ -171,13 +173,13 @@
                     const pieces = gradAt ? thin(line, pt => gradAt(pt[0], pt[1]) <= maxGrad) : [line];
                     for (const piece of pieces) {
                         if (isIndex) {
-                            index.push(piece);
-                            if (p.bold) index.push(offsetPath(piece, 0.4, closed && piece === line));
-                        } else plain.push(piece);
+                            out.push(piece);
+                            if (p.bold) out.push(offsetPath(piece, 0.4, closed && piece === line));
+                        } else out.push(piece);
                     }
                 }
             }
-            return N > 0 ? { layers: [plain, index] } : plain;
+            return { layers };
         },
     });
 

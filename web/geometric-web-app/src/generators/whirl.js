@@ -72,8 +72,7 @@
                 options: [['spiral', 'One continuous spiral'], ['nested', 'Nested polygons']] },
             { id: 'outline', label: 'Cell outlines', type: 'checkbox', value: true, random: 0.75 },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 3, step: 1, value: 1, random: false,
-                hint: 'Alternate cells between pens (outlines stay on pen 1)', show: p => p.layout !== 'single' },
+            { id: 'pens' },
         ],
 
         randomize(rng) {
@@ -159,7 +158,7 @@
             const est = cells.reduce((s, c) => s + c.poly.length, 0);
             if (est * perCell > budget) perCell = Math.max(4, Math.floor(budget / est));
 
-            const pens = p.layout === 'single' ? 1 : Math.max(1, p.pens | 0); // one cell: nothing to alternate
+            const pens = PG.pens.count(p.pens);
             const layers = Array.from({ length: pens }, () => []);
             const outline = [];
             const seen = new Set();
@@ -174,7 +173,7 @@
                         : p.chirality === 'random' ? rng.chance(0.5) : false;
                 if (flip) poly = poly.slice().reverse();
                 const n = poly.length;
-                const out = layers[cell.cls % pens];
+                const out = [];
 
                 if (p.outline) {
                     for (let i = 0; i < n; i++) {
@@ -204,6 +203,7 @@
                     }
                     if (path.length > 1) out.push(path);
                 }
+                PG.pens.bands(out, pens).layers.forEach((paths, i) => layers[i].push(...paths));
             }
             layers[0].push(...outline);
             return pens > 1 ? { layers } : layers[0];

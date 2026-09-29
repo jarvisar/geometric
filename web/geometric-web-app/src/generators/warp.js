@@ -39,8 +39,7 @@
             { id: 'cx', label: 'Centre x (%)', type: 'range', min: 0, max: 100, step: 1, value: 50, random: false },
             { id: 'cy', label: 'Centre y (%)', type: 'range', min: 0, max: 100, step: 1, value: 50, random: false },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 2, step: 1, value: 1, random: false,
-                hint: 'Checker/grid: split by direction. Stripes/squares: alternate lines' },
+            { id: 'pens' },
         ],
 
         randomize(rng, p) {
@@ -150,7 +149,7 @@
                 return out.map(warp);
             });
             const L1 = bend(A), L2 = bend(B);
-            return p.pens > 1 ? { layers: [L1, L2] } : L1.concat(L2);
+            return { layers: [L1, L2] };
         },
     });
 

@@ -154,8 +154,6 @@
                 show: p => p.decor === 'hatch' || p.decor === 'nested',
                 options: [['both', 'Both tiles'], ['0', 'Thin rhombs / kites'], ['1', 'Thick rhombs / darts']] },
             { type: 'section', label: 'Pens' },
-            { id: 'split', label: 'Decoration on pens 2–3', type: 'checkbox', value: true, random: false,
-                hint: 'Outlines on pen 1; arc families or tile types on pens 2 and 3' },
         ],
 
         randomize(rng, p) {
@@ -205,20 +203,24 @@
                 tris = next;
             }
 
-            const split = p.split;
-            const layers = [[], [], []];
+            const layers = PG.pens.layers(p.pens);
+            const reserve = p.outline && p.decor !== 'none' && layers.length > 1 ? 1 : 0;
+            const orientPen = (a, b, family = 0) => {
+                const angle = (Math.atan2(b[1] - a[1], b[0] - a[0]) + Math.PI) % Math.PI;
+                return reserve + (PG.pens.band(angle / Math.PI, layers.length - reserve) + family) % (layers.length - reserve);
+            };
 
             if (p.outline) {
                 const seen = new Set();
                 const key = q => `${Math.round(q[0] * 1e4)},${Math.round(q[1] * 1e4)}`;
                 for (const t of tris) for (const [a, b] of tileEdges(kind, t)) {
                     const ka = key(a), kb = key(b), k = ka < kb ? ka + '|' + kb : kb + '|' + ka;
-                    if (!seen.has(k)) { seen.add(k); layers[0].push([a, b]); }
+                    if (!seen.has(k)) { seen.add(k); layers[reserve ? 0 : orientPen(a, b)].push([a, b]); }
                 }
             }
 
             if (p.decor === 'arcs') {
-                for (const t of tris) for (const a of tileArcs(kind, t)) layers[split ? 1 + a.fam : 0].push(arcPath(a));
+                for (const t of tris) for (const a of tileArcs(kind, t)) layers[orientPen(t[1], t[2], a.fam)].push(arcPath(a));
             } else if (p.decor === 'hatch' || p.decor === 'nested') {
                 // pair the halves back into whole tiles (the twin shares the axis)
                 const key = q => `${Math.round(q[0] * 1e4)},${Math.round(q[1] * 1e4)}`;
@@ -242,7 +244,7 @@
                     } else poly = [A, B, C];
                     poly = geo.cleanPolygon(poly);
                     if (poly.length < 3) continue;
-                    const out = layers[split ? 1 + type : 0];
+                    const out = layers[orientPen(A, B, type)];
                     // at 0 the first fill ring is the tile edge, which the neighbouring tile draws too
                     const inner = insetPoly(poly, Math.max(0.3, p.gap));
                     if (inner.length < 3) continue;

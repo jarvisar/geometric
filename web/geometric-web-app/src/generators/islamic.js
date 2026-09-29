@@ -401,8 +401,7 @@
             { id: 'gap', label: 'Interlace gap (mm)', type: 'range', min: 0, max: 3, step: 0.05, value: 0.6, random: [0.4, 1.1],
                 show: p => p.strap > 0 && p.weave === 'weave' },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Strand pens', type: 'range', min: 1, max: 6, step: 1, value: 1, random: false,
-                hint: 'Each strand gets a random pen; the tiling and second pattern follow on the next pens' },
+            { id: 'pens' },
         ],
 
         randomize(rng) {
@@ -471,10 +470,12 @@
                 return sw > 0 ? straps(strands, sw, p.gap, p.weave) : strands.map(s => [s]);
             };
 
-            // strands (and so whole straps) are coloured at random across the pattern pens
+            // Keep whole straps together and include optional details in the pen budget.
             const pens = Math.max(1, p.pens | 0);
             const layers = Array.from({ length: pens }, () => []);
-            for (const group of pattern(p.theta)) layers[rng.int(0, pens - 1)].push(...group);
+            const extras = Math.min(pens - 1, Number(p.showTiling) + Number(p.theta2 > 0));
+            const strandPens = pens - extras;
+            pattern(p.theta).forEach((group, i) => layers[i % strandPens].push(...group));
             if (p.showTiling) {
                 const seen = new Set(), edges = [];
                 for (const c of copies) {
@@ -488,9 +489,9 @@
                         edges.push([q0, q1]);
                     }
                 }
-                layers.push(chain(edges, keyOf));
+                layers[pens - 1].push(...chain(edges, keyOf));
             }
-            if (p.theta2 > 0) layers.push(pattern(p.theta2).flat());
+            if (p.theta2 > 0) layers[Math.max(0, pens - 1 - Number(p.showTiling && pens > 2))].push(...pattern(p.theta2).flat());
             return layers.length === 1 ? layers[0] : { layers };
         },
     });

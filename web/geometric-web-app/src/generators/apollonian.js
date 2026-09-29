@@ -66,7 +66,7 @@
             { id: 'gap', label: 'Gap (mm)', type: 'range', min: 0, max: 4, step: 0.05, value: 0, random: [0, 1],
                 hint: 'Shrinks every circle so neighbours no longer touch' },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false },
+            { id: 'pens' },
             { id: 'penMode', label: 'Pen per', type: 'select', value: 'generation', show: p => p.pens > 1,
                 options: [['generation', 'Generation'], ['size', 'Size'], ['random', 'Random circle']] },
         ],
@@ -82,6 +82,7 @@
         },
 
         generate(p, ctx) {
+            const colorRng = new PG.RNG((ctx.seed | 0) ^ 0x51f15e);
             const { rng } = ctx;
             const bb = geo.bbox([ctx.shape.polygon()]);
             const ox = (bb.minX + bb.maxX) / 2, oy = (bb.minY + bb.maxY) / 2;
@@ -150,7 +151,7 @@
                 if (pens > 1) {
                     // the outer circle (R + gap) and a minR above R both land below 0
                     if (p.penMode === 'size') pen = geo.clamp(Math.floor((Math.log(R / r) / lnSpan) * pens), 0, pens - 1);
-                    else if (p.penMode === 'random') pen = rng.int(0, pens - 1);
+                    else if (p.penMode === 'random') pen = colorRng.int(0, pens - 1);
                     // cycle, so each circle differs from the newest circle of its gap
                     // (banding by depth left the later pens a few specks in the cusps)
                     else pen = c.g % pens;

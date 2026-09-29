@@ -58,12 +58,13 @@
             { id: 'rim', label: 'Outline hatched circles', type: 'checkbox', value: true, random: 0.75,
                 show: p => p.style === 'hatch' || p.style === 'mixed' },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false },
-            { id: 'penMode', label: 'Pen per', type: 'select', value: 'random', show: p => p.pens > 1,
+            { id: 'pens' },
+            { id: 'penMode', label: 'Pen per', type: 'select', value: 'size', show: p => p.pens > 1,
                 options: [['random', 'Random circle'], ['size', 'Size'], ['style', 'Style']] },
         ],
 
         generate(p, ctx) {
+            const colorRng = new PG.RNG((ctx.seed | 0) ^ 0x51f15e);
             const { width: W, height: H, rng, shape } = ctx;
             const maxR = Math.max(p.maxR, p.minR), minR = Math.min(p.minR, p.maxR);
             const gap = p.gap;
@@ -144,7 +145,7 @@
                     if (p.penMode === 'size') pen = Math.min(p.pens - 1, Math.floor((1 - Math.log(r / minR) / lnSpan) * p.pens));
                     // with one style there's nothing to split by, so spread the circles like 'random'
                     else if (p.penMode === 'style' && p.style === 'mixed') pen = STYLES.indexOf(style);
-                    else pen = rng.int(0, p.pens - 1);
+                    else pen = colorRng.int(0, p.pens - 1);
                 }
                 for (const path of paths) out.push([path, pen]);
             }

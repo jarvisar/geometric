@@ -305,7 +305,7 @@
         id: 'maze',
         name: 'Maze',
         category: 'Tiles',
-        description: 'Perfect mazes on a grid or in concentric rings, with the solution on a second pen.',
+        description: 'Perfect mazes on a grid or in concentric rings, with a separate color for the solution.',
         fit: false,
         params: [
             { type: 'section', label: 'Maze' },
@@ -317,7 +317,7 @@
             { id: 'bias', label: 'Direction bias', type: 'range', min: -0.9, max: 0.9, step: 0.05, value: 0, random: [-0.6, 0.6],
                 hint: 'Favour horizontal (+) or vertical (−) passages; on circles, around (+) or outwards (−)' },
             { type: 'section', label: 'Solution' },
-            { id: 'solution', label: 'Show solution (pen 2)', type: 'checkbox', value: true, random: 0.7 },
+            { id: 'solution', label: 'Show solution', type: 'checkbox', value: true, random: 0.7 },
             { id: 'round', label: 'Rounded solution', type: 'range', min: 0, max: 0.5, step: 0.01, value: 0.5, random: [0.2, 0.5],
                 show: p => p.solution },
         ],

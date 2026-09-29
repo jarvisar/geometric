@@ -107,14 +107,7 @@
         ['Square 20 cm', 200, 200], ['Square 12 in', 304.8, 304.8], ['custom', 0, 0],
     ];
 
-    // The Scenes designs pick pens by these fineliner colours (pen 7 water, pen 8 ground and wood)
-    const PEN_SETS = {
-        fineliner: { label: 'Fineliners on white', paper: '#fbfaf6', colors: ['#161616', '#d1342f', '#2456c8', '#1d8a4e', '#d99a00', '#7b3fc0', '#2fa3d6', '#8b5a2b'] },
-        gel: { label: 'Gel pens on black', paper: '#16181b', colors: ['#f4f1ea', '#e7c35a', '#aab7c1', '#f08bb0', '#7fcfe6', '#b5de7a', '#c8a6f2', '#f4a261'] },
-        riso: { label: 'Riso brights', paper: '#f7f4ec', colors: ['#0078bf', '#ff48b0', '#ffb511', '#00a95c', '#ff665e', '#765ba7', '#00838a', '#925f52'] },
-        sepia: { label: 'Sepia on cream', paper: '#f2e8d5', colors: ['#3a2a1c', '#8b4a2b', '#b8864e', '#556b2f', '#7a2e2e', '#2f4f6f', '#5f7f8f', '#9a7b4f'] },
-        blueprint: { label: 'White on blueprint', paper: '#1d3f78', colors: ['#f2f6ff', '#9cc7ff', '#ffd66b', '#ff9f8a', '#b8f2d0', '#d5b8ff', '#7fe3ff', '#ffc48a'] },
-    };
+    const PEN_SETS = PG.pens.sets;
 
     function defaultState() {
         return {
@@ -162,6 +155,7 @@
     // Params for a design, with defaults filled in place (controls hold on to this object).
     function currentParams(def = currentDef()) {
         const p = state.params[def.id] || (state.params[def.id] = {});
+        PG.pens.migrate(def, p);
         for (const q of def.params) if (q.id && !(q.id in p)) p[q.id] = q.value;
         return p;
     }
@@ -843,6 +837,7 @@
             commit();
         });
         body.append(el('div', { class: 'ctl' }, sel));
+        body.append(el('p', { id: 'penAssignmentHint', class: 'out-note' }));
 
         const list = el('div', { id: 'penList' });
         state.pens.forEach((pen, i) => {
@@ -884,17 +879,18 @@
         if (!rows.length) return;
         const usage = {};
         if (result) for (const l of result.layers) usage[l.pen] = PG.optimize.stats([l]);
-        // most designs start on one pen, so recolouring the other pens does nothing until Pens goes up
         const def = currentDef(), params = currentParams(def);
-        const q = def.params.find(x => x.id === 'pens' || x.id === 'inks'); // the Scenes use a select called inks
-        const reachable = i => q && (!q.show || q.show(params)) && (q.type !== 'range' || i < q.max);
-        const unused = i => !reachable(i) ? 'not used by this design'
-            : q.type === 'range' ? `unused, raise ${q.label} to use it` : `unused, pick more ${q.label} to use it`;
+        const roles = PG.pens.roles(def, params);
+        const hint = $('#penAssignmentHint');
+        if (hint) hint.textContent = PG.pens.designs[def.id]?.hint || '';
         rows.forEach(row => {
             const i = +row.dataset.pen;
             const u = usage[i];
             row.classList.toggle('unused', !u);
-            row.querySelector('.pen-meta').textContent = u ? `${fmtCount(u.paths)} ${u.paths === 1 ? 'path' : 'paths'}` : unused(i);
+            const assignment = roles[i]?.join(', ');
+            row.querySelector('.pen-meta').textContent = u
+                ? `${assignment ? assignment + ' · ' : ''}${fmtCount(u.paths)} ${u.paths === 1 ? 'path' : 'paths'}`
+                : assignment ? `${assignment} · no paths in this drawing` : 'unused at this pen count';
         });
     }
 

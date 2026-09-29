@@ -35,6 +35,13 @@ and it shows up in the app with an auto-built control panel.
 
 ## Output
 
+Pen defaults, palette order and control hints live in `src/lib/pens.js`. Add a
+profile there for a new design. Registration supplies its 1–8 pen control, or
+replaces a `{ id: 'pens' }` placeholder where you want the control to appear.
+Return logical color groups from the generator and the pipeline maps them to
+the profile's pen slots. Scenes use `PG.pens.renderScene` for material groups.
+See [PEN_COLORS.md](PEN_COLORS.md) for the current assignments.
+
 * A **path** is an array of points; a **point** is `[x, y]`. Closed shapes repeat
   the first point at the end (`geo.circle` does this for you).
 * Return an array of paths (one pen) or `{ layers: [paths, paths, ...] }` where

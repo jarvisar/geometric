@@ -41,7 +41,7 @@
                 show: p => p.type === 'triangles' },
             { id: 'hatchDir', label: 'Hatch direction', type: 'select', value: 'along', random: true, show: p => p.type === 'triangles',
                 options: [['along', 'Along the diagonal'], ['across', 'Across the diagonal'], ['horizontal', 'Horizontal'], ['vertical', 'Vertical']] },
-            { id: 'otherHalf', label: 'Hatch other half (pen 2)', type: 'checkbox', value: false, random: 0.3,
+            { id: 'otherHalf', label: 'Hatch other half', type: 'checkbox', value: false, random: 0.3,
                 show: p => p.type === 'triangles' },
             { type: 'section', label: 'Orientation' },
             { id: 'structure', label: 'Structure', type: 'range', min: 0, max: 1, step: 0.01, value: 0.4, random: [0, 0.65],
@@ -49,8 +49,7 @@
             { id: 'noiseScale', label: 'Region size (mm)', type: 'range', min: 15, max: 300, step: 1, value: 80, random: [30, 160],
                 show: p => p.structure > 0 },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false,
-                show: p => p.type !== 'triangles' }, // triangles: 'Hatch other half' picks pen 2
+            { id: 'pens' },
             { id: 'penMode', label: 'Split pens by', type: 'select', value: 'curve', show: p => p.pens > 1 && p.type !== 'triangles',
                 options: [['curve', 'Whole curves'], ['band', 'Band'], ['orient', 'Tile orientation']] },
         ],
@@ -155,7 +154,7 @@
                 // half-square triangles; orientation = which corner is filled
                 const cols = Math.ceil(W / s) + 2, rows = Math.ceil(H / s) + 2;
                 const x0 = (W - (cols - 2) * s) / 2 - s, y0 = (H - (rows - 2) * s) / 2 - s;
-                const main = [], other = [];
+                const triangleLayers = PG.pens.layers(pens);
                 const q = Math.PI / 4;
                 const angleFor = (o, half) => {
                     // hypotenuse runs at 135° for corners 0/2, 45° for corners 1/3
@@ -170,6 +169,8 @@
                         const x = x0 + i * s, y = y0 + j * s;
                         const c = [[x, y], [x + s, y], [x + s, y + s], [x, y + s]];
                         const o = orient(x + s / 2, y + s / 2, 4);
+                        const color = ((Math.floor(i / 2) + Math.floor(j / 2)) % pens + pens) % pens;
+                        const main = triangleLayers[color], other = triangleLayers[(color + 1) % pens];
                         main.push(...geo.hatch([c[o], c[(o + 1) % 4], c[(o + 3) % 4]], p.hatch, angleFor(o, false)));
                         if (p.otherHalf) {
                             const u = (o + 2) % 4;
@@ -177,8 +178,7 @@
                         }
                     }
                 }
-                if (!p.otherHalf) return pens > 1 ? { layers: [main] } : main;
-                return { layers: [main, other] };
+                return { layers: triangleLayers };
             }
 
             if (pens <= 1) return arcs.map(a => a.path);
@@ -187,7 +187,7 @@
             if (p.penMode === 'band') penOf = a => a.k;
             else if (p.penMode === 'orient') penOf = a => a.o;
             else {
-                // union arcs that share an endpoint, then colour each whole curve at random
+                // Union arcs that share an endpoint, then keep each whole curve on one pen.
                 const key = pt => `${Math.round(pt[0] * 200)},${Math.round(pt[1] * 200)}`;
                 const parent = arcs.map((_, i) => i);
                 const find = i => { while (parent[i] !== i) i = parent[i] = parent[parent[i]]; return i; };
@@ -201,7 +201,7 @@
                 const colour = new Map();
                 arcs.forEach((a, i) => { a.root = find(i); });
                 penOf = a => {
-                    if (!colour.has(a.root)) colour.set(a.root, rng.int(0, pens - 1));
+                    if (!colour.has(a.root)) colour.set(a.root, colour.size % pens);
                     return colour.get(a.root);
                 };
             }

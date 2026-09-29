@@ -43,7 +43,6 @@
             { id: 'wobbleScale', label: 'Wobble size (mm)', type: 'range', min: 20, max: 400, step: 1, value: 120,
                 show: p => p.wobble > 0 },
             { type: 'section', label: 'Pens' },
-            { id: 'separate', label: 'Each set on its own pen', type: 'checkbox', value: true, random: false },
         ],
 
         randomize(rng, p) {
@@ -157,7 +156,7 @@
                 }
                 layers.push(paths);
             }
-            return p.separate ? { layers } : [].concat(...layers);
+            return { layers };
         },
     });
 

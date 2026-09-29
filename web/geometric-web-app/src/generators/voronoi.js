@@ -47,8 +47,8 @@
             { id: 'rim', label: 'Outline hatched cells', type: 'checkbox', value: true,
                 show: p => p.style === 'hatch' || p.style === 'mixed' },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false },
-            { id: 'penMode', label: 'Pen per', type: 'select', value: 'random', show: p => p.pens > 1,
+            { id: 'pens' },
+            { id: 'penMode', label: 'Pen per', type: 'select', value: 'region', show: p => p.pens > 1,
                 options: [['random', 'Random cell'], ['region', 'Region'], ['style', 'Style']] },
         ],
 
@@ -62,6 +62,7 @@
         },
 
         generate(p, ctx) {
+            const colorRng = new PG.RNG((ctx.seed | 0) ^ 0x51f15e);
             const { rng, noise } = ctx;
             const area = ctx.shape.polygon();
             if (!area.length) return [];
@@ -192,7 +193,7 @@
                     else if (p.penMode === 'region') {
                         const s = seeds[i], v = noise.noise2(s[0] * 0.006 + 31, s[1] * 0.006 - 17);
                         pen = Math.floor(geo.clamp((v + 1) / 2, 0, 0.999) * pens);
-                    } else pen = rng.int(0, pens - 1);
+                    } else pen = colorRng.int(0, pens - 1);
                 }
                 const out = layers[pen % pens];
                 if (poly.length < 3) { if (shared) addEdges(cell, out); return; } // too small to fill

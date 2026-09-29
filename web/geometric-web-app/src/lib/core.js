@@ -33,6 +33,7 @@
     PG.register = function (def) {
         if (!def.id || !def.generate) throw new Error('Generator needs id and generate()');
         def.params = def.params || [];
+        if (PG.pens) PG.pens.configure(def);
         def.category = def.category || 'Curves';
         if (PG.byId[def.id]) {
             PG.generators = PG.generators.filter(g => g.id !== def.id);

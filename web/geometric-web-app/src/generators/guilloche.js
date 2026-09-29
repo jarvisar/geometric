@@ -68,7 +68,7 @@
             { id: 'centre', label: 'Central rosette', type: 'checkbox', value: true, random: 0.7 },
             { id: 'centreWaves', label: 'Rosette petals', type: 'range', min: 3, max: 24, step: 1, value: 12, show: p => p.centre, random: [5, 16] },
             { type: 'section', label: 'Output' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false, hint: 'Pens alternate by band' },
+            { id: 'pens' },
             { id: 'quality', label: 'Smoothness', type: 'range', min: 0.5, max: 3, step: 0.1, value: 1, random: false },
         ],
 
@@ -115,7 +115,7 @@
             const K = Math.max(1, Math.round(p.lines));
             const N0 = Math.max(1, Math.round(p.waves));
             const pens = Math.max(1, Math.round(p.pens));
-            const layers = Array.from({ length: pens }, () => []);
+            const layers = [];
             const core = geo.clamp(p.core, 0, 0.9);
             let gap = p.gap;
             let avail = 1 - core - (B - 1) * gap - (p.centre ? gap : 0);
@@ -139,7 +139,7 @@
                     ro, ri, ao: p.ampOut, ai: p.ampIn, mo, mi,
                     rot: (geo.rad(p.twist) * b) / (mo || N), // twist is measured in lobes (or waves)
                 });
-                layers[b % pens].push(...lines);
+                layers.push(lines);
                 ro = ri - gap;
             }
             if (p.centre && core > 0.01) {
@@ -154,9 +154,9 @@
                     K: Kc, N: Nc, pw: 1, loop: 0, quality: p.quality,
                     ro: rc, ri: rin, ao: 0, ai: 0, mo: 0, mi: 0, rot: 0,
                 });
-                layers[B % pens].push(...lines);
+                layers.push(lines);
             }
-            return { layers };
+            return PG.pens.families(layers, pens);
         },
     });
 })();

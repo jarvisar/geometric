@@ -47,8 +47,7 @@
             { id: 'echoTurn', label: 'Phase step°', type: 'range', min: -45, max: 45, step: 0.5, value: 0,
                 show: p => p.echoes > 1, hint: 'Extra phase given to the varied wheel on each echo' },
             { type: 'section', label: 'Output' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false,
-                hint: 'Echoes alternate between pens' },
+            { id: 'pens' },
             { id: 'quality', label: 'Smoothness', type: 'range', min: 0.5, max: 3, step: 0.1, value: 1, random: false },
         ],
 
@@ -109,8 +108,7 @@
 
             const K = Math.max(1, Math.round(p.echoes));
             const vary = geo.clamp((+p.echoWheel || 3) - 1, 0, 3);
-            const pens = Math.max(1, Math.round(p.pens));
-            const layers = Array.from({ length: pens }, () => []);
+            const layers = [];
             const seen = new Set();
 
             for (let e = 0; e < K; e++) {
@@ -141,7 +139,7 @@
                     path[i] = [x, -y]; // y up, as in the complex plane
                 }
                 path[N] = [path[0][0], path[0][1]];
-                layers[e % pens].push(path);
+                layers.push([path]);
             }
             return { layers };
         },

@@ -61,8 +61,7 @@
             { id: 'gap', label: 'Crossing gap (mm)', type: 'range', min: 0, max: 5, step: 0.05, value: 1.2, random: [0.6, 1.8] },
             { id: 'flip', label: 'Mirror over/under', type: 'checkbox', value: false, random: 0.5 },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false,
-                hint: 'Each closed strand gets a pen at random' },
+            { id: 'pens' },
         ],
 
         generate(p, ctx) {
@@ -177,8 +176,8 @@
             const pens = Math.max(1, p.pens | 0);
             const layers = Array.from({ length: pens }, () => []);
 
-            for (const visits of loops) {
-                const out = layers[pens > 1 ? rng.int(0, pens - 1) : 0];
+            for (const [i, visits] of loops.entries()) {
+                const out = layers[i % pens];
                 for (const o of offsets) {
                     let cur = null;
                     const add = (pts, fresh) => {

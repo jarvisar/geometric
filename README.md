@@ -1,6 +1,6 @@
 # Plotter Geometry
 
-Web app for generating geometric line art for pen plotters like the AxiDraw. Pick from 32 generative art designs, adjust them in the browser and export plot-ready SVG files. Built using JavaScript, HTML and CSS with no dependencies.
+Web app for generating geometric line art for pen plotters like the AxiDraw. Pick from 34 generative art designs, adjust them in the browser and export plot-ready SVG files. Built using JavaScript, HTML and CSS with no dependencies.
 
 Visit the [Plotter Geometry web app](https://geometric.jarvisar.com/) to access the latest deployment. It also works offline after the first visit.
 
@@ -12,14 +12,14 @@ Currently supports 34 designs:
 - Fields: flow fields, ridgelines, topographic contour maps, Chladni patterns, electric and magnetic field lines, moiré and op-art warp
 - Tiles: Truchet tiles, Islamic star patterns, Penrose tiling, hyperbolic tiling, Celtic knots, whirls, mazes and L-system fractals
 - Packing: circle packing, Apollonian gaskets, recursive subdivision and Voronoi
-- Scenes: an isometric town of houses, apartments, A-frames, windmills, cars and trees, a harbour town with boats and a lighthouse, a fairground of rides and tents, and an alpine valley cut out like a topographic model, the last three drawn for four pens, all with hidden lines removed
+- Scenes: an isometric town of houses, apartments, A-frames, windmills, cars and trees, a harbour town with boats and a lighthouse, a fairground of rides and tents, and an alpine valley cut out like a topographic model, all with hidden lines removed
 - Image: converts photos into spiral, squiggle, cross-hatch or single-line TSP art
 
 ## Usage
 
 Select a design from the menu and use the sliders to adjust it. Click `Randomize` to generate new settings, or lock individual parameters to keep them from changing. Using the same seed and settings produces the same drawing.
 
-Set the paper size (A6 to A2, Letter, Legal, Tabloid or custom), margins and pen widths to match your plotter setup. Designs can be scaled, rotated or arranged in a grid. Supports up to six pens.
+Set the paper size (A6 to A2, Letter, Legal, Tabloid or custom), margins and pen widths to match your plotter setup. Designs can be scaled, rotated or arranged in a grid. Every design supports one to eight pens, with color defaults based on its geometry. Change the pen count in the design controls and edit the colors under `Paper & Output`. The pen list shows which parts of a scene each pen draws.
 
 Click `Export SVG` to download the drawing. Exported SVGs use millimeter units and a separate Inkscape layer for each pen, so they work with the AxiDraw Inkscape extension, vpype and saxi. The export menu also includes PNG export, one SVG file per pen, and a link for sharing the current design. Drop an exported SVG back onto the preview to restore its settings.
 

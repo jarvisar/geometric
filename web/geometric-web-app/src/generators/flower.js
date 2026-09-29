@@ -7,21 +7,22 @@
  * where rose = (1 − width) + width·cos(nθ) dips in the middle of the sector,
  * which splits each petal into two lobes (and past width 0.5 pushes the
  * middle through the centre). Extras: a twist that turns the outer lines,
- * and an optional second ring of petals, offset by half a petal, on pen 2.
+ * and an optional second ring of petals, offset by half a petal.
  */
 (function () {
     'use strict';
     const { geo, TAU } = PG;
 
     // One ring of petals. Angles in radians, rotated by `offset`.
-    function ring(p, n, scale, offset, clearR, base = 0) {
-        const paths = [];
+    function ring(p, n, scale, offset, clearR, base = 0, shift = 0) {
+        const layers = PG.pens.layers(p.pens);
         const L = Math.max(1, Math.round(p.lines));
         // a line spans one petal's sector: few petals means long lines, so sample them more
         const M = Math.max(4, Math.round(p.points * Math.max(1, 8 / n)));
         const sector = TAU / n;
         for (let i = 0; i < n; i++) {
             const a0 = offset + sector * i;
+            const paths = layers[(i + shift) % layers.length];
             for (let j = 1; j <= L; j++) {
                 const ratio = j / L;
                 const twist = geo.rad(p.twist) * ratio;
@@ -54,7 +55,7 @@
                 }
             }
         }
-        return paths.filter(q => q.length > 1);
+        return layers.map(paths => paths.filter(q => q.length > 1));
     }
 
     PG.register({
@@ -122,10 +123,10 @@
             const n = Math.max(1, Math.round(p.petals));
             const cr = Math.max(0, p.centre);
             const clearR = p.clear ? cr : 0;
-            const layers = [ring(p, n, 1, 0, clearR, p.clear ? cr : 0)];
+            const layers = ring(p, n, 1, 0, clearR, p.clear ? cr : 0);
             if (p.ring2) {
                 const q = Object.assign({}, p, { lines: p.ring2Lines });
-                layers.push(ring(q, n, p.ring2Scale, Math.PI / n, clearR, p.clear ? cr : 0));
+                ring(q, n, p.ring2Scale, Math.PI / n, clearR, p.clear ? cr : 0, 1).forEach((paths, i) => layers[i].push(...paths));
             }
             if (cr > 0) layers[0].push(geo.circle(0, 0, cr, 180));
             return { layers };

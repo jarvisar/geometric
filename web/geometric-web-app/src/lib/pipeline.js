@@ -8,8 +8,6 @@
     const PG = (globalThis.PG = globalThis.PG || {});
     const geo = PG.geo;
 
-    PG.MAX_PENS = 8;
-
     // ------------------------------------------------------------------
     // Clip shapes (convex). Each exposes inside(), dist() (signed, >0 inside),
     // clipSeg() -> [t0, t1] | null, and outline().
@@ -222,7 +220,7 @@
         };
 
         const t0 = performance.now();
-        let layers = PG.normalizeOutput(def.generate(params, ctx));
+        let layers = PG.normalizeOutput(PG.pens.apply(def, def.generate(params, ctx), params));
         const genMs = performance.now() - t0;
 
         if (def.fit) {
@@ -280,6 +278,8 @@
     // extra: { images } – non-serialisable inputs handed to the generator.
     // ------------------------------------------------------------------
     PG.run = function (def, params, S, extra = {}) {
+        params = Object.assign(PG.defaultParams(def), PG.pens.migrate(def, { ...params }));
+        params.pens = PG.pens.count(params.pens);
         const T0 = performance.now();
         // A margin over half the paper (80 mm on A6) would push the drawing area off-centre or off the sheet
         const m = Math.max(0, Math.min(S.margin, Math.min(S.paperW, S.paperH) / 2 - 0.5));

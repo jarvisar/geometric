@@ -109,7 +109,9 @@
             }
 
             const mk = Math.max(0, p.marker);
-            const layers = [[], [], []];
+            const pens = PG.pens.count(p.pens), layers = PG.pens.layers(pens);
+            const first = pens > 1 ? 1 : 0;
+            const fanPens = Math.max(1, pens - first - Number(p.equip && p.kind !== 'magnetic' && pens > 2));
             // Lines per source, and the radius inside which they would crowd
             // closer than ~0.45 mm (a solid blot of ink with a fine pen). Electric
             // lines stop there, and markers grow to it, so big charges read bigger.
@@ -126,7 +128,7 @@
                 return v;
             };
             // contours of ψ at equal steps, cut away inside the markers
-            const contours = (count, out) => {
+            const contours = (count, fixedPen) => {
                 const pad = 2, w = bb.w + 2 * pad, h = bb.h + 2 * pad;
                 // 0.5 mm up to A3, coarser past 500k samples so big paper doesn't take seconds per contour set
                 const cell = Math.max(0.5, Math.sqrt((w * h) / 5e5));
@@ -135,6 +137,7 @@
                 const vals = Float64Array.from(f.values).sort();
                 const lo = vals[Math.floor(vals.length * 0.01)], hi = vals[Math.floor(vals.length * 0.99)];
                 for (const level of PG.contourLevels(f, Math.max(1, Math.round(count)), lo, hi)) {
+                    const out = layers[fixedPen === undefined ? first + PG.pens.band((level - lo) / (hi - lo || 1), pens - first) : fixedPen];
                     for (const line of PG.isolines(f, level)) {
                         let cur = null;
                         for (const q of line) {
@@ -147,7 +150,7 @@
             };
 
             if (p.kind === 'magnetic') {
-                contours(p.density * 1.5, layers[0]);
+                contours(p.density * 1.5);
             } else {
                 // ---- field line tracing
                 const field = (x, y) => {
@@ -234,10 +237,11 @@
                     for (let i = 0; i < n; i++) {
                         const { path, end } = trace(s, (TAU * (i + phase)) / n, sg);
                         if (sg < 0 && end >= 0) continue; // drawn from its positive end already
-                        for (const t of tidy(path)) layers[0].push(t);
+                        const pen = first + PG.pens.band(i / n, fanPens);
+                        for (const t of tidy(path)) layers[pen].push(t);
                     }
                 }
-                if (p.equip) contours(p.equipCount, layers[1]);
+                if (p.equip) contours(p.equipCount, pens - 1);
             }
 
             // ---- markers: ⊕ / ⊖ for charges, ⊙ / ⊗ for currents

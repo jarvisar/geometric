@@ -13,7 +13,7 @@ const vm = require('vm');
 const SRC = path.resolve(__dirname, '..', 'src');
 // Run in this context (a vm sandbox makes global lookups several times slower and skews timings).
 const load = f => vm.runInThisContext(fs.readFileSync(path.join(SRC, f), 'utf8'), { filename: f });
-['lib/core.js', 'lib/noise.js', 'lib/contours.js', 'lib/iso.js', 'lib/isokit.js', 'lib/optimize.js', 'lib/pipeline.js', 'lib/export.js', 'lib/loader.js'].forEach(load);
+['lib/core.js', 'lib/pens.js', 'lib/noise.js', 'lib/contours.js', 'lib/iso.js', 'lib/isokit.js', 'lib/optimize.js', 'lib/pipeline.js', 'lib/export.js', 'lib/loader.js'].forEach(load);
 
 const PG = globalThis.PG;
 const only = process.argv.slice(2);
@@ -37,11 +37,10 @@ for (const def of PG.generators) {
         runs.push([`random${i}`, PG.randomParams(def, PG.defaultParams(def), new PG.RNG(100 + i)), settings(7 + i)]);
     }
     runs.push(['rotated+circle', PG.defaultParams(def), Object.assign(settings(3), { rotate: 30, clip: 'circle', frame: true })]);
-    // as many pens as the design allows (the Scenes pick theirs with a select called inks, most first)
+    // As many pens as the design allows.
     const most = PG.defaultParams(def);
     for (const q of def.params) {
         if (q.id === 'pens' && q.type === 'range') most.pens = q.max;
-        if (q.id === 'inks') most.inks = q.options[0][0];
     }
     runs.push(['most pens', most, settings(5)]);
     const times = [];

@@ -27,7 +27,7 @@
                 show: p => p.rings > 1 },
             { id: 'ringRotate', label: 'Ring rotation°', type: 'range', min: 0, max: 90, step: 0.5, value: 0,
                 show: p => p.rings > 1 },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false },
+            { id: 'pens' },
             { id: 'quality', label: 'Smoothness', type: 'range', min: 0.5, max: 3, step: 0.1, value: 1, random: false },
         ],
 
@@ -77,7 +77,7 @@
             const k = epi ? (R + r) / r : (R - r) / r;
             const base = epi ? R + r : R - r;
             const innerTurns = Math.abs(epi ? P + Q : P - Q) + Q;
-            const layers = Array.from({ length: p.pens }, () => []);
+            const layers = [];
             const seen = new Set();
             for (let ring = 0; ring < p.rings; ring++) {
                 const hole = p.hole + ring * p.holeStep;
@@ -108,7 +108,7 @@
                     const y = base * Math.sin(t) - d * Math.sin(k * t);
                     path[i] = [x * c - y * s, x * s + y * c];
                 }
-                layers[ring % p.pens].push(path);
+                layers.push([path]);
             }
             return { layers };
         },

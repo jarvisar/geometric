@@ -86,8 +86,7 @@
             { id: 'skew', label: 'Damping skew', type: 'range', min: -0.9, max: 0.9, step: 0.01, value: 0, random: [-0.4, 0.4],
                 hint: 'Positive: X dies away faster than Y' },
             { type: 'section', label: 'Output' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false,
-                hint: 'Splits the line by time into consecutive colour bands' },
+            { id: 'pens' },
             { id: 'quality', label: 'Smoothness', type: 'range', min: 0.5, max: 3, step: 0.1, value: 1, random: false },
         ],
 
@@ -150,7 +149,7 @@
         generate(p) {
             const path = trace(p, 128 * p.quality, 150000);
             const pens = Math.max(1, Math.round(p.pens));
-            return { layers: geo.splitPath(path, pens).map(piece => [piece]) };
+            return PG.pens.sequence([path], pens);
         },
     });
 })();

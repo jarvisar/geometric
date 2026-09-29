@@ -107,8 +107,6 @@
                 show: p => p.style !== 'edges' },
             { id: 'rim', label: 'Boundary circle', type: 'checkbox', value: true, random: 0.7 },
             { type: 'section', label: 'Pens' },
-            { id: 'split', label: 'Detail on pen 2', type: 'checkbox', value: true, random: false,
-                hint: 'Tile edges and rim on pen 1, subdivision, copies or hatching on pen 2', show: p => p.style !== 'edges' },
         ],
 
         randomize(rng) {
@@ -207,8 +205,10 @@
                 done.add(k);
                 out.push(arc(a, b));
             };
-            const L0 = [], L1 = prm.split ? [] : L0;
+            const layers = PG.pens.layers(prm.pens);
+            const tilePen = t => PG.pens.band(Math.atanh(Math.min(0.999, Math.hypot(...t.pts[0]))) / Math.atanh(0.995), layers.length);
             for (const t of tiles) {
+                const L0 = layers[tilePen(t)], L1 = L0;
                 if (drawEdges) for (const [i, j] of edges) emit(t.pts[i], t.pts[j], L0);
                 // rim tiles under the cut-off only get their outline: 2p spokes in a 0.5 mm
                 // tile just retrace its centre into a blob of ink
@@ -226,6 +226,7 @@
                 // the 2p triangles (centre, vertex, midpoint) of every tile, alternately coloured
                 const sp = Math.max(0.2, prm.spacing), ang = geo.rad(prm.hatchAngle);
                 for (const t of tiles) {
+                    const L1 = layers[tilePen(t)];
                     for (let j = 0; j < 2 * p; j++) {
                         if ((j + t.parity) % 2) continue;
                         const i = j >> 1;
@@ -238,8 +239,8 @@
                     }
                 }
             }
-            if (prm.rim) L0.push(geo.circle(cx, cy, Rd));
-            return { layers: prm.split ? [L0, L1] : [L0] };
+            if (prm.rim) layers[0].push(geo.circle(cx, cy, Rd));
+            return { layers };
         },
     });
 })();

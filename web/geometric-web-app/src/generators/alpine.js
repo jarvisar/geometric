@@ -16,7 +16,7 @@
 (function () {
     'use strict';
     const { geo, TAU } = PG;
-    const { hash, makeCamera, Scene, renderPens, segments } = PG.iso;
+    const { hash, makeCamera, Scene, segments } = PG.iso;
     const { wall, door, windows, gableRoof, chimney, unit, shadeGable, church, conifer, turned, bridge, bridgeRamp, withKind } = PG.isokit;
 
     // line kinds. The last four only get pens of their own with six or eight pens.
@@ -1293,10 +1293,7 @@
             { id: 'falls', label: 'Waterfall', type: 'checkbox', value: true, random: 0.8 },
             { id: 'fliers', label: 'Paragliders & birds', type: 'checkbox', value: true, random: 0.6 },
             { type: 'section', label: 'Pens' },
-            { id: 'inks', label: 'Pens', type: 'select', value: 'four', random: false,
-                options: [['eight', 'Eight, adding light blue and brown'], ['six', 'Six, adding yellow and purple'],
-                    ['four', 'Black, red, blue, green'], ['three', 'Black, red, blue'], ['one', 'One pen']],
-                hint: 'Each colour goes to its pen in the default pen set. With three, the forest goes in black. Six adds yellow roads and purple people and fliers, eight adds light blue contours on the snow and brown strata' },
+            { id: 'pens' },
         ],
 
         generate(p, ctx) {
@@ -1337,16 +1334,8 @@
                 lit: n => (n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2]) / Math.hypot(n[0], n[1], n[2]) >= 0.75 * SUN[2],
             };
             buildValley(T, G, V, E, rng);
-            // pen for each kind (ink, red, blue, green, roads, figures, snow contours, strata)
-            const penOf = {
-                eight: [0, 1, 2, 3, 4, 5, 6, 7], six: [0, 1, 2, 3, 4, 5, 1, 1], four: [0, 1, 2, 3, 0, 0, 1, 1],
-                three: [0, 1, 2, 0, 0, 0, 1, 1], one: [0, 0, 0, 0, 0, 0, 0, 0],
-            }[p.inks] || [0, 1, 2, 3, 0, 0, 1, 1];
-            // roads and figures used to be drawn in ink, snow contours and strata in red
-            const byPen = renderPens(S, penOf, [INK, RED, BLUE, GREEN, INK, INK, RED, RED]);
-            const layers = [];
-            byPen.forEach((paths, pen) => layers.push({ pen, paths }));
-            return { layers };
+            const out = PG.pens.renderScene('alpine', S, p);
+            return out;
         },
     });
 })();

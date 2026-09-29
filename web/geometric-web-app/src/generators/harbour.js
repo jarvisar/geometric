@@ -21,7 +21,7 @@
 (function () {
     'use strict';
     const { geo, TAU } = PG;
-    const { DIRS, hash, makeCamera, frame, card, ring, hull, Scene, renderPens, segments } = PG.iso;
+    const { DIRS, hash, makeCamera, frame, card, ring, hull, Scene, segments } = PG.iso;
     const {
         FLOOR, wall, rect, pane, door, garageDoor, windows, gableRoof, gableSlope, hipRoof, chimney, flatRoof, plinth,
         steps, bench, clothesline, Occupancy, withKind,
@@ -1823,10 +1823,7 @@
                 show: p => p.shadows },
             { id: 'water', label: 'Water marks', type: 'checkbox', value: true },
             { type: 'section', label: 'Pens' },
-            { id: 'inks', label: 'Pens', type: 'select', value: 'four', random: false,
-                options: [['eight', 'Eight, adding light blue and brown'], ['six', 'Six, adding green and purple'],
-                    ['four', 'Black, red, blue, yellow'], ['three', 'Black, red, blue'], ['one', 'One pen']],
-                hint: 'Each colour goes to its pen in the default pen set, so four uses pens 1, 2, 3 and 5. Six adds green trees and hedges and purple people and cars, eight adds light blue water and brown piers and boats' },
+            { id: 'pens' },
         ],
 
         generate(p, ctx) {
@@ -1860,17 +1857,9 @@
                 S.kind = BLUE;
                 S.hatchShadows(p.shadowGap);
             }
-            // pen for each kind (ink, red, blue, yellow, green, figures, water, wood)
-            const penOf = {
-                eight: [0, 1, 2, 4, 3, 5, 6, 7], six: [0, 1, 2, 4, 3, 5, 2, 0], four: [0, 1, 2, 4, 0, 0, 2, 0],
-                three: [0, 1, 2, 1, 0, 0, 2, 0], one: [0, 0, 0, 0, 0, 0, 0, 0],
-            }[p.inks] || [0, 1, 2, 4, 0, 0, 2, 0];
-            // green, figures and wood used to be drawn in ink, and water in blue
-            const byPen = renderPens(S, penOf, [INK, RED, BLUE, YELLOW, INK, INK, BLUE, INK]);
-            if (mirror) for (const paths of byPen) for (const q of paths || []) for (const v of q) v[0] = W - v[0];
-            const layers = [];
-            byPen.forEach((paths, pen) => layers.push({ pen, paths }));
-            return { layers };
+            const out = PG.pens.renderScene('harbour', S, p);
+            if (mirror) for (const layer of out.layers) for (const path of layer.paths) for (const v of path) v[0] = W - v[0];
+            return out;
         },
     });
 })();

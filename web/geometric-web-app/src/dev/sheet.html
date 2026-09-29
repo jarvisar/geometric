@@ -18,6 +18,7 @@
   .err { color: #ff7b7b; white-space: pre-wrap; max-width: 300px; }
 </style>
 <script src="../lib/core.js"></script>
+<script src="../lib/pens.js"></script>
 <script src="../lib/noise.js"></script>
 <script src="../lib/contours.js"></script>
 <script src="../lib/iso.js"></script>
@@ -43,7 +44,7 @@
     const set = q.get('set') ? JSON.parse(q.get('set')) : {};
     const out = document.getElementById('out');
     const gens = PG.generators.filter(g => !onlyGens || onlyGens.includes(g.id));
-    const pens = ['#151515', '#d1342f', '#2456c8', '#1d8a4e', '#d99a00', '#7b3fc0', '#2fa3d6', '#8b5a2b'].map(c => ({ color: c, width: 0.35 }));
+    const pens = PG.pens.sets.fineliner.colors.map(c => ({ color: c, width: 0.35 }));
 
     for (const def of gens) {
         const row = document.createElement('div');

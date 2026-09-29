@@ -19,7 +19,7 @@
 (function () {
     'use strict';
     const { geo, TAU } = PG;
-    const { DIRS, hash, makeCamera, frame, hull, card, ring, Scene, renderPens, segments } = PG.iso;
+    const { DIRS, hash, makeCamera, frame, hull, card, ring, Scene, segments } = PG.iso;
     const {
         FLOOR, wall, rect, pane, door, garageDoor, windows, gableRoof, roofExtras, chimney, roofUnit, flatRoof,
         plinth, steps, porch, downpipe, hipRoof, railing, patioSet, clothesline, Occupancy, nearestDir,
@@ -1644,8 +1644,7 @@
             { id: 'props', label: 'Yard things', type: 'range', min: 0, max: 1, step: 0.01, value: 0.7, random: [0.3, 1] },
             { id: 'people', label: 'People', type: 'range', min: 0, max: 1, step: 0.01, value: 0.45, random: [0, 0.7] },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false,
-                hint: '2 pens: buildings and things / streets and plants. 3 gives plants their own pen and 4 things. 5 to 8 split cars and boats, people, water, then fences and benches off onto a pen each' },
+            { id: 'pens' },
         ],
 
         randomize(rng) {
@@ -1670,14 +1669,8 @@
                 waterKind: WATER,
             };
             buildTown(T, ctx.seed | 0);
-            const pens = Math.max(1, Math.min(8, p.pens | 0));
-            // pen for each kind (buildings, ground, plants, things, vehicles, people, water, wood) by pen count
-            const penOf = [
-                [0, 0, 0, 0, 0, 0, 0, 0], [0, 1, 1, 0, 0, 0, 1, 0], [0, 1, 2, 0, 0, 0, 1, 0], [0, 1, 2, 3, 3, 3, 1, 3],
-                [0, 1, 2, 3, 4, 3, 1, 3], [0, 1, 2, 3, 4, 5, 1, 3], [0, 1, 2, 3, 4, 5, 6, 3], [0, 1, 2, 3, 4, 5, 6, 7],
-            ][pens - 1];
-            const byPen = renderPens(S, penOf, [BUILDING, GROUND, PLANT, THING, THING, THING, GROUND, THING]);
-            return { layers: Array.from({ length: pens }, (_, i) => byPen[i] || []) };
+            const out = PG.pens.renderScene('town', S, p);
+            return out;
         },
     });
 })();

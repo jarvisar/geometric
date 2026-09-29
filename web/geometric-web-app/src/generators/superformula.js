@@ -87,8 +87,7 @@
             { id: 'ease', label: 'Morph ease', type: 'range', min: 0.2, max: 4, step: 0.05, value: 1, random: [0.5, 2],
                 hint: '< 1 morphs early (near the outside), > 1 late' },
             { type: 'section', label: 'Output' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false,
-                hint: 'Shapes alternate between pens' },
+            { id: 'pens' },
             { id: 'quality', label: 'Smoothness', type: 'range', min: 0.5, max: 3, step: 0.1, value: 1, random: false },
         ],
 
@@ -130,8 +129,7 @@
 
         generate(p) {
             const K = Math.max(1, Math.round(p.count));
-            const pens = Math.max(1, Math.round(p.pens));
-            const layers = Array.from({ length: pens }, () => []);
+            const layers = [];
             for (let i = 0; i < K; i++) {
                 const f = K > 1 ? i / (K - 1) : 0;
                 const g = Math.pow(f, p.ease);
@@ -142,7 +140,7 @@
                 const s = geo.lerp(1, p.inner, f);
                 if (s <= 1e-4) continue;
                 const a = geo.rad(p.twist * i), c = Math.cos(a) * s, sn = Math.sin(a) * s;
-                layers[i % pens].push(pts.map(q => [q[0] * c - q[1] * sn, q[0] * sn + q[1] * c]));
+                layers.push([pts.map(q => [q[0] * c - q[1] * sn, q[0] * sn + q[1] * c])]);
             }
             return { layers };
         },

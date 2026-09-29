@@ -53,7 +53,7 @@
             { id: 'sMax', label: 'Lightest spacing (mm)', type: 'range', min: 1, max: 10, step: 0.1, value: 3.2, random: [2, 5] },
             { id: 'tones', label: 'Tones', type: 'range', min: 1, max: 8, step: 1, value: 4, random: false },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false },
+            { id: 'pens' },
         ],
 
         randomize(rng, p) {
@@ -145,9 +145,11 @@
                 if (poly.length < 3) continue;
                 if (p.gap > 0) poly = geo.cleanPolygon(geo.insetConvex(poly, p.gap / 2));
                 if (poly.length < 3 || Math.abs(geo.polygonArea(poly)) < 1) continue;
-                const out = layers[rng.int(0, layers.length - 1)];
+                const tint = rng.random();
                 const kind = anyFill ? rng.weighted(weights) : 'blank';
                 const s = tone();
+                const tonePosition = hi > lo ? Math.log(s / lo) / Math.log(hi / lo) : tint;
+                const out = layers[PG.pens.band(0.8 * tonePosition + 0.2 * tint, layers.length)];
                 if (kind === 'nested') {
                     // at gap 0 the first ring sits one spacing inside the cut lines
                     // (half a spacing without them, so neighbours' rings stay one apart)

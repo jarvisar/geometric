@@ -133,8 +133,7 @@
             { id: 'jitter', label: 'Angle jitter°', type: 'range', min: 0, max: 15, step: 0.5, value: 0, random: false,
                 hint: 'Random variation per turn (organic plants)' },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false,
-                hint: 'Branching systems colour by branch depth; curves are split into consecutive stretches' },
+            { id: 'pens' },
         ],
 
         randomize(rng, p) {
@@ -209,7 +208,7 @@
                 else if (ch === '[') {
                     stack.push([x, y, h, flip, drift, depth]);
                     depth++;
-                    if (p.pens > 1) endPath();
+                    endPath();
                 } else if (ch === ']') {
                     if (!stack.length) return;
                     endPath();
@@ -244,14 +243,7 @@
                 perDepth.forEach((len, d) => { penOf[d] = Math.min(pens - 1, Math.floor(((acc + len / 2) / total) * pens)); acc += len; });
                 for (const q of out) layers[penOf[q.depth]].push(q.pts);
             } else {
-                // one long curve: hand consecutive stretches to successive pens
-                const total = out.reduce((s, q) => s + q.pts.length, 0);
-                let acc = 0;
-                for (const q of out) {
-                    if (out.length === 1) { geo.splitPath(q.pts, pens).forEach((piece, i) => layers[i].push(piece)); break; }
-                    layers[Math.min(pens - 1, Math.floor((acc / total) * pens))].push(q.pts);
-                    acc += q.pts.length;
-                }
+                return PG.pens.sequence(out.map(q => q.pts), pens);
             }
             return { layers };
         },

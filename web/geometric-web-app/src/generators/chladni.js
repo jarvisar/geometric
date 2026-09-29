@@ -42,8 +42,7 @@
                 hint: 'Bands k sit at δ·k^spread: >1 thins the sand away from the node' },
             { id: 'cell', label: 'Grid resolution (mm)', type: 'range', min: 0.3, max: 2, step: 0.05, value: 0.6, random: false },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 3, step: 1, value: 2, random: false,
-                hint: '2: sand bands on pen 2. 3: bands on the + and − sides on pens 2 and 3' },
+            { id: 'pens' },
         ],
 
         randomize(rng, p) {
@@ -127,19 +126,19 @@
             // distance (mm) to the nodal line. Plain levels of f would crowd
             // weak nodal domains; S keeps every band hugging its node, while the
             // ε term lets the bands open up around saddles where ∇f vanishes.
-            const plus = [], minus = [];
+            const pens = PG.pens.count(p.pens), layers = PG.pens.layers(pens);
+            layers[0] = nodal;
+            const bandPen = i => pens === 1 ? 0 : 1 + i % (pens - 1);
             if (p.bands > 0) {
                 const dist = distanceField(field, 0.35 * nodalSlope(field));
                 for (let k = 1; k <= p.bands; k++) {
                     const lev = p.spacing * Math.pow(k, p.spread);
-                    plus.push(...clip(PG.isolines(dist, lev)));
-                    minus.push(...clip(PG.isolines(dist, -lev)));
+                    layers[bandPen(2 * (k - 1))].push(...clip(PG.isolines(dist, lev)));
+                    layers[bandPen(2 * (k - 1) + 1)].push(...clip(PG.isolines(dist, -lev)));
                 }
             }
 
-            if (p.pens >= 3) return { layers: [nodal, plus, minus] };
-            if (p.pens === 2) return { layers: [nodal, plus.concat(minus)] };
-            return nodal.concat(plus, minus);
+            return { layers };
         },
     });
 

@@ -110,8 +110,11 @@
                 const integer = Math.abs(k - Math.round(k)) < 1e-9;
                 layers.push(p.mode === 'chain' && integer ? chains(N, Math.round(k), start) : chords(N, k, start));
             }
-            if (p.circle) layers[0].push(geo.circle(0, 0, 1, Math.max(180, N)));
-            return { layers };
+            const n = PG.pens.count(p.pens), reserve = p.circle && n > 1 ? 1 : 0;
+            const colored = PG.pens.families(layers, n - reserve).layers;
+            if (reserve) colored.unshift([]);
+            if (p.circle) colored[0].push(geo.circle(0, 0, 1, Math.max(180, N)));
+            return { layers: colored };
         },
     });
 })();

@@ -60,8 +60,7 @@
                 options: [['5', '5 / 8'], ['8', '8 / 13'], ['13', '13 / 21'], ['21', '21 / 34'], ['34', '34 / 55'], ['55', '55 / 89']] },
             { id: 'reach', label: 'Link reach', type: 'range', min: 1, max: 3, step: 0.05, value: 1.6, show: p => p.style !== 'dots' && p.para === 'zones', random: false,
                 hint: 'Longest link drawn, relative to the local seed gap' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 3, step: 1, value: 1, random: false,
-                hint: '2: dots and spirals apart (or the two spiral directions); 3: dots and each direction' },
+            { id: 'pens' },
         ],
 
         randomize(rng, p) {
@@ -87,13 +86,14 @@
             const pens = Math.max(1, Math.round(p.pens));
             const layers = Array.from({ length: pens }, () => []);
             const dots = p.style !== 'spirals', spirals = p.style !== 'dots';
-            const dotLayer = 0;
-            const dirLayer = d => Math.min(pens - 1, (dots && pens > 1 ? 1 : 0) + (pens >= (dots ? 3 : 2) ? d : 0));
+            const dotPens = dots ? (spirals ? Math.max(1, Math.floor(pens / 2)) : pens) : 0;
+            const firstSpiral = Math.min(pens - 1, dotPens);
 
             if (dots) {
                 const sides = p.shape === 'circle' ? 0 : Math.max(3, Math.round(p.sides));
                 const R = Math.max(1, Math.round(p.rings));
                 for (let k = 0; k < N; k++) {
+                    const dotLayer = PG.pens.band(Math.sqrt(k / N), dotPens);
                     const s = 0.5 * p.size * gap(k) * Math.pow(Math.max((k + 1) / N, 0.15), p.growth);
                     for (let j = 0; j < R; j++) {
                         const r = (s * (R - j)) / R;
@@ -130,8 +130,8 @@
                 }
                 const limit = p.para === 'pair' ? 3 : p.reach;
                 for (const [F, fi] of fams) {
-                    const layer = layers[dirLayer(fi % 2)];
                     for (let s = 0; s < F; s++) {
+                        const layer = layers[firstSpiral + (fi + s) % (pens - firstSpiral)];
                         let run = null;
                         // A fixed pair's spirals all start among the first F seeds and would
                         // meet in a dense star; start those from the innermost third one turn out.
