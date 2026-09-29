@@ -20,6 +20,16 @@
     border: 1px solid black;
   }
   </style>
+  <!-- Cloudflare Web Analytics. Only on the live site, so local dev aren't counted -->
+  <script>
+    if (location.hostname === 'geometric.jarvisar.com') {
+      const beacon = document.createElement('script');
+      beacon.type = 'module';
+      beacon.src = 'https://static.cloudflareinsights.com/beacon.min.js';
+      beacon.dataset.cfBeacon = '{"token": "a52a84e110ba48c0868dd4ae87e235b7"}';
+      document.head.appendChild(beacon);
+    }
+  </script>
 </head>
 <body>
 <canvas width="320" height="640" id="game"></canvas>
