@@ -38,6 +38,7 @@ await evaluate(`
     __set('[data-param="R"] input[type=range]', 80);
     document.querySelector('#snapshotBtn').click();
 `);
+await sleep(400);
 await check(`(() => {
     const snaps = JSON.parse(localStorage.getItem('plotter-geometry:snapshots:v1'));
     return document.querySelectorAll('#snapGrid .snap').length === 2 && snaps[0].state.params.spirograph.R === 80 && snaps[0].thumb !== snaps[1].thumb;
@@ -53,14 +54,14 @@ await check(`document.querySelectorAll('#snapGrid .snap').length === 1`, 'snapsh
 await shot('snapshots.png');
 log('Snapshot display, restore, undo, deletion and pending-edit thumbnails OK');
 
-await evaluate(`
+await evaluate(`(async () => {
     __set('[data-key="opt.simplifyTol"] input[type=number]', 0.5);
     __set('[data-key="opt.minLength"] input[type=number]', 2);
     document.querySelector('#penList .pen-row[data-pen="1"] .eye').click();
     __set('#penList .pen-row[data-pen="2"] .pen-name', 'Blue & <細い>');
     __set('#penList .pen-row[data-pen="2"] .num', 0.15);
-    plotterApp.exportAs('svg'); plotterApp.exportAs('json');
-`);
+    await plotterApp.exportAs('svg'); await plotterApp.exportAs('json');
+})()`);
 const svg = await evaluate(`__downloads.at(-2).blob.text()`);
 const json = await evaluate(`__downloads.at(-1).blob.text()`);
 await check(`__svgParts(${JSON.stringify(svg)}) === __svgParts(PG.exporters.svg({layers:plotterApp.result.layers.filter(l=>plotterApp.state.pens[l.pen].visible)},plotterApp.state.paper,plotterApp.state.pens))`, 'SVG export used stale geometry');
@@ -82,6 +83,7 @@ await click('#snapshotBtn');
 await evaluate(`plotterApp.resetAll()`);
 await sleep(300);
 await click('#snapGrid .snap:first-child');
+await sleep(400);
 await check(`plotterApp.state.opt.simplifyTol === 0.5 && !plotterApp.state.pens[1].visible`, 'snapshot omitted output settings');
 log('SVG, JSON and snapshot round trips preserve output settings and visible geometry');
 
@@ -101,15 +103,15 @@ for (const text of [
     await importText(text, 'bad.json');
     await check(`JSON.stringify(plotterApp.state) === __stateBeforeBad && plotterApp.result === __resultBeforeBad && ({}).qaPolluted === undefined`, `invalid import damaged the session: ${text}`);
 }
-await evaluate(`window.__originalGenerate = PG.byId.maze.generate; PG.byId.maze.generate = () => { throw new Error('test generator failure'); };`);
+await evaluate(`window.__originalGenerate = PG.GenerationRunner.prototype.run; PG.GenerationRunner.prototype.run = async () => { throw new Error('test worker failure'); };`);
 await importText('{"gen":"maze"}', 'generation-failure.json');
-await evaluate(`PG.byId.maze.generate = __originalGenerate`);
+await evaluate(`PG.GenerationRunner.prototype.run = __originalGenerate`);
 await check(`JSON.stringify(plotterApp.state) === __stateBeforeBad && plotterApp.result === __resultBeforeBad`, 'failed generation damaged the session');
 await sleep(400);
 await check(`JSON.stringify(JSON.parse(localStorage.getItem('plotter-geometry:state:v1'))) === __stateBeforeBad`, 'bad settings reached persistent storage');
 log('Malformed files, prototype keys and generation failures leave the drawing and saved session intact');
 
-await evaluate(`Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{window.__shareLink=text}}}); plotterApp.exportAs('link');`);
+await evaluate(`(async () => { Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{window.__shareLink=text}}}); await plotterApp.exportAs('link'); })()`);
 const sharedUrl = await evaluate(`window.__shareLink`);
 assert(typeof sharedUrl === 'string' && sharedUrl.includes('#s='), 'Copy share link did not produce a URL');
 await evaluate(`plotterApp.resetAll(); plotterApp.state.opt.simplifyTol = 0.2; plotterApp.state.pens[1].visible = true;`);
@@ -128,15 +130,16 @@ log('Shared links and legacy recipes restore independently of recipient settings
 
 await evaluate(`plotterApp.resetAll();plotterApp.select('spirograph');`);
 await sleep(400);
-await evaluate(`
+await evaluate(`(async () => {
     __set('[data-param="R"] input[type=range]', 80);
-    plotterApp.exportAs('svg');
-`);
+    await plotterApp.exportAs('svg');
+    await plotterApp.regenerate();
+})()`);
 await check(`(async () => {
     const text = await __downloads.at(-1).blob.text();
     return __recipe(text).params.spirograph.R === 80 && __svgParts(text) === __svgParts(PG.exporters.svg(plotterApp.result,plotterApp.state.paper,plotterApp.state.pens));
 })()`, 'export before scheduled regeneration used stale paths');
-await evaluate(`__set('[data-param="pens"] input[type=range]',8); __downloads.length=0; plotterApp.exportAs('svg-split');`);
+await evaluate(`(async () => { __set('[data-param="pens"] input[type=range]',8); __downloads.length=0; await plotterApp.exportAs('svg-split'); })()`);
 await sleep(150);
 await evaluate(`__set('[data-param="R"] input[type=range]',110); plotterApp.newSeed(); __set('#penList .pen-row[data-pen="2"] input[type=color]','#abcdef'); __set('#penList .pen-row[data-pen="2"] .num',1.5); plotterApp.select('maze');`);
 await sleep(2300);
@@ -157,13 +160,14 @@ log('Pending edits, split SVG batches and asynchronous PNG filenames stay consis
 
 await evaluate(`plotterApp.resetAll(); plotterApp.select('maze');`);
 await sleep(400);
-await evaluate(`
+await evaluate(`(async () => {
     __set('[data-key="comp.cols"] input[type=number]',8);
     __set('[data-key="comp.rows"] input[type=number]',10);
     __set('[data-key="comp.gutter"] input[type=number]',40);
     __set('[data-key="comp.frame"] input[type=checkbox]',true);
-    plotterApp.exportAs('svg');
-`);
+    await plotterApp.exportAs('svg');
+    await plotterApp.regenerate();
+})()`);
 await check(`plotterApp.state.comp.gutter===24.5 && document.querySelector('[data-key="comp.gutter"] input[type=number]').value==='24.5'`, 'grid gutter correction missing from controls');
 await check(`plotterApp.result.layers.every(l=>l.paths.every(p=>p.every(([x,y])=>x>=15-1e-6&&x<=195+1e-6&&y>=15-1e-6&&y<=282+1e-6)))`, 'grid escaped paper');
 await evaluate(`__set('[data-key="paper.size"] select','A6'); __set('[data-key="paper.margin"] input[type=number]',80); plotterApp.exportAs('svg');`);
@@ -173,6 +177,8 @@ await evaluate(`__set('[data-key="paper.size"] select','custom'); __set('[data-k
 await check(`plotterApp.state.comp.cols===1 && plotterApp.state.comp.rows===1 && document.querySelector('[data-key="comp.gutter"]').hidden && document.querySelector('[data-sec="grid"] .badge').textContent==='off'`, 'collapsed grid left stale controls visible');
 log('Paper, margins, grid counts and gutter stay synchronized with bounded output');
 
+// Let normal saves settle before deliberately corrupting the saved session.
+await sleep(700);
 await evaluate(`localStorage.setItem('plotter-geometry:state:v1',JSON.stringify({v:1,gen:'spirograph',paper:null})); localStorage.setItem('plotter-geometry:snapshots:v1',JSON.stringify([null,{time:1,title:'Broken',thumb:'',state:{gen:'spirograph',paper:null}}]));`);
 await open('index.html');
 await sleep(400);

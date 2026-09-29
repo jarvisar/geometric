@@ -22,7 +22,7 @@ const slow = [];
 for (const id of ids) {
     await evaluate(`plotterApp.select(${JSON.stringify(id)})`);
     await sleep(40);
-    const info = await evaluate(`(() => { plotterApp.regenerate(); const r = plotterApp.result; return r ? { paths: r.stats.paths, ms: Math.round(r.timing.total) } : null; })()`);
+    const info = await evaluate(`(async () => { await plotterApp.regenerate(); const r = plotterApp.result; return r ? { paths: r.stats.paths, ms: Math.round(r.timing.total) } : null; })()`);
     if (!info || !info.paths) throw new Error(`${id} produced nothing`);
     if (info.ms > 400) slow.push(`${id} ${info.ms}ms`);
 }

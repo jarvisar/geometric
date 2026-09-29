@@ -3,6 +3,8 @@
 A generator is one file in `src/generators/` that calls `PG.register({...})`.
 Add its file name (without `.js`) to `PG.GENERATOR_FILES` in `src/lib/loader.js`
 and it shows up in the app with an auto-built control panel.
+Run `npm run build:worker` after editing generation code to refresh the worker
+bundle. `npm run check` verifies that it matches the source files.
 
 ```js
 (function () {

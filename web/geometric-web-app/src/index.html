@@ -44,6 +44,9 @@
     <script src="lib/optimize.js"></script>
     <script src="lib/pipeline.js"></script>
     <script src="lib/settings.js"></script>
+    <script src="lib/images.js"></script>
+    <script src="lib/worker-source.js"></script>
+    <script src="lib/generation.js"></script>
     <script src="lib/render.js"></script>
     <script src="lib/export.js"></script>
     <script src="lib/loader.js"></script>
@@ -157,7 +160,7 @@
                 <p id="designDesc"></p>
             </div>
             <div class="phone-tools" id="phoneTools"></div>
-            <div id="params" class="controls"></div>
+            <div id="params"></div>
         </aside>
 
         <section class="stage" id="stage">
@@ -181,11 +184,11 @@
         <aside class="panel right" id="outputPanel"></aside>
     </main>
 
-    <div id="gallery" class="gallery" hidden>
+    <div id="gallery" class="gallery" role="dialog" aria-modal="true" aria-labelledby="galleryTitle" tabindex="-1" hidden>
         <div class="gallery-inner">
             <div class="gallery-head">
-                <h2>Designs</h2>
-                <input id="gallerySearch" type="search" placeholder="Search designs…" autocomplete="off">
+                <h2 id="galleryTitle">Designs</h2>
+                <input id="gallerySearch" type="search" aria-label="Search designs" placeholder="Search designs…" autocomplete="off">
                 <button id="surprise" class="btn" title="Random design with random parameters (Shift+R)"><svg class="ic"><use href="#i-dice"/></svg><span>Surprise me</span></button>
                 <button id="galleryClose" class="icon-btn" title="Close (Esc)"><svg class="ic"><use href="#i-x"/></svg></button>
             </div>
@@ -193,10 +196,10 @@
         </div>
     </div>
 
-    <div id="keysDialog" class="gallery" hidden>
+    <div id="keysDialog" class="gallery" role="dialog" aria-modal="true" aria-labelledby="keysTitle" tabindex="-1" hidden>
         <div class="keys-inner">
             <div class="gallery-head">
-                <h2>Keyboard shortcuts</h2>
+                <h2 id="keysTitle">Keyboard shortcuts</h2>
                 <button class="icon-btn" data-close="keysDialog" title="Close (Esc)"><svg class="ic"><use href="#i-x"/></svg></button>
             </div>
             <dl class="keys">

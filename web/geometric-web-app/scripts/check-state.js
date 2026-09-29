@@ -12,7 +12,7 @@ const read = obj => PG.settings.read(obj);
 const recipe = { app: 'plotter-geometry', v: 2, gen: 'spirograph', seed: 0 };
 
 const invalid = [
-    null, [], {}, { ...recipe, v: 3 }, { ...recipe, app: 'other' },
+    null, [], {}, { ...recipe, v: 4 }, { ...recipe, app: 'other' },
     ...['__proto__', 'constructor', 'toString', 'missing'].map(gen => ({ ...recipe, gen })),
     ...[null, [], 'bad', 12].flatMap(value => ['paper', 'comp', 'params', 'opt', 'view'].map(key => ({ ...recipe, [key]: value }))),
     ...[null, [], [null], ['bad'], Array(9).fill({})].map(pens => ({ ...recipe, pens })),
@@ -23,6 +23,9 @@ const invalid = [
     { ...recipe, params: { spirograph: null } }, { ...recipe, params: { missing: {} } },
     { ...recipe, params: { spirograph: { R: 1e8 } } }, { ...recipe, params: { spirograph: { type: 'missing' } } },
     { ...recipe, params: { spirograph: { pens: null } } }, { ...recipe, locks: 'R' }, { ...recipe, locks: [null] },
+    { ...recipe, images: null }, { ...recipe, images: { missing: {} } },
+    { ...recipe, images: { spirograph: { R: 'img-test' } } },
+    { ...recipe, images: { image: { image: '../photo' } } },
 ];
 for (const obj of invalid) assert.throws(() => read(obj), /Invalid settings/);
 for (const key of ['__proto__', 'constructor', 'prototype']) {

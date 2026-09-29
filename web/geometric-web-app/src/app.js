@@ -109,7 +109,8 @@
     let state = defaultState();
     let result = null;
     let lastGenMs = 0;
-    const imageStore = {}; // genId -> { paramId: { width, height, data, name } }
+    const previewRunner = new PG.GenerationRunner();
+    let generationVersion = 0, resultKey = '';
 
     const currentDef = () => PG.byId[state.gen] || PG.generators[0];
 
@@ -166,7 +167,8 @@
     function shareable() {
         const def = currentDef();
         return JSON.parse(JSON.stringify({
-            app: 'plotter-geometry', v: 2, gen: def.id, params: { [def.id]: currentParams(def) }, seed: state.seed,
+            app: 'plotter-geometry', v: 3, gen: def.id, params: { [def.id]: currentParams(def) }, seed: state.seed,
+            images: state.images[def.id] ? { [def.id]: state.images[def.id] } : {},
             paper: state.paper, comp: state.comp, locks: state.locks[def.id] || [],
             pens: state.pens, opt: state.opt, view: state.view,
         }));
@@ -181,19 +183,30 @@
         return next;
     }
 
-    function restoreShared(obj) {
-        const next = sharedState(obj), def = PG.byId[next.gen];
-        const nextResult = PG.run(def, next.params[def.id], pipelineSettings(next), { images: imageStore[def.id] || {} });
-        const previous = { state, result, lastGenMs };
+    let restoreVersion = 0;
+    async function restoreShared(obj) {
+        const version = ++restoreVersion, before = JSON.stringify({ ...state, ui: undefined });
+        const next = sharedState(obj);
+        await PG.images.unpack(next, obj.assets);
+        next.images = { ...state.images, ...next.images, [next.gen]: next.images[next.gen] || {} };
+        const runner = new PG.GenerationRunner();
+        let nextResult;
+        try { nextResult = await runner.run(generationJob(next)); }
+        finally { runner.dispose(); }
+        if (version !== restoreVersion || before !== JSON.stringify({ ...state, ui: undefined })) throw new Error('Settings changed while loading. Try again.');
+        const previous = { state, result, lastGenMs, resultKey };
         clearTimeout(commitTimer);
         pushUndo();
+        previewRunner.cancel();
+        generationVersion++;
         try {
             state = next;
             result = nextResult;
+            resultKey = geometryKey(next);
             lastGenMs = nextResult.timing.total;
             rebuildAll();
         } catch (err) {
-            ({ state, result, lastGenMs } = previous);
+            ({ state, result, lastGenMs, resultKey } = previous);
             rebuildAll();
             throw err;
         }
@@ -201,15 +214,22 @@
         genTimer = 0;
         setError(null);
         setBusy(false);
+        renderStats();
+        renderPenUsage();
         draw();
         commit();
         scheduleSave();
     }
 
     let saveTimer = 0;
+    function saveNow() {
+        clearTimeout(saveTimer);
+        saveTimer = 0;
+        return storageSet(STORAGE_KEY, state);
+    }
     function scheduleSave() {
         clearTimeout(saveTimer);
-        saveTimer = setTimeout(() => storageSet(STORAGE_KEY, state), 300);
+        saveTimer = setTimeout(saveNow, 300);
     }
 
     // ------------------------------------------------------------------ undo / redo
@@ -259,29 +279,50 @@
 
     let genTimer = 0;
 
+    function geometryKey(s = state) {
+        return JSON.stringify([s.gen, s.params[s.gen], pipelineSettings(s), s.images[s.gen] || {}]);
+    }
+    function generationJob(s = state) {
+        return { gen: s.gen, params: structuredClone(s.params[s.gen]), settings: structuredClone(pipelineSettings(s)), images: PG.images.get(s) };
+    }
+
     function requestGenerate(live) {
         clearTimeout(genTimer);
+        generationVersion++;
+        previewRunner.cancel();
+        result = null;
+        resultKey = '';
         constrainLayout();
         const slow = lastGenMs > 90;
-        if (slow) setBusy(true);
+        setBusy(true);
+        draw();
+        scheduleSave();
         genTimer = setTimeout(regenerate, slow ? (live ? 150 : 20) : 0);
     }
 
-    function regenerate() {
+    async function regenerate() {
         clearTimeout(genTimer);
         genTimer = 0;
+        const version = ++generationVersion;
         const def = currentDef();
         if (!def) return;
-        const t0 = performance.now();
+        currentParams(def);
+        constrainLayout();
+        const key = geometryKey();
+        setBusy(true);
         try {
-            result = PG.run(def, currentParams(def), pipelineSettings(), { images: imageStore[def.id] || {} });
+            const nextResult = await previewRunner.run(generationJob());
+            if (version !== generationVersion) return;
+            result = nextResult;
+            resultKey = key;
+            lastGenMs = result.timing.total;
             setError(null);
         } catch (err) {
-            console.error(err);
+            if (err.name === 'AbortError' || version !== generationVersion) return;
             setError(`${def.name}: ${err.message}`);
             result = null;
+            resultKey = '';
         }
-        lastGenMs = performance.now() - t0;
         setBusy(false);
         renderStats();
         renderPenUsage();
@@ -584,8 +625,8 @@
             row.sync = () => {
                 const loaded = opts.hasImage && opts.hasImage();
                 const v = get();
-                name.textContent = loaded ? v : v ? `${v} (load again)` : 'Demo image — or drop one on the preview';
-                clear.hidden = !loaded;
+                name.textContent = loaded ? v || 'Saved image' : v ? `${v} (load again)` : 'Demo image — or drop one on the preview';
+                clear.hidden = !loaded && !v && !opts.hasImageReference?.();
             };
             ctlRow.append(pick, name, clear);
         }
@@ -598,6 +639,12 @@
         let section = null, sectionHasVisible = false;
         const finish = () => { if (section) section.hidden = !sectionHasVisible; };
         for (const node of container.children) {
+            if (node.classList.contains('param-section')) {
+                const body = node.querySelector('.controls');
+                updateVisibility(body, values);
+                node.hidden = ![...body.children].some(child => !child.hidden);
+                continue;
+            }
             if (node.classList.contains('section-label')) {
                 finish();
                 section = node;
@@ -624,45 +671,75 @@
         document.title = `${def.name} · Plotter Geometry`;
 
         const locks = new Set(state.locks[def.id] || []);
+        const groups = [{ label: 'Pens', controls: def.params.filter(q => q.id === 'pens') }];
+        let group = { label: 'Parameters', controls: [] };
+        groups.push(group);
         for (const q of def.params) {
-            if (q.type === 'section') { root.append(el('div', { class: 'section-label', text: q.label })); continue; }
-            const row = makeControl(q, () => params[q.id], (v, live) => {
-                params[q.id] = v;
-                if (!live) commit();
-                updateVisibility(root, params);
-                requestGenerate(live);
-            }, {
-                lockable: q.type !== 'image' && q.type !== 'text',
-                locked: locks.has(q.id),
-                onLock() {
-                    const set = new Set(state.locks[def.id] || []);
-                    set.has(q.id) ? set.delete(q.id) : set.add(q.id);
-                    state.locks[def.id] = [...set];
-                    scheduleSave();
-                    if (isGrid(state) && state.comp.cellVary === 'params') requestGenerate();
-                    return set.has(q.id);
-                },
-                // an image param only holds the file name, the x button is what drops the picture
-                onReset: q.type === 'image' ? null : () => {
-                    params[q.id] = q.value;
-                    row.sync();
-                    commit();
-                    updateVisibility(root, params);
-                    requestGenerate();
-                },
-                onPickImage() { pickImage(def.id, q.id); },
-                onClearImage() {
-                    if (imageStore[def.id]) delete imageStore[def.id][q.id];
-                    params[q.id] = '';
-                    row.sync();
-                    commit();
-                    requestGenerate();
-                },
-                hasImage: () => !!(imageStore[def.id] && imageStore[def.id][q.id]),
+            if (q.type === 'section') {
+                if (q.label === 'Pens') group = groups[0];
+                else { group = { label: q.label, controls: [] }; groups.push(group); }
+            }
+            else if (q.id !== 'pens') group.controls.push(q);
+        }
+        for (const group of groups.filter(g => g.controls.length)) {
+            const sectionKey = `${def.id}/${group.label}`;
+            const det = el('details', { class: 'out-section param-section', 'data-param-section': group.label });
+            det.open = !state.ui.paramClosed.includes(sectionKey);
+            const summary = el('summary', {}, el('span', { text: group.label }), icon('chev'));
+            const body = el('div', { class: 'controls' });
+            det.append(summary, body);
+            det.addEventListener('toggle', () => {
+                if (!det.isConnected) return;
+                if (state.ui.paramClosed.includes(sectionKey) === !det.open) return;
+                const closed = new Set(state.ui.paramClosed);
+                det.open ? closed.delete(sectionKey) : closed.add(sectionKey);
+                state.ui.paramClosed = [...closed];
+                scheduleSave();
             });
-            row.dataset.param = q.id;
-            if (q.show) row.showFn = q.show;
-            root.append(row);
+            root.append(det);
+            for (const q of group.controls) {
+                const row = makeControl(q, () => params[q.id], (v, live) => {
+                    params[q.id] = v;
+                    if (!live) commit();
+                    updateVisibility(root, params);
+                    requestGenerate(live);
+                }, {
+                    lockable: q.type !== 'image' && q.type !== 'text',
+                    locked: locks.has(q.id),
+                    onLock() {
+                        const set = new Set(state.locks[def.id] || []);
+                        set.has(q.id) ? set.delete(q.id) : set.add(q.id);
+                        state.locks[def.id] = [...set];
+                        scheduleSave();
+                        if (isGrid(state) && state.comp.cellVary === 'params') requestGenerate();
+                        return set.has(q.id);
+                    },
+                    // an image param only holds the file name, the x button is what drops the picture
+                    onReset: q.type === 'image' ? null : () => {
+                        params[q.id] = q.value;
+                        row.sync();
+                        commit();
+                        updateVisibility(root, params);
+                        requestGenerate();
+                    },
+                    onPickImage() { pickImage(def.id, q.id); },
+                    onClearImage() {
+                        imageLoadVersion++;
+                        clearTimeout(commitTimer);
+                        pushUndo();
+                        if (state.images[def.id]) delete state.images[def.id][q.id];
+                        params[q.id] = '';
+                        row.sync();
+                        commit();
+                        requestGenerate();
+                    },
+                    hasImage: () => PG.images.has(state.images[def.id]?.[q.id]),
+                    hasImageReference: () => !!state.images[def.id]?.[q.id],
+                });
+                row.dataset.param = q.id;
+                if (q.show) row.showFn = q.show;
+                body.append(row);
+            }
         }
         updateVisibility(root, params);
     }
@@ -670,6 +747,7 @@
     // ---- images
 
     let pendingImageTarget = null;
+    let imageLoadVersion = 0;
     function pickImage(genId, paramId) {
         pendingImageTarget = { genId, paramId };
         const input = $('#imageFile');
@@ -678,29 +756,38 @@
     }
 
     function loadImageFile(file, genId, paramId) {
+        const version = ++imageLoadVersion;
+        const params = currentParams(PG.byId[genId]);
         const url = URL.createObjectURL(file);
         const img = new Image();
-        img.onload = () => {
-            const max = 900;
-            const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
-            const w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
-            const c = el('canvas', { width: w, height: h });
-            const g = c.getContext('2d', { willReadFrequently: true });
-            g.fillStyle = '#fff';
-            g.fillRect(0, 0, w, h);
-            g.drawImage(img, 0, 0, w, h);
-            const px = g.getImageData(0, 0, w, h).data;
-            const data = new Float32Array(w * h);
-            for (let i = 0; i < w * h; i++) {
-                data[i] = (0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2]) / 255;
-            }
-            URL.revokeObjectURL(url);
-            (imageStore[genId] || (imageStore[genId] = {}))[paramId] = { width: w, height: h, data, name: file.name };
-            state.params[genId] = Object.assign(currentParams(PG.byId[genId]), { [paramId]: file.name });
-            if (state.gen === genId) buildParams();
-            commit();
-            requestGenerate();
-            toast(`Loaded ${file.name}`);
+        img.onload = async () => {
+            try {
+                const max = 900;
+                const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+                const w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
+                const c = el('canvas', { width: w, height: h });
+                const g = c.getContext('2d', { willReadFrequently: true });
+                g.fillStyle = '#fff';
+                g.fillRect(0, 0, w, h);
+                g.drawImage(img, 0, 0, w, h);
+                const px = g.getImageData(0, 0, w, h).data;
+                const data = new Float32Array(w * h);
+                for (let i = 0; i < w * h; i++) {
+                    data[i] = (0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2]) / 255;
+                }
+                const key = await PG.images.put({ width: w, height: h, data });
+                if (version !== imageLoadVersion || state.params[genId] !== params) return;
+                clearTimeout(commitTimer);
+                pushUndo();
+                (state.images[genId] || (state.images[genId] = {}))[paramId] = key;
+                params[paramId] = file.name;
+                if (state.gen === genId) buildParams();
+                commit();
+                requestGenerate();
+                if (saveNow()) toast(`Loaded ${file.name}`);
+                else toast('Image loaded, but browser settings storage is full. Export a settings JSON to keep this drawing.', true);
+            } catch (err) { toast(`Could not save image: ${err.message}`, true); }
+            finally { URL.revokeObjectURL(url); }
         };
         img.onerror = () => { URL.revokeObjectURL(url); toast('Could not read that image', true); };
         img.src = url;
@@ -928,9 +1015,9 @@
                 renderSnaps();
             });
             b.append(del);
-            b.addEventListener('click', () => {
+            b.addEventListener('click', async () => {
                 try {
-                    restoreShared(s.state);
+                    await restoreShared(s.state);
                     toast(`Restored ${s.title}`);
                 } catch (err) { toast(`Could not restore snapshot: ${err.message}`, true); }
             });
@@ -938,15 +1025,18 @@
         }
     }
 
-    function saveSnapshot() {
-        const { recipe, res } = captureDrawing();
+    async function saveSnapshot() {
+        let captured;
+        try { captured = await captureDrawing(); }
+        catch (err) { toast(`Could not save snapshot: ${err.message}`, true); return; }
+        const { recipe, res } = captured;
         if (!res) return;
         const P = recipe.paper;
         const k = 160 / Math.max(P.w, P.h);
         const c = el('canvas', { width: Math.round(P.w * k * 1.5), height: Math.round(P.h * k * 1.5) });
         PG.drawResult(c.getContext('2d'), res, { scale: k * 1.5, ox: 0, oy: 0 },
             { paper: { w: P.w, h: P.h }, paperColor: P.color, pens: recipe.pens, minLinePx: 0.6, hairline: true });
-        const def = currentDef();
+        const def = PG.byId[recipe.gen];
         const snaps = loadSnaps();
         snaps.unshift({ time: Date.now(), title: `${def.name} #${recipe.seed}`, thumb: c.toDataURL('image/png'), state: recipe });
         while (snaps.length > 30) snaps.pop();
@@ -958,27 +1048,60 @@
 
     // ------------------------------------------------------------------ gallery
 
+    let activeDialog = null, dialogOpener = null;
+    const inertBefore = new Map();
+    const dialogControls = dlg => [...dlg.querySelectorAll('button, input, select, textarea, a[href], [tabindex]')]
+        .filter(node => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length);
+    function openDialog(dlg, first) {
+        if (activeDialog === dlg) return;
+        if (activeDialog) closeDialog(activeDialog);
+        dialogOpener = document.activeElement;
+        activeDialog = dlg;
+        dlg.hidden = false;
+        for (const node of document.body.children) {
+            if (node === dlg || ['SCRIPT', 'SVG'].includes(node.tagName)) continue;
+            inertBefore.set(node, node.inert);
+            node.inert = true;
+        }
+        (first || dialogControls(dlg)[0] || dlg).focus();
+    }
+    function closeDialog(dlg) {
+        dlg.hidden = true;
+        if (activeDialog !== dlg) return;
+        activeDialog = null;
+        for (const [node, inert] of inertBefore) node.inert = inert;
+        inertBefore.clear();
+        (dialogOpener?.isConnected && dialogOpener.getClientRects().length && !dialogOpener.disabled
+            ? dialogOpener : $('#designBtn')).focus();
+        dialogOpener = null;
+    }
+
     const thumbCache = new Map();
     let thumbColors = '';
     let thumbQueue = [];
     let thumbTimer = 0;
+    const thumbRunner = new PG.GenerationRunner();
+    let thumbVersion = 0;
 
     function openGallery() {
         const g = $('#gallery');
-        g.hidden = false;
+        openDialog(g, $('#gallerySearch'));
         buildGallery();
         const search = $('#gallerySearch');
         search.value = '';
         filterGallery('');
-        setTimeout(() => search.focus(), 0);
     }
     function closeGallery() {
-        $('#gallery').hidden = true;
+        closeDialog($('#gallery'));
+        thumbVersion++;
+        thumbRunner.dispose();
         clearTimeout(thumbTimer);
         thumbQueue = [];
     }
 
     function buildGallery() {
+        thumbVersion++;
+        thumbRunner.cancel();
         const body = $('#galleryBody');
         body.replaceChildren();
         thumbQueue = [];
@@ -1012,14 +1135,15 @@
     function pumpThumbs() {
         clearTimeout(thumbTimer);
         if (!thumbQueue.length) return;
-        thumbTimer = setTimeout(() => {
+        const version = thumbVersion;
+        thumbTimer = setTimeout(async () => {
             const [def, canvasEl] = thumbQueue.shift();
-            renderThumb(def, canvasEl);
-            pumpThumbs();
+            await renderThumb(def, canvasEl);
+            if (version === thumbVersion) pumpThumbs();
         }, 16);
     }
 
-    function renderThumb(def, canvasEl) {
+    async function renderThumb(def, canvasEl) {
         // near-A4 scale, since fill designs size their features in real millimetres
         const size = 190;
         const S = {
@@ -1028,11 +1152,12 @@
         };
         const g = canvasEl.getContext('2d');
         try {
-            const res = PG.run(def, PG.defaultParams(def), S);
+            const res = await thumbRunner.run({ gen: def.id, params: PG.defaultParams(def), settings: S, images: {} });
             const k = canvasEl.width / size;
             PG.drawResult(g, res, { scale: k, ox: 0, oy: 0 },
                 { paper: { w: size, h: size }, paperColor: state.paper.color, pens: state.pens, minLinePx: 0.9, hairline: true });
         } catch (e) {
+            if (e.name === 'AbortError') return;
             g.fillStyle = '#300'; g.fillRect(0, 0, canvasEl.width, canvasEl.height);
         }
         const copy = el('canvas', { width: canvasEl.width, height: canvasEl.height });
@@ -1099,10 +1224,10 @@
         commit();
     }
 
-    // Loaded pictures aren't settings and can't come back through undo, so a reset keeps them
+    // Resetting parameters keeps the current photo. Clear removes it and can be undone.
     function defaultsFor(def) {
-        const p = PG.defaultParams(def), imgs = imageStore[def.id] || {};
-        for (const q of def.params) if (q.type === 'image' && imgs[q.id]) p[q.id] = imgs[q.id].name;
+        const p = PG.defaultParams(def);
+        for (const q of def.params) if (q.type === 'image' && state.params[def.id]?.[q.id]) p[q.id] = state.params[def.id][q.id];
         return p;
     }
 
@@ -1121,8 +1246,8 @@
         $('#resetMenu').hidden = true;
         clearTimeout(commitTimer);
         pushUndo();
-        state = Object.assign(defaultState(), { gen: state.gen, ui: state.ui });
-        for (const id of Object.keys(imageStore)) if (PG.byId[id]) state.params[id] = defaultsFor(PG.byId[id]);
+        const imageParams = Object.fromEntries(Object.keys(state.images).map(id => [id, defaultsFor(PG.byId[id])]));
+        state = Object.assign(defaultState(), { gen: state.gen, ui: state.ui, images: state.images, params: imageParams });
         rebuildAll();
         fitView();
         requestGenerate();
@@ -1145,22 +1270,46 @@
 
     // ------------------------------------------------------------------ export
 
-    function captureDrawing() {
-        if (genTimer) regenerate();
+    async function captureDrawing() {
+        currentParams();
+        constrainLayout();
         const recipe = shareable();
-        return { recipe, res: visibleResult(), base: `${recipe.gen}-${recipe.seed}` };
+        let res = resultKey === geometryKey() ? result : null;
+        if (!res) {
+            const runner = new PG.GenerationRunner();
+            try { res = await runner.run(generationJob()); }
+            finally { runner.dispose(); }
+        }
+        res = { ...res, layers: res.layers.filter(l => recipe.pens[l.pen]?.visible) };
+        return { recipe, res, base: `${recipe.gen}-${recipe.seed}` };
     }
 
-    function doExport(kind) {
+    async function doExport(kind) {
         $('#exportMenu').hidden = true;
         if (kind === 'load') { $('#settingsFile').value = ''; $('#settingsFile').click(); return; }
         if (kind === 'install') { installApp(); return; }
-        const { recipe, res, base } = captureDrawing();
-        if (kind === 'json') {
-            download(`${base}.json`, JSON.stringify(recipe, null, 2), 'application/json');
+        // Saving settings must also work if rendering fails or is still running.
+        if (kind === 'json' || kind === 'link') {
+            try {
+                currentParams();
+                constrainLayout();
+                const recipe = shareable();
+                if (kind === 'link') { copyLink(recipe); return; }
+                const assets = PG.images.pack(recipe.images);
+                if (Object.keys(assets).length) recipe.assets = assets;
+                download(`${recipe.gen}-${recipe.seed}.json`, JSON.stringify(recipe, null, 2), 'application/json');
+            } catch (err) { toast(`Could not export: ${err.message}`, true); }
             return;
         }
-        if (kind === 'link') { copyLink(recipe); return; }
+        let captured;
+        try {
+            captured = await captureDrawing();
+            if (kind.startsWith('svg')) {
+                const assets = PG.images.pack(captured.recipe.images);
+                if (Object.keys(assets).length) captured.recipe.assets = assets;
+            }
+        } catch (err) { toast(`Could not export: ${err.message}`, true); return; }
+        const { recipe, res, base } = captured;
         if (!res || !res.layers.length) { toast('Nothing to export', true); return; }
         const paper = { w: recipe.paper.w, h: recipe.paper.h };
         const meta = { title: `${PG.byId[recipe.gen].name} — seed ${recipe.seed}`,
@@ -1187,6 +1336,10 @@
     }
 
     function copyLink(recipe) {
+        if (Object.values(recipe.images || {}).some(refs => Object.keys(refs).length)) {
+            toast('This drawing includes a photo. Export a settings JSON or SVG to share the complete drawing.', true);
+            return;
+        }
         const url = shareUrl(recipe);
         const done = () => toast('Share link copied');
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1198,7 +1351,7 @@
 
     function loadSettingsFile(file) {
         const reader = new FileReader();
-        reader.onload = () => {
+        reader.onload = async () => {
             try {
                 let text = String(reader.result).trim();
                 if (text.startsWith('<')) {
@@ -1208,7 +1361,7 @@
                     if (!d.startsWith('plotter-geometry:')) throw new Error('This SVG was not made here (no embedded settings)');
                     text = d.slice('plotter-geometry:'.length);
                 }
-                restoreShared(JSON.parse(text));
+                await restoreShared(JSON.parse(text));
                 toast(`Loaded settings from ${file.name}`);
             } catch (e) {
                 toast(`Could not load ${file.name}: ${e.message}`, true);
@@ -1320,7 +1473,7 @@
         $('#undo').addEventListener('click', undo);
         $('#redo').addEventListener('click', redo);
         $('#snapshotBtn').addEventListener('click', saveSnapshot);
-        $('#keysBtn').addEventListener('click', () => { $('#keysDialog').hidden = false; });
+        $('#keysBtn').addEventListener('click', () => openDialog($('#keysDialog')));
         $('#seed').addEventListener('change', () => {
             const v = Math.floor(+$('#seed').value);
             state.seed = isFinite(v) ? clamp(v, 0, 999999999) : 1;
@@ -1363,9 +1516,9 @@
         $('#galleryClose').addEventListener('click', closeGallery);
         $('#surprise').addEventListener('click', surprise);
         for (const dlg of [$('#gallery'), $('#keysDialog')]) {
-            dlg.addEventListener('click', e => { if (e.target === dlg) { dlg === $('#gallery') ? closeGallery() : (dlg.hidden = true); } });
+            dlg.addEventListener('click', e => { if (e.target === dlg) { dlg === $('#gallery') ? closeGallery() : closeDialog(dlg); } });
         }
-        document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { $('#' + b.dataset.close).hidden = true; }));
+        document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => closeDialog($('#' + b.dataset.close))));
 
         document.querySelectorAll('#panelTabs button').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
     }
@@ -1393,13 +1546,28 @@
     }
 
     function bindKeys() {
+        document.addEventListener('focusin', e => {
+            if (activeDialog && !activeDialog.contains(e.target)) (dialogControls(activeDialog)[0] || activeDialog).focus();
+        });
         document.addEventListener('keydown', e => {
             const t = e.target;
+            if (activeDialog) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    activeDialog === $('#gallery') ? closeGallery() : closeDialog(activeDialog);
+                } else if (e.key === 'Tab') {
+                    const controls = dialogControls(activeDialog), first = controls[0], last = controls.at(-1);
+                    if (!first || (e.shiftKey ? t === first : t === last) || !controls.includes(t)) {
+                        e.preventDefault();
+                        (e.shiftKey ? last || activeDialog : first || activeDialog).focus();
+                    }
+                }
+                return;
+            }
             const typing = (t.tagName === 'INPUT' && !['range', 'checkbox', 'color', 'button'].includes(t.type)) ||
                 t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable;
             if (e.key === 'Escape') {
                 if (!$('#gallery').hidden) closeGallery();
-                $('#keysDialog').hidden = true;
                 $('#exportMenu').hidden = true;
                 $('#resetMenu').hidden = true;
                 if (typing) t.blur();
@@ -1414,20 +1582,20 @@
                 // caps lock also gives 'R', so check shift itself
                 case 'r': case 'R': e.shiftKey ? surprise() : randomize(); break;
                 case ' ':
-                    if (t.tagName === 'BUTTON') return;
+                    if (t.closest('button, input, select, textarea, summary, a[href], [role="button"], [contenteditable]')) return;
                     e.preventDefault(); newSeed(); break;
                 case 'g': case 'G': openGallery(); break;
                 case 'e': case 'E': doExport('svg'); break;
                 case 's': case 'S': saveSnapshot(); break;
                 case 'f': case 'F': fitView(); break;
-                case '?': $('#keysDialog').hidden = false; break;
+                case '?': openDialog($('#keysDialog')); break;
                 default: return;
             }
         });
     }
 
     // Initial state: share link (#s=…) > saved state > defaults. `#gen=<id>` picks a design.
-    function loadInitialState() {
+    async function loadInitialState() {
         const saved = storageGet(STORAGE_KEY);
         if (saved) {
             try { state = PG.settings.read(saved, true); }
@@ -1437,7 +1605,12 @@
         if (hash) {
             const q = new URLSearchParams(hash);
             try {
-                const next = q.get('s') ? sharedState(JSON.parse(b64decode(q.get('s')))) : JSON.parse(JSON.stringify(state));
+                const recipe = q.get('s') ? JSON.parse(b64decode(q.get('s'))) : null;
+                const next = recipe ? sharedState(recipe) : JSON.parse(JSON.stringify(state));
+                if (recipe) {
+                    await PG.images.unpack(next, recipe.assets);
+                    next.images = { ...state.images, ...next.images, [next.gen]: next.images[next.gen] || {} };
+                }
                 if (q.has('gen')) {
                     if (!Object.prototype.hasOwnProperty.call(PG.byId, q.get('gen'))) throw new Error('Unknown design');
                     next.gen = q.get('gen');
@@ -1460,6 +1633,8 @@
         }
         if (!PG.byId[state.gen]) state.gen = PG.generators[0] ? PG.generators[0].id : state.gen;
         applyPaperSize();
+        try { await PG.images.load(state.images); }
+        catch (err) { toast(`Could not restore image: ${err.message}`, true); }
     }
 
     async function init() {
@@ -1468,7 +1643,8 @@
             setError('No designs could be loaded.');
             return;
         }
-        loadInitialState();
+        await loadInitialState();
+        window.addEventListener('pagehide', () => { if (saveTimer) saveNow(); });
         bindTopbar();
         bindKeys();
         bindCanvas();

@@ -85,7 +85,8 @@ Any design can also be laid out as a **grid** on one sheet. Each cell gets its o
 
 Every exported SVG carries its full recipe (design, parameters, seed, paper,
 pens). Drop an SVG or a saved `.json` back onto the preview to restore it. **Copy share link**
-does the same through a URL.
+does the same through a URL for drawings without uploaded photos. For photo
+drawings, share the JSON or SVG file instead. Both include the image data.
 
 ## Usage
 
@@ -100,7 +101,11 @@ does the same through a URL.
   `Reset everything`, which does that for every design, resets the seed, paper,
   pens and layout, and clears the locks. Undo brings it all back except the locks.
 * **Images**: the *Image* design turns a photo into spiral, squiggle, cross-hatch or
-  single-line TSP art. Drop a picture onto the preview.
+  single-line TSP art. Drop a picture onto the preview. Photos stay in this browser
+  across reloads, and undo restores cleared or replaced photos. TSP refinement
+  counts work instead of elapsed time, so CPU speed does not change the drawing.
+* **Sections**: click a heading in the settings pane to collapse it. Each design
+  remembers its collapsed sections. The pen-count control is at the top.
 * Press `?` in the app for all keyboard shortcuts.
 
 ## Code layout
@@ -134,6 +139,13 @@ on every push to `master` that touches it, or on demand from the Actions tab.
 One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 
 ## Adding a design
+
+Generation runs in a cancellable worker, including gallery thumbnails. After
+editing a generator or generation library, run `npm run build:worker` to refresh
+`src/lib/worker-source.js`. The bundled source keeps workers working over both
+HTTP and `file://`. `npm start` and deployment rebuild it, and `npm run check`
+rejects a stale bundle. `npm run check:generation` compares worker geometry with
+the synchronous pipeline and checks TSP with different clocks.
 
 See [GENERATORS.md](GENERATORS.md). In short: add `src/generators/<id>.js` that calls
 `PG.register({ id, name, params, generate })`, list it in `src/lib/loader.js`, and

@@ -24,7 +24,7 @@
         ['Square 20 cm', 200, 200], ['Square 12 in', 304.8, 304.8], ['custom', 0, 0],
     ];
     settings.defaults = () => ({
-        v: 1, gen: 'spirograph', params: {}, locks: {}, seed: 1,
+        v: 3, gen: 'spirograph', params: {}, locks: {}, images: {}, seed: 1,
         paper: { size: 'A4', landscape: false, w: 210, h: 297, margin: 15, color: '#fbfaf6' },
         comp: {
             scale: 100, rotate: 0, offsetX: 0, offsetY: 0, clip: 'rect', frame: false, framePen: 0, frameInset: 0,
@@ -33,7 +33,7 @@
         pens: PG.pens.sets.fineliner.colors.map((color, i) => ({ name: `Pen ${i + 1}`, color, width: 0.35, visible: true })),
         opt: { merge: true, mergeTol: 0.1, simplify: true, simplifyTol: 0.02, sort: true, minLength: 0 },
         view: { margin: false, penWidth: true },
-        ui: { tab: 'design', open: { paper: true, comp: true, pens: true } },
+        ui: { tab: 'design', open: { paper: true, comp: true, pens: true }, paramClosed: [] },
     });
 
     // Check even ignored legacy fields. Never walk inherited properties while merging.
@@ -105,7 +105,7 @@
         object(obj, 'expected an object');
         checkKeys(obj);
         if (own(obj, 'app') && obj.app !== 'plotter-geometry') fail('not a Plotter Geometry recipe');
-        if (own(obj, 'v') && ![1, 2].includes(obj.v)) fail('unsupported version');
+        if (own(obj, 'v') && ![1, 2, 3].includes(obj.v)) fail('unsupported version');
         if (!own(obj, 'gen') || typeof obj.gen !== 'string' || !own(PG.byId, obj.gen)) fail('unknown design');
         const next = settings.defaults();
         next.gen = obj.gen;
@@ -122,6 +122,19 @@
             for (const [id, params] of Object.entries(obj.params)) next.params[id] = readParams(id, params);
         }
         if (!own(next.params, next.gen)) next.params[next.gen] = readParams(next.gen, {});
+        if (own(obj, 'images')) {
+            object(obj.images, 'images');
+            for (const [id, refs] of Object.entries(obj.images)) {
+                if (!own(PG.byId, id)) fail('image design');
+                object(refs, 'image references');
+                next.images[id] = {};
+                for (const [param, ref] of Object.entries(refs)) {
+                    if (!PG.byId[id].params.some(q => q.id === param && q.type === 'image') ||
+                        typeof ref !== 'string' || !/^img-[a-z0-9-]{1,100}$/.test(ref)) fail('image reference');
+                    next.images[id][param] = ref;
+                }
+            }
+        }
         if (own(obj, 'locks')) {
             if (Array.isArray(obj.locks)) next.locks[next.gen] = readLocks(next.gen, obj.locks);
             else {
@@ -134,6 +147,10 @@
         if (sweep && !PG.byId[next.gen].params.some(q => q.id === sweep && q.type === 'range')) next.comp.sweepId = '';
         if (session && own(obj, 'ui')) {
             fields(next.ui, obj.ui, { tab: choice(['design', 'output', 'preview']) }, 'ui');
+            if (own(obj.ui, 'paramClosed')) {
+                if (!Array.isArray(obj.ui.paramClosed) || obj.ui.paramClosed.length > 500) fail('collapsed sections');
+                next.ui.paramClosed = [...new Set(obj.ui.paramClosed.map(k => string(200)(k, 'collapsed section')))];
+            }
             if (own(obj.ui, 'open')) fields(next.ui.open, obj.ui.open,
                 Object.fromEntries(['paper', 'comp', 'grid', 'pens', 'opt', 'snaps'].map(k => [k, boolean])), 'ui.open');
         }

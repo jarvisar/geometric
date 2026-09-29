@@ -6,6 +6,7 @@ on:
     branches: [master]
     paths:
       - 'web/geometric-web-app/src/**'
+      - 'web/geometric-web-app/scripts/build-worker.js'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -31,6 +32,7 @@ jobs:
       # The app is static files only; drop the developer contact sheet.
       - name: Prepare site
         run: |
+          node web/geometric-web-app/scripts/build-worker.js
           cp -r web/geometric-web-app/src _site
           rm -rf _site/dev
 

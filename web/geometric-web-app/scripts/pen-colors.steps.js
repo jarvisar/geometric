@@ -5,14 +5,19 @@ const ids = await evaluate('PG.generators.map(g => g.id)');
 for (const id of ids) {
     await evaluate(`plotterApp.select(${JSON.stringify(id)})`);
     await sleep(60);
+    if (!await evaluate(`document.querySelectorAll('#params [data-param-section="Pens"]').length===1 &&
+        document.querySelector('#params details').dataset.paramSection==='Pens' &&
+        document.querySelectorAll('#params [data-param]').length===PG.byId[${JSON.stringify(id)}].params.filter(q=>q.id).length`)) {
+        throw new Error(`${id}: parameter sections lost or duplicated controls`);
+    }
     for (const count of [1, 8]) {
-        const info = await evaluate(`(() => {
+        const info = await evaluate(`(async () => {
             const slider = document.querySelector('[data-param="pens"] input[type="range"]');
             if (!slider || slider.max !== '8') throw new Error('Missing eight-pen control');
             slider.value = ${count};
             slider.dispatchEvent(new Event('input', { bubbles: true }));
             slider.dispatchEvent(new Event('change', { bubbles: true }));
-            plotterApp.regenerate();
+            await plotterApp.regenerate();
             return { pens: plotterApp.state.params[${JSON.stringify(id)}].pens,
                 used: plotterApp.result.layers.filter(l => l.paths.length).length };
         })()`);
@@ -35,12 +40,12 @@ if (town.pens !== 4 || !town.legend.includes('Streets') || !town.hint.includes('
 }
 await shot('town-color-default.png');
 
-await evaluate(`
+await evaluate(`(async () => {
     window.__downloads = [];
     URL.createObjectURL = blob => { window.__downloads.push(blob); return 'blob:test'; };
     HTMLAnchorElement.prototype.click = function () {};
-    plotterApp.exportAs('svg');
-`);
+    await plotterApp.exportAs('svg');
+})()`);
 const svg = await evaluate('window.__downloads[0].text()');
 for (const color of ['#161616', '#8b5a2b', '#1d8a4e', '#2456c8']) {
     if (!svg.includes(color)) throw new Error(`Missing town ink ${color} in SVG`);

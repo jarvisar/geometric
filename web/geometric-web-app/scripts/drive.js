@@ -36,7 +36,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'pg-drive-'));
     const proc = spawn(browser, [
         '--headless=new', '--disable-gpu', '--no-first-run', '--hide-scrollbars',
-        '--allow-file-access-from-files', `--remote-debugging-port=${port}`,
+        `--remote-debugging-port=${port}`,
         `--user-data-dir=${profile}`, `--window-size=${width},${height}`, 'about:blank',
     ], { stdio: 'ignore' });
 
@@ -89,6 +89,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
     const helpers = {
         sleep,
+        protocol: send,
         log: (...a) => console.log(...a),
         async open(page) {
             const url = /^[a-z]+:/.test(page) ? page : 'file:///' + path.join(SRC, page).replace(/\\/g, '/');

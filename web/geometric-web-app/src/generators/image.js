@@ -11,7 +11,7 @@
  *              stipples by dart throwing, evened out by weighted Lloyd
  *              relaxation (Secord, 2002), then a single tour built by
  *              nearest-neighbour and improved with 2-opt and Or-opt moves on
- *              neighbour lists under a time budget.
+ *              neighbour lists with a fixed work budget.
  * Without an image a small ray-traced still life of spheres is used.
  */
 (function () {
@@ -198,8 +198,7 @@
         const N = X.length;
         const best = new Float32Array(w * h), owner = new Int32Array(w * h);
         const sx = new Float64Array(N), sy = new Float64Array(N), sw = new Float64Array(N);
-        const deadline = performance.now() + 250;
-        for (let it = 0; it < 4 && performance.now() < deadline; it++) {
+        for (let it = 0; it < 4; it++) {
             best.fill(Infinity);
             owner.fill(-1);
             for (let n = 0; n < N; n++) {
@@ -228,7 +227,7 @@
         }
     }
 
-    function tour(X, Y, budgetMs) {
+    function tour(X, Y, budget) {
         const N = X.length;
         if (N < 3) return Array.from({ length: N }, (_, i) => i);
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -365,10 +364,10 @@
             return false;
         }
 
-        const deadline = performance.now() + budgetMs;
+        // Keep the legacy budget range, but count candidate visits instead of milliseconds.
+        const maxVisits = Math.floor(budget * 128);
         let qi = 0, iter = 0;
-        while (qi < queue.length) {
-            if ((++iter & 127) === 0 && performance.now() > deadline) break;
+        while (qi < queue.length && iter++ < maxVisits) {
             const a = queue[qi++];
             inQ[a] = 0;
             if (qi > 50000) { queue.splice(0, qi); qi = 0; }
@@ -415,8 +414,8 @@
             { id: 'join', label: 'Join rows into one stroke', type: 'checkbox', value: false, show: p => p.mode === 'squiggle' },
             { id: 'layers', label: 'Hatch layers', type: 'range', min: 1, max: 4, step: 1, value: 4, random: [3, 4], show: p => p.mode === 'hatch' },
             { id: 'points', label: 'Points', type: 'range', min: 500, max: 20000, step: 100, value: 10000, random: false, show: p => p.mode === 'tsp' },
-            { id: 'budget', label: 'Tour optimisation (ms)', type: 'range', min: 0, max: 3000, step: 50, value: 400, random: false,
-                show: p => p.mode === 'tsp' },
+            { id: 'budget', label: 'Tour refinement', type: 'range', min: 0, max: 3000, step: 50, value: 400, random: false,
+                hint: 'Each unit allows 128 candidate visits. Higher values improve the route, with repeatable results.', show: p => p.mode === 'tsp' },
             { type: 'section', label: 'Pens' },
             { id: 'pens' },
         ],
@@ -532,7 +531,7 @@
             }
 
             // ---- TSP
-            // The tour has a time budget. Reuse its geometry when only the inks change.
+            // Reuse the tour when only the inks change.
             const tourKey = JSON.stringify([ctx.seed, area, ctx.shape.kind, p.fit, p.brightness, p.contrast, p.invert, p.points, p.budget]);
             if (lastTour && lastTour.image === img && lastTour.key === tourKey) return color([lastTour.path]);
             const inside = (x, y) => ctx.shape.dist(x, y) > 0.2;

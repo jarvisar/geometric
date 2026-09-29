@@ -5,12 +5,16 @@
   "private": true,
   "scripts": {
     "start": "live-server src",
-    "check": "node scripts/check.js",
+    "prestart": "npm run build:worker",
+    "build:worker": "node scripts/build-worker.js",
+    "check": "node scripts/build-worker.js --check && node scripts/check.js",
     "check:pens": "node scripts/check-pens.js",
     "check:state": "node scripts/check-state.js",
+    "check:generation": "node scripts/build-worker.js --check && node scripts/check-generation.js",
     "smoke": "node scripts/drive.js scripts/smoke.steps.js shots",
     "smoke:pens": "node scripts/drive.js scripts/pen-colors.steps.js shots",
     "smoke:state": "node scripts/drive.js scripts/state.steps.js shots/state",
+    "smoke:p2": "node scripts/drive.js scripts/p2.steps.js shots/p2",
     "sheet": "node scripts/shot.js dev/sheet.html \"variants=2&size=220\" shots/sheet.png 1100 6000"
   },
   "devDependencies": {
