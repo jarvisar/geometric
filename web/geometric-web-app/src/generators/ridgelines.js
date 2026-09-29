@@ -41,7 +41,7 @@
                 hint: 'Lines and amplitudes shrink towards the back' },
             { id: 'res', label: 'X resolution (mm)', type: 'range', min: 0.2, max: 2, step: 0.05, value: 0.4, random: false },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false },
+            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false },
             { id: 'penMode', label: 'Split pens by', type: 'select', value: 'depth', show: p => p.pens > 1,
                 options: [['depth', 'Depth bands'], ['alternate', 'Alternate lines']] },
         ],

@@ -112,7 +112,7 @@
             { id: 'rotZ', label: 'Rotate Z°', type: 'range', min: -180, max: 180, step: 1, value: 0 },
             { id: 'persp', label: 'Perspective', type: 'range', min: 0, max: 1, step: 0.01, value: 0.25, random: [0, 0.5] },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false },
+            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false },
             { id: 'penMode', label: 'Split pens by', type: 'select', value: 'time', show: p => p.pens > 1,
                 options: [['time', 'Time (consecutive bands)'], ['depth', 'Depth (near to far)']] },
         ],

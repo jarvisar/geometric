@@ -38,6 +38,8 @@ const dls = await evaluate(`window.__downloads.map(d => d.name + ' ' + d.size)`)
 log('downloads:', dls.join(' | '));
 const svg = await evaluate(`window.__downloads[0].blob.text()`);
 if (!svg.includes('width="210mm"') || !svg.includes('inkscape:groupmode="layer"')) throw new Error('SVG missing mm size or layers');
+// one compound path per pen, so importers like Bambu Suite don't make an object per stroke
+if ((svg.match(/<path /g) || []).length !== (svg.match(/<g /g) || []).length) throw new Error('SVG should have one path per pen layer');
 
 // Slider edits must stick across regenerations
 const slide = v => evaluate(`(() => {
@@ -69,6 +71,21 @@ await sleep(400);
 const redone = await evaluate(`JSON.stringify(plotterApp.state.params.spirograph) + plotterApp.state.seed`);
 if (redone !== after) throw new Error('redo did not re-apply');
 log('randomize / undo / redo ok');
+
+// Shift+R jumps to another design, Reset everything goes back to defaults but stays on it
+await key('R', { shift: true, code: 'KeyR' });
+await sleep(600);
+const surprised = await evaluate(`plotterApp.state.gen`);
+if (surprised === 'spirograph') throw new Error('Shift+R did not change the design');
+await click('#resetMenuBtn');
+await click('[data-reset="all"]');
+await sleep(400);
+const reset = await evaluate(`[plotterApp.state.gen, plotterApp.state.seed].join()`);
+if (reset !== `${surprised},1`) throw new Error(`reset everything left ${reset}`);
+await key('z', { ctrl: true });
+await sleep(400);
+if ((await evaluate(`plotterApp.state.seed`)) === 1) throw new Error('undo did not bring back the seed after reset everything');
+log('surprise / reset everything ok');
 
 // Zoom + pan
 await wheel(700, 450, -400);

@@ -1,5 +1,5 @@
 /*
- * Harbour: an isometric fishing town on the water, drawn for four pens.
+ * Harbour: an isometric fishing town on the water, drawn for four to eight pens.
  *
  * It's a 3D scene like Town, with hidden lines removed (lib/iso.js). Rows of
  * blocks face the avenues that run along the quay. Each row gets its own cross
@@ -15,21 +15,26 @@
  * shadows onto the ground and the water, the water gets rows of short blue
  * dashes, and cart canopies and boat cabin roofs are yellow. Shadows are cut
  * off at the edge of the lot they fall in, which keeps the streets clean.
+ * With six pens trees and hedges go green and people and cars purple, and
+ * with eight the water marks go light blue and the piers and boats brown.
  */
 (function () {
     'use strict';
     const { geo, TAU } = PG;
-    const { DIRS, hash, makeCamera, frame, card, ring, hull, Scene, render, segments } = PG.iso;
+    const { DIRS, hash, makeCamera, frame, card, ring, hull, Scene, renderPens, segments } = PG.iso;
     const {
         FLOOR, wall, rect, pane, door, garageDoor, windows, gableRoof, gableSlope, hipRoof, chimney, flatRoof, plinth,
-        steps, car, bike, person, bench, clothesline, Occupancy,
+        steps, bench, clothesline, Occupancy, withKind,
         lerp3, unit, outward, shade, shadeGable, shadeRound, awning, vault, ribs, marketHall, clockTower,
         gableWall, stepGable, hoist, terrace, church, cart, bistro, fountain, obelisk, bandstand,
-        hullSolid, turned, underway, moorRow, bridgeRamp, LENGTH, crookLamp: lamp, railFence,
+        hullSolid, turned, bridgeRamp, LENGTH, crookLamp: lamp, railFence,
     } = PG.isokit;
 
-    // line kinds
-    const INK = 0, RED = 1, BLUE = 2, YELLOW = 3;
+    // line kinds. The last four only get pens of their own with six or eight pens.
+    const INK = 0, RED = 1, BLUE = 2, YELLOW = 3, GREEN = 4, FIGURE = 5, WATER = 6, WOOD = 7;
+    const kit = PG.isokit;
+    const person = withKind(FIGURE, kit.person), bike = withKind(FIGURE, kit.bike), car = withKind(FIGURE, kit.car);
+    const moorRow = withKind(WOOD, kit.moorRow), underway = withKind(WOOD, kit.underway);
     const LAND = 1.6;             // the quay and the town stand this high above the water (m)
     const SUN_TURN = geo.rad(65); // shadows fall along +x, turned this far towards -y (to the right on the page)
     const WORLD = frame(0, 0, 0, 0);
@@ -345,7 +350,7 @@
     // ------------------------------------------------------------------
 
     // Low clipped hedge: a scalloped outline round a rounded strip along u
-    function hedge(T, F, a0, a1, b, wid) {
+    const hedge = withKind(GREEN, (T, F, a0, a1, b, wid) => {
         const S = T.S, h = 0.6, r = wid / 2, cam = T.cam;
         if (a1 - a0 < wid) return;
         const cap = n => Array.from({ length: n + 1 }, (_, i) => i / n);
@@ -383,7 +388,7 @@
             if (sx > hiv) { hiv = sx; hi = [a, v]; }
         }
         for (const [a, v] of [lo, hi]) S.line([F.P(a, v, 0.02), F.P(a, v, h)]);
-    }
+    });
 
     // A few crates, maybe one stacked, and a barrel
     function crates(T, F, a, b, rng) {
@@ -411,7 +416,7 @@
 
     // Moored boat of a random kind, pointing along the pier. Returns its length.
     function boat(T, x, y, dir, rng, kind) {
-        T.S.kind = INK;
+        T.S.kind = WOOD;
         return PG.isokit.boat(T, frame(x, y, 0, dir), kind, rng);
     }
 
@@ -433,7 +438,7 @@
         const S = T.S, alongX = x1 - x0 >= y1 - y0;
         const L = alongX ? x1 - x0 : y1 - y0, wd = alongX ? y1 - y0 : x1 - x0;
         const at = (s, t, c) => (alongX ? [x0 + s, y0 + t, c] : [x0 + t, y0 + s, c]);
-        S.kind = INK;
+        S.kind = WOOD;
         S.box(WORLD, x0, y0, z - 0.25, x1, y1, z);
         if (T.detail) {
             const n = Math.max(2, Math.round(L / 0.8));
@@ -481,7 +486,7 @@
     // walkway out with fingers either side and a boat in most of the gaps
     function marina(T, xq, pr, rng) {
         const S = T.S, { y, len, fl } = pr, z = 0.45, hw = 1, gx = xq - 4, x0 = xq - len;
-        S.kind = INK;
+        S.kind = WOOD;
         S.prism([[xq, y - 0.6, LAND + 0.05], [gx, y - 0.6, z + 0.05], [gx, y - 0.6, z - 0.08], [xq, y - 0.6, LAND - 0.08]], [0, 1.2, 0]);
         for (const s of [-0.6, 0.6]) {
             S.line([[xq, y + s, LAND + 1], [gx, y + s, z + 1]]);
@@ -836,10 +841,7 @@
     // Squares
     // ------------------------------------------------------------------
 
-    function tree(T, x, y, z, rng) {
-        T.S.kind = INK;
-        PG.isokit.roundTree(T, x, y, z, rng);
-    }
+    const tree = withKind(GREEN, kit.roundTree);
 
     // Town square in place of a block: paving round a fountain, monument or
     // bandstand (or the clock tower), trees along the back with benches under
@@ -1550,7 +1552,7 @@
         const rowGap = 5.2, colGap = 15, dash = 4;
         const shaded = (x, y) => groups.some(g => (!g.clip || inRect(g.clip, x, y)) && g.polys.some(P => geo.pointInPolygon(x, y, P)));
         const inWake = (x, y) => wakes.some(P => geo.pointInPolygon(x, y, P));
-        S.kind = BLUE;
+        S.kind = WATER;
         for (let row = 0, sy = rowGap * 0.6; sy < S.H; row++, sy += rowGap) {
             const off = (row % 2 ? colGap / 2 : 0) + rng.range(-2, 2);
             for (let sx = off - colGap; sx < S.W + colGap; sx += colGap) {
@@ -1753,7 +1755,7 @@
         id: 'harbour',
         name: 'Harbour',
         category: 'Scenes',
-        description: 'An isometric fishing town with a quay, piers and a lighthouse, shaded for four pens.',
+        description: 'An isometric fishing town with a quay, piers and a lighthouse, shaded for four to eight pens.',
         fit: false,
         params: [
             { type: 'section', label: 'View' },
@@ -1822,8 +1824,9 @@
             { id: 'water', label: 'Water marks', type: 'checkbox', value: true },
             { type: 'section', label: 'Pens' },
             { id: 'inks', label: 'Pens', type: 'select', value: 'four', random: false,
-                options: [['four', 'Black, red, blue, yellow'], ['three', 'Black, red, blue'], ['one', 'One pen']],
-                hint: 'Colours go to pens 1, 2, 3 and 5, matching the default pen set' },
+                options: [['eight', 'Eight, adding light blue and brown'], ['six', 'Six, adding green and purple'],
+                    ['four', 'Black, red, blue, yellow'], ['three', 'Black, red, blue'], ['one', 'One pen']],
+                hint: 'Each colour goes to its pen in the default pen set, so four uses pens 1, 2, 3 and 5. Six adds green trees and hedges and purple people and cars, eight adds light blue water and brown piers and boats' },
         ],
 
         generate(p, ctx) {
@@ -1846,7 +1849,7 @@
                 picket: Math.max(0.28, 0.9 / k),
                 // roof hatching, in mm on paper, and the pens for it (see isokit's shade)
                 tones: p.roofHatch ? { lit: RED, dark: INK, canopy: YELLOW } : null,
-                waterKind: BLUE,
+                waterKind: WATER,
                 hLit: p.roofGap,
                 hDark: p.roofGap * 0.6,
                 // lit if the face gets at least 3/4 of the light a flat roof does
@@ -1857,14 +1860,14 @@
                 S.kind = BLUE;
                 S.hatchShadows(p.shadowGap);
             }
-            const kinds = render(S);
-            if (mirror) for (const paths of kinds) for (const q of paths || []) for (const v of q) v[0] = W - v[0];
-            const penOf = { four: [0, 1, 2, 4], three: [0, 1, 2, 1], one: [0, 0, 0, 0] }[p.inks] || [0, 1, 2, 4];
-            const byPen = [];
-            kinds.forEach((paths, kind) => {
-                const into = byPen[penOf[kind]] || (byPen[penOf[kind]] = []);
-                for (const q of paths) into.push(q);
-            });
+            // pen for each kind (ink, red, blue, yellow, green, figures, water, wood)
+            const penOf = {
+                eight: [0, 1, 2, 4, 3, 5, 6, 7], six: [0, 1, 2, 4, 3, 5, 2, 0], four: [0, 1, 2, 4, 0, 0, 2, 0],
+                three: [0, 1, 2, 1, 0, 0, 2, 0], one: [0, 0, 0, 0, 0, 0, 0, 0],
+            }[p.inks] || [0, 1, 2, 4, 0, 0, 2, 0];
+            // green, figures and wood used to be drawn in ink, and water in blue
+            const byPen = renderPens(S, penOf, [INK, RED, BLUE, YELLOW, INK, INK, BLUE, INK]);
+            if (mirror) for (const paths of byPen) for (const q of paths || []) for (const v of q) v[0] = W - v[0];
             const layers = [];
             byPen.forEach((paths, pen) => layers.push({ pen, paths }));
             return { layers };

@@ -87,7 +87,7 @@
             { id: 'ease', label: 'Morph ease', type: 'range', min: 0.2, max: 4, step: 0.05, value: 1, random: [0.5, 2],
                 hint: '< 1 morphs early (near the outside), > 1 late' },
             { type: 'section', label: 'Output' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false,
+            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false,
                 hint: 'Shapes alternate between pens' },
             { id: 'quality', label: 'Smoothness', type: 'range', min: 0.5, max: 3, step: 0.1, value: 1, random: false },
         ],

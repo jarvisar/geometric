@@ -37,6 +37,13 @@ for (const def of PG.generators) {
         runs.push([`random${i}`, PG.randomParams(def, PG.defaultParams(def), new PG.RNG(100 + i)), settings(7 + i)]);
     }
     runs.push(['rotated+circle', PG.defaultParams(def), Object.assign(settings(3), { rotate: 30, clip: 'circle', frame: true })]);
+    // as many pens as the design allows (the Scenes pick theirs with a select called inks, most first)
+    const most = PG.defaultParams(def);
+    for (const q of def.params) {
+        if (q.id === 'pens' && q.type === 'range') most.pens = q.max;
+        if (q.id === 'inks') most.inks = q.options[0][0];
+    }
+    runs.push(['most pens', most, settings(5)]);
     const times = [];
     rows.push(`${def.id.padEnd(14)} (default failed)`);
     for (const [label, params, S] of runs) {
@@ -44,6 +51,7 @@ for (const def of PG.generators) {
             const res = PG.run(def, params, S);
             const st = res.stats;
             if (!st.paths) throw new Error('no paths produced');
+            if (res.layers.some(l => l.pen < 0 || l.pen >= PG.MAX_PENS)) throw new Error('pen out of range');
             for (const l of res.layers) for (const p of l.paths) for (const q of p) {
                 if (!isFinite(q[0]) || !isFinite(q[1])) throw new Error('non-finite point');
                 if (q[0] < S.margin - 1e-6 || q[1] < S.margin - 1e-6 || q[0] > S.paperW - S.margin + 1e-6 || q[1] > S.paperH - S.margin + 1e-6) {

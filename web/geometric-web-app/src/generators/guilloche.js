@@ -68,7 +68,7 @@
             { id: 'centre', label: 'Central rosette', type: 'checkbox', value: true, random: 0.7 },
             { id: 'centreWaves', label: 'Rosette petals', type: 'range', min: 3, max: 24, step: 1, value: 12, show: p => p.centre, random: [5, 16] },
             { type: 'section', label: 'Output' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false, hint: 'Pens alternate by band' },
+            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false, hint: 'Pens alternate by band' },
             { id: 'quality', label: 'Smoothness', type: 'range', min: 0.5, max: 3, step: 0.1, value: 1, random: false },
         ],
 

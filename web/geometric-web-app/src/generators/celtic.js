@@ -61,7 +61,7 @@
             { id: 'gap', label: 'Crossing gap (mm)', type: 'range', min: 0, max: 5, step: 0.05, value: 1.2, random: [0.6, 1.8] },
             { id: 'flip', label: 'Mirror over/under', type: 'checkbox', value: false, random: 0.5 },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false,
+            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false,
                 hint: 'Each closed strand gets a pen at random' },
         ],
 

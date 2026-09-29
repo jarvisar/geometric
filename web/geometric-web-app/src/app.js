@@ -107,12 +107,13 @@
         ['Square 20 cm', 200, 200], ['Square 12 in', 304.8, 304.8], ['custom', 0, 0],
     ];
 
+    // The Scenes designs pick pens by these fineliner colours (pen 7 water, pen 8 ground and wood)
     const PEN_SETS = {
-        fineliner: { label: 'Fineliners on white', paper: '#fbfaf6', colors: ['#161616', '#d1342f', '#2456c8', '#1d8a4e', '#d99a00', '#7b3fc0'] },
-        gel: { label: 'Gel pens on black', paper: '#16181b', colors: ['#f4f1ea', '#e7c35a', '#aab7c1', '#f08bb0', '#7fcfe6', '#b5de7a'] },
-        riso: { label: 'Riso brights', paper: '#f7f4ec', colors: ['#0078bf', '#ff48b0', '#ffb511', '#00a95c', '#ff665e', '#765ba7'] },
-        sepia: { label: 'Sepia on cream', paper: '#f2e8d5', colors: ['#3a2a1c', '#8b4a2b', '#b8864e', '#556b2f', '#7a2e2e', '#2f4f6f'] },
-        blueprint: { label: 'White on blueprint', paper: '#1d3f78', colors: ['#f2f6ff', '#9cc7ff', '#ffd66b', '#ff9f8a', '#b8f2d0', '#d5b8ff'] },
+        fineliner: { label: 'Fineliners on white', paper: '#fbfaf6', colors: ['#161616', '#d1342f', '#2456c8', '#1d8a4e', '#d99a00', '#7b3fc0', '#2fa3d6', '#8b5a2b'] },
+        gel: { label: 'Gel pens on black', paper: '#16181b', colors: ['#f4f1ea', '#e7c35a', '#aab7c1', '#f08bb0', '#7fcfe6', '#b5de7a', '#c8a6f2', '#f4a261'] },
+        riso: { label: 'Riso brights', paper: '#f7f4ec', colors: ['#0078bf', '#ff48b0', '#ffb511', '#00a95c', '#ff665e', '#765ba7', '#00838a', '#925f52'] },
+        sepia: { label: 'Sepia on cream', paper: '#f2e8d5', colors: ['#3a2a1c', '#8b4a2b', '#b8864e', '#556b2f', '#7a2e2e', '#2f4f6f', '#5f7f8f', '#9a7b4f'] },
+        blueprint: { label: 'White on blueprint', paper: '#1d3f78', colors: ['#f2f6ff', '#9cc7ff', '#ffd66b', '#ff9f8a', '#b8f2d0', '#d5b8ff', '#7fe3ff', '#ffc48a'] },
     };
 
     function defaultState() {
@@ -647,7 +648,8 @@
                     if (isGrid(state) && state.comp.cellVary === 'params') requestGenerate();
                     return set.has(q.id);
                 },
-                onReset() {
+                // an image param only holds the file name, the x button is what drops the picture
+                onReset: q.type === 'image' ? null : () => {
                     params[q.id] = q.value;
                     row.sync();
                     commit();
@@ -815,6 +817,8 @@
         }
         panel.scrollTop = scroll;
         renderStats();
+        // the pen list has to be on the page first, it's looked up by id
+        renderPenUsage();
     }
 
     function applyEffect(effect, live) {
@@ -873,7 +877,6 @@
         });
         body.append(list);
         body.append(el('p', { class: 'out-note', text: 'Width is in mm — the preview draws true-to-scale line widths. Each pen exports as its own Inkscape layer.' }));
-        renderPenUsage();
     }
 
     function renderPenUsage() {
@@ -881,14 +884,17 @@
         if (!rows.length) return;
         const usage = {};
         if (result) for (const l of result.layers) usage[l.pen] = PG.optimize.stats([l]);
-        // most designs start on one pen, so recolouring pens 2-6 does nothing until Pens goes up
-        const pensParam = currentDef().params.find(q => q.id === 'pens');
-        const unused = pensParam ? `unused, raise ${pensParam.label} to use it` : 'not used by this design';
+        // most designs start on one pen, so recolouring the other pens does nothing until Pens goes up
+        const def = currentDef(), params = currentParams(def);
+        const q = def.params.find(x => x.id === 'pens' || x.id === 'inks'); // the Scenes use a select called inks
+        const reachable = i => q && (!q.show || q.show(params)) && (q.type !== 'range' || i < q.max);
+        const unused = i => !reachable(i) ? 'not used by this design'
+            : q.type === 'range' ? `unused, raise ${q.label} to use it` : `unused, pick more ${q.label} to use it`;
         rows.forEach(row => {
             const i = +row.dataset.pen;
             const u = usage[i];
             row.classList.toggle('unused', !u);
-            row.querySelector('.pen-meta').textContent = u ? `${fmtCount(u.paths)} ${u.paths === 1 ? 'path' : 'paths'}` : unused;
+            row.querySelector('.pen-meta').textContent = u ? `${fmtCount(u.paths)} ${u.paths === 1 ? 'path' : 'paths'}` : unused(i);
         });
     }
 
@@ -1094,12 +1100,35 @@
         commit();
     }
 
+    // Loaded pictures aren't settings and can't come back through undo, so a reset keeps them
+    function defaultsFor(def) {
+        const p = PG.defaultParams(def), imgs = imageStore[def.id] || {};
+        for (const q of def.params) if (q.type === 'image' && imgs[q.id]) p[q.id] = imgs[q.id].name;
+        return p;
+    }
+
     function resetParams() {
+        $('#resetMenu').hidden = true;
         const def = currentDef();
-        state.params[def.id] = PG.defaultParams(def);
+        state.params[def.id] = defaultsFor(def);
         buildParams();
         requestGenerate();
         commit();
+    }
+
+    // Back to a fresh start, but staying on the current design. Undo brings it all back
+    // except the locks, which never go through undo.
+    function resetAll() {
+        $('#resetMenu').hidden = true;
+        clearTimeout(commitTimer);
+        pushUndo();
+        state = Object.assign(defaultState(), { gen: state.gen, ui: state.ui });
+        for (const id of Object.keys(imageStore)) if (PG.byId[id]) state.params[id] = defaultsFor(PG.byId[id]);
+        rebuildAll();
+        fitView();
+        requestGenerate();
+        commit();
+        toast('Everything reset to defaults');
     }
 
     function syncSeed() { $('#seed').value = state.seed; }
@@ -1281,6 +1310,15 @@
         $('#randomize').addEventListener('click', randomize);
         $('#newSeed').addEventListener('click', newSeed);
         $('#resetParams').addEventListener('click', resetParams);
+        $('#resetMenuBtn').addEventListener('click', e => {
+            e.stopPropagation();
+            $('#exportMenu').hidden = true;
+            $('#resetMenu').hidden = !$('#resetMenu').hidden;
+        });
+        $('#resetMenu').addEventListener('click', e => {
+            const b = e.target.closest('button[data-reset]');
+            if (b) b.dataset.reset === 'all' ? resetAll() : resetParams();
+        });
         $('#undo').addEventListener('click', undo);
         $('#redo').addEventListener('click', redo);
         $('#snapshotBtn').addEventListener('click', saveSnapshot);
@@ -1296,6 +1334,7 @@
         $('#exportSvg').addEventListener('click', () => doExport('svg'));
         $('#exportMenuBtn').addEventListener('click', e => {
             e.stopPropagation();
+            $('#resetMenu').hidden = true;
             $('#exportMenu').hidden = !$('#exportMenu').hidden;
         });
         $('#exportMenu').addEventListener('click', e => {
@@ -1304,6 +1343,7 @@
         });
         document.addEventListener('click', e => {
             if (!e.target.closest('.export')) $('#exportMenu').hidden = true;
+            if (!e.target.closest('.reset')) $('#resetMenu').hidden = true;
         });
         $('#settingsFile').addEventListener('change', e => { const f = e.target.files[0]; if (f) loadSettingsFile(f); });
         $('#imageFile').addEventListener('change', e => {
@@ -1343,7 +1383,7 @@
     // The phone top bar has no room for the seed and reset controls, so they move to the top of the Design panel.
     const PHONE = window.matchMedia('(max-width: 720px)');
     function placeSeedControls() {
-        const seed = $('.seed-box'), reset = $('#resetParams');
+        const seed = $('.seed-box'), reset = $('.reset');
         if (PHONE.matches) {
             $('#phoneTools').append(seed, reset);
         } else {
@@ -1363,6 +1403,7 @@
                 if (!$('#gallery').hidden) closeGallery();
                 $('#keysDialog').hidden = true;
                 $('#exportMenu').hidden = true;
+                $('#resetMenu').hidden = true;
                 if (typing) t.blur();
                 return;
             }
@@ -1372,7 +1413,8 @@
             if (typing || mod || e.altKey) return;
             if (!$('#gallery').hidden) return;
             switch (e.key) {
-                case 'r': case 'R': randomize(); break;
+                // caps lock also gives 'R', so check shift itself
+                case 'r': case 'R': e.shiftKey ? surprise() : randomize(); break;
                 case ' ':
                     if (t.tagName === 'BUTTON') return;
                     e.preventDefault(); newSeed(); break;
@@ -1441,7 +1483,7 @@
     window.plotterApp = {
         get state() { return state; },
         get result() { return result; },
-        select: selectGenerator, randomize, newSeed, undo, redo, exportAs: doExport, regenerate,
+        select: selectGenerator, randomize, surprise, resetParams, resetAll, newSeed, undo, redo, exportAs: doExport, regenerate,
     };
 
     setupInstallPrompt(); // before init: the browser's install event can arrive while designs load

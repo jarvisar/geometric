@@ -474,9 +474,10 @@
     iso.Scene = Scene;
 
     // ------------------------------------------------------------------
-    // Hidden line removal. Returns the visible paths (screen mm) by line kind.
+    // Hidden line removal. Returns the visible paths (screen mm) by line kind,
+    // or by slot when `slotOf` maps kinds to output slots.
     // ------------------------------------------------------------------
-    iso.render = function (S) {
+    iso.render = function (S, slotOf = null) {
         const { faces, lines, W, H } = S;
         const cell = 4;
         const gw = Math.max(1, Math.ceil(W / cell)), gh = Math.max(1, Math.ceil(H / cell));
@@ -493,7 +494,8 @@
         const out = [];
         const hid = [], order = [];
         for (const L of lines) {
-            const q = L.q, into = out[L.kind] || (out[L.kind] = []), mark = into.length;
+            const slot = slotOf ? slotOf[L.kind] : L.kind;
+            const q = L.q, into = out[slot] || (out[slot] = []), mark = into.length;
             let cur = null, broken = false;
             for (let s = 1; s < q.length && !broken; s++) {
                 const A = q[s - 1], B = q[s];
@@ -569,6 +571,21 @@
             if (broken) into.length = mark;
         }
         return out.map(paths => paths.filter(p => geo.pathLength(p) > 0.05));
+    };
+
+    // Visible paths by pen. penOf maps line kinds to pens. Within a pen, lines
+    // come grouped by group[kind] and in drawing order inside each group. The
+    // scenes pass the kind each line had before they split out more kinds for
+    // six and eight pens, so the older pen options give exactly the same paths
+    // (the optimizer's stroke joining depends on the order).
+    iso.renderPens = function (S, penOf, group) {
+        const G = Math.max(...group) + 1;
+        const byPen = [];
+        iso.render(S, penOf.map((pen, k) => pen * G + group[k])).forEach((paths, slot) => {
+            const into = byPen[Math.floor(slot / G)] || (byPen[Math.floor(slot / G)] = []);
+            for (const q of paths) into.push(q);
+        });
+        return byPen;
     };
 
     // Segments for a circle of radius r (m) that stays within 0.04 mm of round

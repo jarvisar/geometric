@@ -97,7 +97,14 @@
         </div>
 
         <button id="randomize" class="btn primary" title="Randomize parameters and seed (R)"><svg class="ic"><use href="#i-shuffle"/></svg><span>Randomize</span></button>
-        <button id="resetParams" class="icon-btn" title="Reset design parameters to defaults"><svg class="ic"><use href="#i-reset"/></svg><span>Reset</span></button>
+        <div class="reset">
+            <button id="resetParams" class="icon-btn" title="Reset design parameters to defaults"><svg class="ic"><use href="#i-reset"/></svg><span>Reset</span></button>
+            <button id="resetMenuBtn" class="icon-btn caret" title="More reset options" aria-haspopup="true"><svg class="ic"><use href="#i-chev"/></svg></button>
+            <div id="resetMenu" class="menu" hidden>
+                <button data-reset="params">Reset design parameters <small>Just the controls for this design</small></button>
+                <button data-reset="all">Reset everything <small>Every design, seed, paper, pens and layout. Undo still works</small></button>
+            </div>
+        </div>
 
         <div class="spacer"></div>
 
@@ -167,7 +174,7 @@
             <div class="gallery-head">
                 <h2>Designs</h2>
                 <input id="gallerySearch" type="search" placeholder="Search designs…" autocomplete="off">
-                <button id="surprise" class="btn"><svg class="ic"><use href="#i-dice"/></svg><span>Surprise me</span></button>
+                <button id="surprise" class="btn" title="Random design with random parameters (Shift+R)"><svg class="ic"><use href="#i-dice"/></svg><span>Surprise me</span></button>
                 <button id="galleryClose" class="icon-btn" title="Close (Esc)"><svg class="ic"><use href="#i-x"/></svg></button>
             </div>
             <div id="galleryBody" class="gallery-body"></div>
@@ -182,6 +189,7 @@
             </div>
             <dl class="keys">
                 <dt><kbd>R</kbd></dt><dd>Randomize parameters and seed</dd>
+                <dt><kbd>Shift</kbd>+<kbd>R</kbd></dt><dd>Surprise me: a random design with random parameters</dd>
                 <dt><kbd>Space</kbd></dt><dd>New seed only</dd>
                 <dt><kbd>G</kbd></dt><dd>Browse designs</dd>
                 <dt><kbd>E</kbd></dt><dd>Export SVG</dd>

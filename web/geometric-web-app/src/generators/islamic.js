@@ -401,7 +401,7 @@
             { id: 'gap', label: 'Interlace gap (mm)', type: 'range', min: 0, max: 3, step: 0.05, value: 0.6, random: [0.4, 1.1],
                 show: p => p.strap > 0 && p.weave === 'weave' },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Strand pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false,
+            { id: 'pens', label: 'Strand pens', type: 'range', min: 1, max: 6, step: 1, value: 1, random: false,
                 hint: 'Each strand gets a random pen; the tiling and second pattern follow on the next pens' },
         ],
 

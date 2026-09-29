@@ -139,7 +139,11 @@ kbd {
 .seed-box input:focus { outline: none; }
 .seed-box .icon-btn { border: 0; border-left: 1px solid var(--line-2); border-radius: 0; height: 100%; }
 
-.export { position: relative; display: flex; }
+.export, .reset { position: relative; display: flex; }
+.reset #resetParams { border-radius: var(--radius) 0 0 var(--radius); }
+.reset .caret { width: 22px; border-radius: 0 var(--radius) var(--radius) 0; border-left: 0; }
+.reset .caret .ic { width: 14px; height: 14px; }
+.reset .menu { left: 0; right: auto; }
 .export .btn.accent:first-child { border-radius: var(--radius) 0 0 var(--radius); }
 .export .caret { border-radius: 0 var(--radius) var(--radius) 0; padding: 0 7px; border-left: 1px solid rgba(0, 0, 0, 0.25); }
 
@@ -737,6 +741,7 @@ select:focus, .text-input:focus, textarea:focus, .num:focus { outline: none; bor
     .phone-tools .seed-box label { display: block; }
     .phone-tools .seed-box input { flex: 1; min-width: 0; width: auto; }
     .phone-tools #resetParams { width: auto; padding: 0 12px; }
+    .phone-tools .reset .menu { left: auto; right: 0; }
     .phone-tools #resetParams span { display: inline; }
 
     .stage-tools { top: 8px; max-width: calc(100% - 16px); }

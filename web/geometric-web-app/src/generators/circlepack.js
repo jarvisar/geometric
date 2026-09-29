@@ -58,7 +58,7 @@
             { id: 'rim', label: 'Outline hatched circles', type: 'checkbox', value: true, random: 0.75,
                 show: p => p.style === 'hatch' || p.style === 'mixed' },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false },
+            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false },
             { id: 'penMode', label: 'Pen per', type: 'select', value: 'random', show: p => p.pens > 1,
                 options: [['random', 'Random circle'], ['size', 'Size'], ['style', 'Style']] },
         ],

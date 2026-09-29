@@ -1,5 +1,5 @@
 /*
- * Fairground: an isometric funfair drawn for four pens, in the same
+ * Fairground: an isometric funfair drawn for four to eight pens, in the same
  * illustrated-map style as Harbour.
  *
  * The park is cut up with a Voronoi diagram. Every ride gets a cell, and each
@@ -11,19 +11,21 @@
  * over the path between them.
  *
  * Red is for stripes and lit roof slopes, blue for shadows and the lake,
- * yellow for gondolas, cars, flags and pennants.
+ * yellow for gondolas, cars, flags and pennants. Six pens add green trees and
+ * purple people, eight add light blue water and brown paths.
  */
 (function () {
     'use strict';
     const { geo, TAU } = PG;
-    const { hash, makeCamera, frame, card, ring, hull, Scene, render, segments } = PG.iso;
+    const { hash, makeCamera, frame, card, ring, hull, Scene, renderPens, segments } = PG.iso;
     const {
-        wall, rect, gableRoof, person, bench, unit, outward, shade, shadeGable, awning, marketHall, cart, bistro,
-        crookLamp, railFence, roundTree, fountain, bandstand, hullSolid, turned,
+        wall, rect, gableRoof, bench, unit, outward, shade, shadeGable, awning, marketHall, cart, bistro,
+        crookLamp, railFence, fountain, bandstand, hullSolid, turned, withKind,
     } = PG.isokit;
 
-    // line kinds
-    const INK = 0, RED = 1, BLUE = 2, YELLOW = 3;
+    // line kinds. The last four only get pens of their own with six or eight pens.
+    const INK = 0, RED = 1, BLUE = 2, YELLOW = 3, GREEN = 4, FIGURE = 5, WATER = 6, PATH = 7;
+    const person = withKind(FIGURE, PG.isokit.person), roundTree = withKind(GREEN, PG.isokit.roundTree);
     const SUN_TURN = geo.rad(65); // as in Harbour: shadows fall along +x, turned this far towards -y
 
     const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -863,7 +865,7 @@
         inner.take(...F.P(jl / 2, 0, 0).slice(0, 2), jl / 2 + 0.5);
         boats.push([...F.P(jl / 2, 0, 0).slice(0, 2), jl / 2 + 1]);
         // the jet in the middle
-        inKind(S, BLUE, () => {
+        inKind(S, WATER, () => {
             const h = rng.range(3.5, 5.5);
             for (let i = 0; i < 8; i++) {
                 const a = (TAU * i) / 8, pts = [];
@@ -892,7 +894,7 @@
         const rng = new PG.RNG(7);
         const rowGap = 5.2, colGap = 15, dash = 4;
         const shaded = (x, y) => shadows && shadows.polys.some(P => geo.pointInPolygon(x, y, P));
-        S.kind = BLUE;
+        S.kind = WATER;
         for (const lk of lakes) {
             const W = new Lawn(lk.water);
             const wet = ([x, y]) => W.inside(x, y, 0.9) && !lk.boats.some(([a, b, r]) => Math.hypot(a - x, b - y) < r) && !shaded(x, y);
@@ -1216,8 +1218,9 @@
         }
         assign(T, cells, rng);
         const ground = S.shadowGroup(0, null, Math.atan2(cam.ry, cam.rx));
-        S.kind = INK;
+        S.kind = PATH;
         for (const c of cells) S.loop(c.lawn.poly.map(([x, y]) => [x, y, 0]));
+        S.kind = INK;
         // entrance gate over the path nearest the bottom middle of the page,
         // between two lawns that aren't taken up by something big
         let gt = null, gd = Infinity;
@@ -1251,7 +1254,7 @@
         id: 'fairground',
         name: 'Fairground',
         category: 'Scenes',
-        description: 'An isometric funfair of rides, tents and stalls between winding paths, shaded for four pens.',
+        description: 'An isometric funfair of rides, tents and stalls between winding paths, shaded for four to eight pens.',
         fit: false,
         params: [
             { type: 'section', label: 'View' },
@@ -1293,8 +1296,9 @@
             { id: 'water', label: 'Water marks', type: 'checkbox', value: true },
             { type: 'section', label: 'Pens' },
             { id: 'inks', label: 'Pens', type: 'select', value: 'four', random: false,
-                options: [['four', 'Black, red, blue, yellow'], ['three', 'Black, red, blue'], ['one', 'One pen']],
-                hint: 'Colours go to pens 1, 2, 3 and 5, matching the default pen set' },
+                options: [['eight', 'Eight, adding light blue and brown'], ['six', 'Six, adding green and purple'],
+                    ['four', 'Black, red, blue, yellow'], ['three', 'Black, red, blue'], ['one', 'One pen']],
+                hint: 'Each colour goes to its pen in the default pen set, so four uses pens 1, 2, 3 and 5. Six adds green trees and purple people, eight adds light blue water and brown paths' },
         ],
 
         generate(p, ctx) {
@@ -1313,7 +1317,7 @@
                 segs: r => segments(r, k),
                 picket: Math.max(0.28, 0.9 / k),
                 tones: p.roofHatch ? { lit: RED, dark: INK, canopy: YELLOW } : null,
-                waterKind: BLUE,
+                waterKind: WATER,
                 hLit: p.roofGap,
                 hDark: p.roofGap * 0.6,
                 // lit if the face gets at least 3/4 of the light a flat roof does
@@ -1324,13 +1328,13 @@
                 S.kind = BLUE;
                 S.hatchShadows(p.shadowGap);
             }
-            const kinds = render(S);
-            const penOf = { four: [0, 1, 2, 4], three: [0, 1, 2, 1], one: [0, 0, 0, 0] }[p.inks] || [0, 1, 2, 4];
-            const byPen = [];
-            kinds.forEach((paths, kind) => {
-                const into = byPen[penOf[kind]] || (byPen[penOf[kind]] = []);
-                for (const q of paths) into.push(q);
-            });
+            // pen for each kind (ink, red, blue, yellow, green, people, water, paths)
+            const penOf = {
+                eight: [0, 1, 2, 4, 3, 5, 6, 7], six: [0, 1, 2, 4, 3, 5, 2, 0], four: [0, 1, 2, 4, 0, 0, 2, 0],
+                three: [0, 1, 2, 1, 0, 0, 2, 0], one: [0, 0, 0, 0, 0, 0, 0, 0],
+            }[p.inks] || [0, 1, 2, 4, 0, 0, 2, 0];
+            // trees, people and paths used to be drawn in ink, and water in blue
+            const byPen = renderPens(S, penOf, [INK, RED, BLUE, YELLOW, INK, INK, BLUE, INK]);
             const layers = [];
             byPen.forEach((paths, pen) => layers.push({ pen, paths }));
             return { layers };

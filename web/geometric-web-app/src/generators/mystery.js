@@ -47,7 +47,7 @@
             { id: 'echoTurn', label: 'Phase step°', type: 'range', min: -45, max: 45, step: 0.5, value: 0,
                 show: p => p.echoes > 1, hint: 'Extra phase given to the varied wheel on each echo' },
             { type: 'section', label: 'Output' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false,
+            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false,
                 hint: 'Echoes alternate between pens' },
             { id: 'quality', label: 'Smoothness', type: 'range', min: 0.5, max: 3, step: 0.1, value: 1, random: false },
         ],

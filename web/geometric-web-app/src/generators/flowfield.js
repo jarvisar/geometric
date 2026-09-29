@@ -34,7 +34,7 @@
             { id: 'maxLen', label: 'Max length (mm)', type: 'range', min: 10, max: 2000, step: 10, value: 600, random: [250, 1500] },
             { id: 'step', label: 'Step (mm)', type: 'range', min: 0.2, max: 2, step: 0.05, value: 0.5, random: false },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false },
+            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false },
             { id: 'penMode', label: 'Split pens by', type: 'select', value: 'angle', show: p => p.pens > 1,
                 options: [['angle', 'Direction'], ['region', 'Region'], ['random', 'Random']] },
         ],

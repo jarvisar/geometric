@@ -38,7 +38,8 @@ and it shows up in the app with an auto-built control panel.
 * A **path** is an array of points; a **point** is `[x, y]`. Closed shapes repeat
   the first point at the end (`geo.circle` does this for you).
 * Return an array of paths (one pen) or `{ layers: [paths, paths, ...] }` where
-  layer *i* is drawn with pen *i*. `geo.toLayers(paths, pens, fn)` helps.
+  layer *i* is drawn with pen *i*. `geo.toLayers(paths, pens, fn)` helps. There
+  are 8 pens (`PG.MAX_PENS`), and layers past that wrap round to pen 1.
 * Don't worry about path order, joining touching segments or dropping redundant
   points: the pipeline merges, simplifies and sorts everything afterwards. Do
   avoid emitting exact duplicate strokes (the pen would draw them twice).

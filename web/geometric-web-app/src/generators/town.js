@@ -19,17 +19,21 @@
 (function () {
     'use strict';
     const { geo, TAU } = PG;
-    const { DIRS, hash, makeCamera, frame, hull, card, ring, Scene, render, segments } = PG.iso;
+    const { DIRS, hash, makeCamera, frame, hull, card, ring, Scene, renderPens, segments } = PG.iso;
     const {
         FLOOR, wall, rect, pane, door, garageDoor, windows, gableRoof, roofExtras, chimney, roofUnit, flatRoof,
-        plinth, steps, porch, downpipe, hipRoof, car, fence, railing, patioSet, bench, clothesline, bike,
-        person, Occupancy, nearestDir,
+        plinth, steps, porch, downpipe, hipRoof, railing, patioSet, clothesline, Occupancy, nearestDir,
         awning, marketHall, clockTower, terrace, church, cart, bistro, fountain, obelisk, bandstand,
-        underway, moorRow, bridge, bridgeRamp,
+        bridge, bridgeRamp, inKind, withKind,
     } = PG.isokit;
 
-    // line kinds, split over pens
-    const BUILDING = 0, GROUND = 1, PLANT = 2, THING = 3;
+    // line kinds, split over pens. The last four were part of things (or ground,
+    // for water) until there were more than four pens.
+    const BUILDING = 0, GROUND = 1, PLANT = 2, THING = 3, VEHICLE = 4, FIGURE = 5, WATER = 6, WOOD = 7;
+    const kit = PG.isokit;
+    const car = withKind(VEHICLE, kit.car), moorRow = withKind(VEHICLE, kit.moorRow), underway = withKind(VEHICLE, kit.underway);
+    const person = withKind(FIGURE, kit.person), bike = withKind(FIGURE, kit.bike);
+    const fence = withKind(WOOD, kit.fence), bench = withKind(WOOD, kit.bench);
 
     // ------------------------------------------------------------------
     // Buildings. Each takes the lot frame and a footprint.
@@ -1029,7 +1033,7 @@
             S.kind = THING;
             if (kind === 'trampoline') trampoline(T, F, ca, cb);
             else if (kind === 'patio') patioSet(T, F, ca, cb, pr);
-            else if (kind === 'picnic') picnicTable(T, x, y, lot.z, (lot.dir + (sw > sd ? 0 : 1)) & 3, true);
+            else if (kind === 'picnic') inKind(S, WOOD, () => picnicTable(T, x, y, lot.z, (lot.dir + (sw > sd ? 0 : 1)) & 3, true));
             else if (kind === 'grill') grill(T, x, y, lot.z);
             else if (kind === 'bed') gardenBed(T, F, a + 0.2, b + 0.2, sw - 0.4, sd - 0.4);
             else if (kind === 'shed') shed(T, F, [a + 0.2, b + 0.2, a + sw - 0.2, b + sd - 0.2], pr);
@@ -1291,7 +1295,8 @@
         S.box(F, -0.6, -0.6, 0, 0.6, 0.6, 0.25);
         S.box(F, -0.45, -0.45, 0.25, 0.45, 0.45, 1.6);
         S.box(F, -0.55, -0.55, 1.6, 0.55, 0.55, 1.75);
-        person(T, x, y, hc + 1.75, rng);
+        // a statue, so it stays with the buildings
+        kit.person(T, x, y, hc + 1.75, rng);
     }
 
     // ------------------------------------------------------------------
@@ -1403,7 +1408,7 @@
         const rng = new PG.RNG(hash(seed, 31));
         const rowGap = 5.2, colGap = 15, dash = 4, t = q => (R.alongX ? q[1] : q[0]);
         const wet = q => t(q) > R.w0 + 0.8 && t(q) < R.w1 - 0.8 && !wakes.some(P => geo.pointInPolygon(q[0], q[1], P));
-        S.kind = GROUND;
+        S.kind = WATER;
         for (let row = 0, sy = rowGap * 0.6; sy < S.H; row++, sy += rowGap) {
             const off = (row % 2 ? colGap / 2 : 0) + rng.range(-2, 2);
             for (let sx = off - colGap; sx < S.W + colGap; sx += colGap) {
@@ -1639,8 +1644,8 @@
             { id: 'props', label: 'Yard things', type: 'range', min: 0, max: 1, step: 0.01, value: 0.7, random: [0.3, 1] },
             { id: 'people', label: 'People', type: 'range', min: 0, max: 1, step: 0.01, value: 0.45, random: [0, 0.7] },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false,
-                hint: '2 pens: buildings and things / streets and plants. 3 gives plants their own pen, 4 splits off cars and props' },
+            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false,
+                hint: '2 pens: buildings and things / streets and plants. 3 gives plants their own pen and 4 things. 5 to 8 split cars and boats, people, water, then fences and benches off onto a pen each' },
         ],
 
         randomize(rng) {
@@ -1661,17 +1666,18 @@
                 // keep the two curb lines apart on paper
                 curb: Math.max(0.2, 0.45 / (k * cam.ce)),
                 cornerR: 3.5,
-                // no roof hatching here (see isokit's shade), and the river goes with the streets
-                waterKind: GROUND,
+                // no roof hatching here (see isokit's shade)
+                waterKind: WATER,
             };
             buildTown(T, ctx.seed | 0);
-            const kinds = render(S);
-            const pens = Math.max(1, Math.min(4, p.pens | 0));
-            // pen for each kind (buildings, ground, plants, things) by pen count
-            const penOf = [[0, 0, 0, 0], [0, 1, 1, 0], [0, 1, 2, 0], [0, 1, 2, 3]][pens - 1];
-            const layers = Array.from({ length: pens }, () => []);
-            kinds.forEach((paths, i) => { for (const q of paths) layers[penOf[i]].push(q); });
-            return { layers };
+            const pens = Math.max(1, Math.min(8, p.pens | 0));
+            // pen for each kind (buildings, ground, plants, things, vehicles, people, water, wood) by pen count
+            const penOf = [
+                [0, 0, 0, 0, 0, 0, 0, 0], [0, 1, 1, 0, 0, 0, 1, 0], [0, 1, 2, 0, 0, 0, 1, 0], [0, 1, 2, 3, 3, 3, 1, 3],
+                [0, 1, 2, 3, 4, 3, 1, 3], [0, 1, 2, 3, 4, 5, 1, 3], [0, 1, 2, 3, 4, 5, 6, 3], [0, 1, 2, 3, 4, 5, 6, 7],
+            ][pens - 1];
+            const byPen = renderPens(S, penOf, [BUILDING, GROUND, PLANT, THING, THING, THING, GROUND, THING]);
+            return { layers: Array.from({ length: pens }, (_, i) => byPen[i] || []) };
         },
     });
 })();

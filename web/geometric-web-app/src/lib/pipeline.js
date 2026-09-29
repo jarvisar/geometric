@@ -8,7 +8,7 @@
     const PG = (globalThis.PG = globalThis.PG || {});
     const geo = PG.geo;
 
-    PG.MAX_PENS = 6;
+    PG.MAX_PENS = 8;
 
     // ------------------------------------------------------------------
     // Clip shapes (convex). Each exposes inside(), dist() (signed, >0 inside),

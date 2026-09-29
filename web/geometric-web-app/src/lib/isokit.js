@@ -541,9 +541,13 @@
     function inKind(S, kind, fn) {
         const keep = S.kind;
         if (kind !== undefined && kind !== null) S.kind = kind;
-        fn();
+        const out = fn();
         S.kind = keep;
+        return out;
     }
+
+    // A builder that always draws in `kind`, so a scene can give people or boats a pen of their own
+    const withKind = (kind, fn) => (T, ...args) => inKind(T.S, kind, () => fn(T, ...args));
 
     // Hatch a roof face down its fall line (flat roofs along x), shaded faces
     // closer together. tone 'roof' is lit or shaded by the sun, 'canopy' is the
@@ -1323,7 +1327,7 @@
         FLOOR, wall, rect, pane, door, garageDoor, windows, fascia, gableRoof, gableWindow, gableSlope,
         roofExtras, dormer, chimney, roofUnit, flatRoof, plinth, steps, porch, downpipe, hipRoof, cabin,
         wheels, car, fence, railing, patioSet, nearestDir, chair, bench, clothesline, bike, person, Occupancy,
-        lerp3, unit, outward, shade, shadeGable, shadeRound, awning, vault, ribs, marketHall, clockTower,
+        lerp3, unit, outward, inKind, withKind, shade, shadeGable, shadeRound, awning, vault, ribs, marketHall, clockTower,
         gableWall, stepGable, neckGable, hoist, terrace, arch, church, cart, bistro, crookLamp, railFence, roundTree, conifer,
         fountain, obelisk, bandstand,
         hullSolid, boat, BEAM, LENGTH, turned, underway, moorRow, bridgeRamp, bridge,

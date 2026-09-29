@@ -133,7 +133,7 @@
             { id: 'jitter', label: 'Angle jitter°', type: 'range', min: 0, max: 15, step: 0.5, value: 0, random: false,
                 hint: 'Random variation per turn (organic plants)' },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false,
+            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false,
                 hint: 'Branching systems colour by branch depth; curves are split into consecutive stretches' },
         ],
 

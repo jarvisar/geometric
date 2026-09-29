@@ -53,7 +53,7 @@
             { id: 'sMax', label: 'Lightest spacing (mm)', type: 'range', min: 1, max: 10, step: 0.1, value: 3.2, random: [2, 5] },
             { id: 'tones', label: 'Tones', type: 'range', min: 1, max: 8, step: 1, value: 4, random: false },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false },
+            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false },
         ],
 
         randomize(rng, p) {

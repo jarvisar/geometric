@@ -51,10 +51,10 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 * **Voronoi**: relaxed Voronoi cells with spiral insets, hatching or rounded "pebble" outlines.
 
 **Scenes**
-* **Town**: an isometric town built as a small 3D scene, with houses, apartments, A-frames, windmills, cars, fences, trees and yard clutter. The middle gets built up with terraces, shops and squares, and there can be a church, a clock tower, boulevards, roundabouts and a river with bridges and boats. Hidden lines are removed exactly, so only the visible outlines get plotted. The camera angle, scale, block size and how busy the streets are can all be changed.
-* **Harbour**: a fishing town on the quay with piers, moored boats, canals, docks, wharves with cranes, canal houses, a church and a clock tower. The lighthouse sits on a straight or bent breakwater or on its own island. Drawn for four pens: red and black roof hatching, blue shadows and water, yellow canopies.
-* **Fairground**: a funfair with a big wheel, a figure-of-eight roller coaster, a striped big top, a carousel, a helter skelter, swing rides, a drop tower, a pirate ship, teacups, bumper cars, a boating lake with swan pedalos, game stalls and bunting. The paths come from a Voronoi diagram, so they wind between the rides. Drawn for the same four pens as Harbour.
-* **Alpine Valley**: a block of mountain valley cut out like a museum model and drawn in the colours of a Swiss topo map, with red contours, black rock and buildings, blue water and green forest. There's a village along the valley road, hairpins up to a hut, a cable car to the highest summit, and a railway along the other side that crosses gullies on viaducts and goes through the spurs in tunnels. The contours are traced over the 3D ground, so ridges hide what's behind them.
+* **Town**: an isometric town built as a small 3D scene, with houses, apartments, A-frames, windmills, cars, fences, trees and yard clutter. The middle gets built up with terraces, shops and squares, and there can be a church, a clock tower, boulevards, roundabouts and a river with bridges and boats. Hidden lines are removed exactly, so only the visible outlines get plotted. The camera angle, scale, block size and how busy the streets are can all be changed. Up to eight pens, where 5 to 8 give cars, people, the river and fences a pen each.
+* **Harbour**: a fishing town on the quay with piers, moored boats, canals, docks, wharves with cranes, canal houses, a church and a clock tower. The lighthouse sits on a straight or bent breakwater or on its own island. Drawn for four pens: red and black roof hatching, blue shadows and water, yellow canopies. Six pens make the trees green and the people and cars purple, and eight add light blue water and brown piers and boats.
+* **Fairground**: a funfair with a big wheel, a figure-of-eight roller coaster, a striped big top, a carousel, a helter skelter, swing rides, a drop tower, a pirate ship, teacups, bumper cars, a boating lake with swan pedalos, game stalls and bunting. The paths come from a Voronoi diagram, so they wind between the rides. Drawn for the same pens as Harbour, except with eight it's the paths that go brown.
+* **Alpine Valley**: a block of mountain valley cut out like a museum model and drawn in the colours of a Swiss topo map, with red contours, black rock and buildings, blue water and green forest. There's a village along the valley road, hairpins up to a hut, a cable car to the highest summit, and a railway along the other side that crosses gullies on viaducts and goes through the spurs in tunnels. The contours are traced over the 3D ground, so ridges hide what's behind them. Six pens add yellow roads and purple people and paragliders, and eight put the contours on the snow in light blue (like glacier contours on the real maps) and the strata down the sides in brown.
 
 **Image**
 * **Image**: turns a photo into a squiggle spiral, squiggled rows, cross-hatching or a single-line TSP portrait. Works with a built-in demo scene until you drop in a picture.
@@ -67,7 +67,7 @@ Any design can also be laid out as a **grid** on one sheet. Each cell gets its o
    Nothing is ever drawn outside the margin.
 2. **Composition**: scale, rotate or offset the design, crop it to a circle,
    hexagon or diamond, and optionally draw a (double) frame.
-3. **Pens**: up to six pens. Designs with a colour split put each part on its own pen.
+3. **Pens**: up to eight pens. Designs with a colour split put each part on its own pen.
    Set pen widths to match your pens: the preview draws true-to-scale
    line widths, so you can judge ink density before committing. Hide a pen to
    leave it out of the preview and the export.
@@ -78,6 +78,9 @@ Any design can also be laid out as a **grid** on one sheet. Each cell gets its o
    * **SVG**: `width`/`height` in mm, one Inkscape layer per pen (`1 Pen 1`,
      `2 Pen 2`…), so AxiDraw's Inkscape extension, `vpype`, `saxi` and
      friends plot pens as separate layers. "One file per pen" is also available.
+     Each pen's strokes are written as one compound path, so Bambu Suite and
+     similar importers bring in one object per pen instead of thousands. Use
+     `Path > Break Apart` in Inkscape if you want to edit single strokes.
    * **PNG**: a 200 dpi picture of the preview.
 
 Every exported SVG carries its full recipe (design, parameters, seed, paper,
@@ -88,11 +91,14 @@ does the same through a URL.
 
 * **Seeds**: every random choice comes from the seed, so the same seed and settings
   always give the same drawing. `Space` rolls a new seed; `R` randomizes the
-  parameters too.
+  parameters too. `Shift+R` jumps to a random design and randomizes that.
 * **Locks**: hover a parameter and click the lock to keep it fixed while
   randomizing.
 * **Snapshots** (`S`): keep designs you like, with thumbnails, in the browser.
 * **Undo / redo**: `Ctrl+Z` / `Ctrl+Shift+Z`. Double-click a parameter label to reset it.
+  `Reset` puts the design's parameters back to defaults. The arrow next to it has
+  `Reset everything`, which does that for every design, resets the seed, paper,
+  pens and layout, and clears the locks. Undo brings it all back except the locks.
 * **Images**: the *Image* design turns a photo into spiral, squiggle, cross-hatch or
   single-line TSP art. Drop a picture onto the preview.
 * Press `?` in the app for all keyboard shortcuts.

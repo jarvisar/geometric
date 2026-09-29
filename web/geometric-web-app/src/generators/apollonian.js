@@ -66,7 +66,7 @@
             { id: 'gap', label: 'Gap (mm)', type: 'range', min: 0, max: 4, step: 0.05, value: 0, random: [0, 1],
                 hint: 'Shrinks every circle so neighbours no longer touch' },
             { type: 'section', label: 'Pens' },
-            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 4, step: 1, value: 1, random: false },
+            { id: 'pens', label: 'Pens', type: 'range', min: 1, max: 8, step: 1, value: 1, random: false },
             { id: 'penMode', label: 'Pen per', type: 'select', value: 'generation', show: p => p.pens > 1,
                 options: [['generation', 'Generation'], ['size', 'Size'], ['random', 'Random circle']] },
         ],

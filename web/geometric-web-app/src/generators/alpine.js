@@ -1,7 +1,10 @@
 /*
  * Alpine Valley: a block of mountain landscape cut out like a museum
  * diorama, drawn in the colours of a Swiss topographic map. Red-brown
- * contour lines, black rock and buildings, blue water, green forest.
+ * contour lines, black rock and buildings, blue water, green forest. Six pens
+ * add yellow roads and purple people and fliers, eight add light blue
+ * contours on the snow (like glacier contours on the real maps) and brown
+ * strata on the cut faces.
  *
  * The ground is a height field split into triangles. They go in as faces so
  * ridges hide what's behind them, and the contours are traced across each
@@ -13,11 +16,12 @@
 (function () {
     'use strict';
     const { geo, TAU } = PG;
-    const { hash, makeCamera, Scene, render, segments } = PG.iso;
-    const { wall, door, windows, gableRoof, chimney, person, unit, shadeGable, church, conifer, turned, bridge, bridgeRamp } = PG.isokit;
+    const { hash, makeCamera, Scene, renderPens, segments } = PG.iso;
+    const { wall, door, windows, gableRoof, chimney, unit, shadeGable, church, conifer, turned, bridge, bridgeRamp, withKind } = PG.isokit;
 
-    // line kinds
-    const INK = 0, RED = 1, BLUE = 2, GREEN = 3;
+    // line kinds. The last four only get pens of their own with six or eight pens.
+    const INK = 0, RED = 1, BLUE = 2, GREEN = 3, ROAD = 4, FIGURE = 5, SNOW = 6, EARTH = 7;
+    const person = withKind(FIGURE, PG.isokit.person);
 
     const smooth = (a, b, x) => geo.smoothstep(a, b, x);
     // towards the sun, low in the west as on a map lit from the top left
@@ -278,8 +282,10 @@
             }
         }
         // stitch each level's segments into polylines
-        S.kind = RED;
-        for (const segs of segsByLevel.values()) for (const line of stitch(segs)) S.line(line.map(q => [q[0], q[1], q[2] + 0.03]));
+        for (const [L, segs] of segsByLevel) {
+            S.kind = L > snow ? SNOW : RED;
+            for (const line of stitch(segs)) S.line(line.map(q => [q[0], q[1], q[2] + 0.03]));
+        }
         S.kind = BLUE;
         for (const line of stitch(shore.map(([a, b]) => [{ c: a, key: keyOf(a) }, { c: b, key: keyOf(b) }]))) {
             // take the corners off where the shore zigzags across the grid
@@ -371,7 +377,7 @@
             }
             if (run.length > 1) S.line(run);
             // strata: wavy layers, stopping short of the surface
-            S.kind = RED;
+            S.kind = EARTH;
             const layers = Math.max(3, Math.round((top - zb) / 9));
             for (let k = 1; k < layers; k++) {
                 const base = zb + ((top - zb) * k) / layers;
@@ -803,7 +809,7 @@
             L.push([pts[i][0] + nx * w / 2, pts[i][1] + ny * w / 2]);
             R.push([pts[i][0] - nx * w / 2, pts[i][1] - ny * w / 2]);
         }
-        S.kind = INK;
+        S.kind = ROAD;
         const inside = q => q[0] >= 0 && q[1] >= 0 && q[0] <= G.Lx && q[1] <= G.Ly;
         for (const side of [L, R]) {
             let run = [];
@@ -813,6 +819,8 @@
             }
             if (run.length > 1) S.line(drape(G, run));
         }
+        // roads used to be drawn in ink, and what comes after still expects it
+        S.kind = INK;
     }
 
     // Way up a slope: the cheapest route over the grid where the grade stays
@@ -1039,20 +1047,21 @@
             trail.push([q[0] - c * 1.2, q[1] - s * 1.2, q[2] - 0.2]);
         }
         for (let i = 0; i < n; i++) S.face([lead[i], lead[i + 1], trail[i + 1], trail[i]]);
-        S.kind = INK;
+        S.kind = FIGURE;
         S.loop(lead.concat(trail.slice().reverse()));
         S.kind = RED;
         for (let i = 0; i < n; i += 2) S.hatch([lead[i], lead[i + 1], trail[i + 1], trail[i]], [c, s, 0], 0.35);
-        S.kind = INK;
+        S.kind = FIGURE;
         const pilot = [x, y, z - 6.5];
         for (const f of [0, 0.3, 0.7, 1]) S.line([at(f, -0.1), pilot]);
         person(T, pilot[0], pilot[1], pilot[2] - 1.2, rng);
+        S.kind = INK;
     }
 
     // A few birds wheeling over the valley
     function birds(T, x, y, z, rng) {
         const S = T.S, c = T.cam;
-        S.kind = INK;
+        S.kind = FIGURE;
         for (let i = rng.int(3, 6); i > 0; i--) {
             const bx = x + rng.range(-15, 15), by = y + rng.range(-15, 15), bz = z + rng.range(-5, 5), w = rng.range(1, 1.6);
             const at = (sx, dz) => [bx + c.rx * sx, by + c.ry * sx, bz + dz];
@@ -1285,8 +1294,9 @@
             { id: 'fliers', label: 'Paragliders & birds', type: 'checkbox', value: true, random: 0.6 },
             { type: 'section', label: 'Pens' },
             { id: 'inks', label: 'Pens', type: 'select', value: 'four', random: false,
-                options: [['four', 'Black, red, blue, green'], ['three', 'Black, red, blue'], ['one', 'One pen']],
-                hint: 'Colours go to pens 1 to 4, matching the default pen set. With three, the forest goes in black' },
+                options: [['eight', 'Eight, adding light blue and brown'], ['six', 'Six, adding yellow and purple'],
+                    ['four', 'Black, red, blue, green'], ['three', 'Black, red, blue'], ['one', 'One pen']],
+                hint: 'Each colour goes to its pen in the default pen set. With three, the forest goes in black. Six adds yellow roads and purple people and fliers, eight adds light blue contours on the snow and brown strata' },
         ],
 
         generate(p, ctx) {
@@ -1327,13 +1337,13 @@
                 lit: n => (n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2]) / Math.hypot(n[0], n[1], n[2]) >= 0.75 * SUN[2],
             };
             buildValley(T, G, V, E, rng);
-            const kinds = render(S);
-            const penOf = { four: [0, 1, 2, 3], three: [0, 1, 2, 0], one: [0, 0, 0, 0] }[p.inks] || [0, 1, 2, 3];
-            const byPen = [];
-            kinds.forEach((paths, kind) => {
-                const into = byPen[penOf[kind]] || (byPen[penOf[kind]] = []);
-                for (const q of paths) into.push(q);
-            });
+            // pen for each kind (ink, red, blue, green, roads, figures, snow contours, strata)
+            const penOf = {
+                eight: [0, 1, 2, 3, 4, 5, 6, 7], six: [0, 1, 2, 3, 4, 5, 1, 1], four: [0, 1, 2, 3, 0, 0, 1, 1],
+                three: [0, 1, 2, 0, 0, 0, 1, 1], one: [0, 0, 0, 0, 0, 0, 0, 0],
+            }[p.inks] || [0, 1, 2, 3, 0, 0, 1, 1];
+            // roads and figures used to be drawn in ink, snow contours and strata in red
+            const byPen = renderPens(S, penOf, [INK, RED, BLUE, GREEN, INK, INK, RED, RED]);
             const layers = [];
             byPen.forEach((paths, pen) => layers.push({ pen, paths }));
             return { layers };
