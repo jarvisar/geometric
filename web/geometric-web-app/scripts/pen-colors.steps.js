@@ -30,7 +30,7 @@ await sleep(100);
 const town = await evaluate(`({ pens: plotterApp.state.params.town.pens,
     legend: document.querySelector('#penList').textContent,
     hint: document.querySelector('#penAssignmentHint').textContent })`);
-if (town.pens !== 4 || !town.legend.includes('Streets') || !town.hint.includes('plants green')) {
+if (town.pens !== 4 || !town.legend.includes('Streets') || !town.hint.includes('green plants')) {
     throw new Error(`Town defaults or legend missing: ${JSON.stringify(town)}`);
 }
 await shot('town-color-default.png');

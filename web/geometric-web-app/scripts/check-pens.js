@@ -56,7 +56,7 @@ for (const def of PG.generators.filter(d => !only.length || only.includes(d.id))
 }
 
 const variants = {
-    image: [{ mode: 'hatch' }, { mode: 'squiggle', join: true }, { mode: 'squiggle', join: false }, { mode: 'tsp', points: 800 }],
+    image: [{ mode: 'hatch' }, { mode: 'squiggle', join: true }, { mode: 'squiggle', join: false }, { mode: 'tsp', points: 800 }, { mode: 'tsp', points: 5000, budget: 0 }],
     whirl: [{ layout: 'single', style: 'spiral' }, { layout: 'single', style: 'nested' }],
     truchet: [{ type: 'triangles', otherHalf: true }, { type: 'triangles', otherHalf: false }],
     islamic: [{ showTiling: true, theta2: 35 }],

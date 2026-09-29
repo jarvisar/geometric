@@ -17,6 +17,7 @@
 (function () {
     'use strict';
     const { geo, TAU } = PG;
+    let lastTour = null;
 
     // ---- built-in demo: three spheres on a floor with soft shadows and
     // occlusion (sphere shadow / occlusion approximations after Inigo Quilez)
@@ -531,6 +532,9 @@
             }
 
             // ---- TSP
+            // The tour has a time budget. Reuse its geometry when only the inks change.
+            const tourKey = JSON.stringify([ctx.seed, area, ctx.shape.kind, p.fit, p.brightness, p.contrast, p.invert, p.points, p.budget]);
+            if (lastTour && lastTour.image === img && lastTour.key === tourKey) return color([lastTour.path]);
             const inside = (x, y) => ctx.shape.dist(x, y) > 0.2;
             // squared so light areas thin out quickly; paper-white stays empty
             const weight = (x, y) => { const d = Math.max(0, dark(x, y) - 0.03) / 0.97; return d * d; };
@@ -538,7 +542,9 @@
             if (!pts.length || pts[0].length < 2) return [];
             const [X, Y] = pts;
             const order = tour(X, Y, p.budget);
-            return color([order.map(i => [X[i], Y[i]])]);
+            const path = order.map(i => [X[i], Y[i]]);
+            lastTour = { image: img, key: tourKey, path };
+            return color([path]);
         },
     });
 })();

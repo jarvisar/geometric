@@ -49,7 +49,7 @@
         apollonian: profile(4, 'Recursive generations or circle sizes choose the color.', jewel),
         subdivide: profile(4, 'Quilt patches use color to distinguish their fill tones.', earth),
         voronoi: profile(4, 'Neighboring cells form color regions, or colors follow fill style.', botanical),
-        town: profile(4, 'Buildings stay dark, streets and fences brown, plants green, and water blue. More pens separate cars, people and details.'),
+        town: profile(4, 'Default palette: dark buildings, brown streets and fences, green plants, blue water. More pens separate cars, people and details.'),
         harbour: profile(4, 'Roofs, shadows and awnings use separate inks. More pens separate plants, figures, water and wood.'),
         fairground: profile(4, 'Rides, tents and shadows use separate inks. More pens separate plants, people, water and paths.'),
         alpine: profile(4, 'Contours, rock, water and forest use separate inks. More pens separate roads, figures, snow and strata.'),
@@ -203,7 +203,7 @@
     };
     P.apply = (def, out, p) => {
         const config = P.designs[def.id];
-        if (!config || P.scenes[def.id]) return out;
+        if (!config || !out || P.scenes[def.id]) return out;
         const n = P.count(p.pens);
         const groups = Array.isArray(out) ? [out] : (out.layers || []).map(l => Array.isArray(l) ? l : l.paths);
         if (config.style === 'sequence') out = P.sequence(groups.flat(), n);
