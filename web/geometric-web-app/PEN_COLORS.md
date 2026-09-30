@@ -18,6 +18,7 @@ preview, clipping and export. Custom pen colors still belong to the user.
 | Flower | Petal families, offset for the inner ring |
 | Phyllotaxis | Seed growth bands and Fibonacci spiral families |
 | Attractor | Depth or elapsed time |
+| Ribbon Sculpture | Progress around each ribbon, offset between linked loops |
 | Flow Field | Flow direction, position or coherent noise |
 | Ridgelines | Near-to-far depth bands |
 | Topographic | Elevation bands, with index contours in the darkest ink |
@@ -33,7 +34,10 @@ preview, clipping and export. Custom pen colors still belong to the user.
 | L-system | Branch depth or progress along an unbranched curve |
 | Circle Packing, Apollonian | Circle size or recursive generation |
 | Subdivision, Voronoi | Quilt tones or coherent patches of neighboring cells |
-| Town, Harbour, Fairground, Alpine | Scene materials and objects |
+| Town, Harbour, Fairground, Alpine, Skyline District | Scene materials and objects |
+| Infinite Stairwell | Wall positions and depth bands |
+| Tidal Atlas | Water, then elevation bands on the land |
+| Cosmic Comics | Dark outlines, with accent inks alternating among skies, planets and terrain |
 | Image | Tonal bands in every drawing mode |
 
 Checks cover all pen counts, deterministic output, unchanged geometry, legacy

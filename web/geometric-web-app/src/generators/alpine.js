@@ -1,26 +1,16 @@
 /*
- * Alpine Valley: a block of mountain landscape cut out like a museum
- * diorama, drawn in the colours of a Swiss topographic map. Red-brown
- * contour lines, black rock and buildings, blue water, green forest. Six pens
- * add yellow roads and purple people and fliers, eight add light blue
- * contours on the snow (like glacier contours on the real maps) and brown
- * strata on the cut faces.
- *
- * The ground is a height field split into triangles. They go in as faces so
- * ridges hide what's behind them, and the contours are traced across each
- * triangle so they sit exactly on it. The mountains' outlines are the edges
- * where the ground turns away from the camera. The valley runs away from us
- * up the page with the river coming down it towards us, sometimes through a
- * lake, and out of the cut face at the front.
+ * Alpine Valley: a village beneath a horseshoe of peaks, with a mountain
+ * railway, timber chalets and a river. Terrain handles occlusion while the
+ * architecture shares its roof hatching and details with the other scenes.
  */
 (function () {
     'use strict';
     const { geo, TAU } = PG;
     const { hash, makeCamera, Scene, segments } = PG.iso;
-    const { wall, door, windows, gableRoof, chimney, unit, shadeGable, church, conifer, turned, bridge, bridgeRamp, withKind } = PG.isokit;
+    const { wall, door, pane, windows, gableRoof, chimney, unit, shadeGable, church, conifer, turned, bridge, bridgeRamp, withKind, patioSet, bench } = PG.isokit;
 
-    // line kinds. The last four only get pens of their own with six or eight pens.
-    const INK = 0, RED = 1, BLUE = 2, GREEN = 3, ROAD = 4, FIGURE = 5, SNOW = 6, EARTH = 7;
+    const INK = 0, RED = 1, SHADOW = 2, ACCENT = 3, GREEN = 4, FIGURE = 5, BLUE = 6, ROAD = 7;
+    const SNOW = SHADOW, EARTH = ROAD;
     const person = withKind(FIGURE, PG.isokit.person);
 
     const smooth = (a, b, x) => geo.smoothstep(a, b, x);
@@ -87,6 +77,12 @@
         at(x, y) { return this.sample(this.h, x, y); }
         wet(x, y) { return this.sample(this.h, x, y) < this.sample(this.W, x, y); }
 
+        bounds() {
+            let lo = Infinity, hi = -Infinity;
+            for (const z of this.h) { lo = Math.min(lo, z); hi = Math.max(hi, z); }
+            return [lo, hi];
+        }
+
         // steepness (rise over run) at (x, y)
         slope(x, y) {
             const e = Math.max(this.dx, this.dy);
@@ -117,90 +113,63 @@
         return cum;
     };
 
-    // The landscape: a valley from the front of the block to the back with a
-    // floor that climbs gently upstream, mountains either side that get taller
-    // towards the back, gullies worn into them, a few summits, a lake in a dip
-    // in the floor and a river down the middle.
+    // Keep the foreground broad enough for streets and buildings. Three offset
+    // summits close the valley behind the railway instead of enclosing the viewer.
     function landscape(G, p, rng) {
-        const { Lx, Ly } = G, M = Math.min(Lx, Ly), N = PG.makeNoise(rng), relief = p.relief;
-        // valley line: in through the front face near the corner, out at the back, with a bend or two
-        const bends = rng.range(0.06, 0.13) * M, ph = rng.range(0, TAU), k = rng.pick([1, 1.5, 2]);
-        const enter = rng.chance(0.5) ? [Lx * rng.range(0.22, 0.4), -12] : [-12, Ly * rng.range(0.22, 0.4)];
-        const leave = [Lx * rng.range(0.6, 0.85) + 12, Ly * rng.range(0.6, 0.85) + 12];
-        const axis = [];
-        for (let i = 0; i <= 40; i++) {
-            const t = i / 40, x = geo.lerp(enter[0], leave[0], t), y = geo.lerp(enter[1], leave[1], t);
-            const dx = leave[0] - enter[0], dy = leave[1] - enter[1], l = Math.hypot(dx, dy), w = bends * Math.sin(Math.PI * k * t + ph) * Math.sin(Math.PI * t);
-            axis.push([x - (dy / l) * w, y + (dx / l) * w]);
-        }
-        const cum = lengths(axis);
-        // the river winds about on the floor, smoothed or its banks come out kinked
-        const river = geo.chaikin(axis.map(([x, y], i) => {
-            const a = axis[Math.max(0, i - 1)], b = axis[Math.min(axis.length - 1, i + 1)], l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-            const w = M * 0.035 * Math.sin(i * 0.9 + ph);
-            return [x - ((b[1] - a[1]) / l) * w, y + ((b[0] - a[0]) / l) * w];
-        }), 2);
-        const rcum = lengths(river);
-        const floorRise = relief * 0.12, W0 = M * p.valley * 0.5, wr = geo.clamp(M * 0.018, 2, 4.5);
-        const lake = rng.chance(p.lake) ? { t: rng.range(0.4, 0.62), len: rng.range(0.12, 0.2) } : null;
-        // the floor opens out on one side lower down, where the village goes
-        const vside = rng.sign(), tv = rng.range(0.14, 0.3);
-        // flat where the lake is, so the river comes in at about the lake's level
-        const floorAt = t => floorRise * (lake ? t - geo.clamp(t - (lake.t - lake.len / 2), 0, lake.len) : t);
-        // a metre under the floor round it, or the bumps in the floor turn its edge into puddles
-        const lakeLevel = lake ? floorAt(lake.t - lake.len / 2) - 1 : 0;
-        const peaks = [];
-        for (let tries = 0; tries < 40 && peaks.length < rng.int(3, 5); tries++) {
-            const q = { x: Lx * rng.range(0.05, 1), y: Ly * rng.range(0.05, 1), r: M * rng.range(0.1, 0.2), h: relief * rng.range(0.3, 0.55) };
-            const { t, d } = nearest(axis, cum, q.x, q.y);
-            if (d > W0 + M * 0.22 && t > 0.3) peaks.push(q);
-        }
-        const f = 3.2 / M;
-        for (let j = 0; j <= G.ny; j++) {
-            for (let i = 0; i <= G.nx; i++) {
-                const x = G.px(i), y = G.py(j), v = G.id(i, j);
-                const { t, d, side } = nearest(axis, cum, x, y);
-                // the sides start gentle off the floor and steepen towards the ridges
-                const wv = W0 * (1.15 - 0.5 * t) * (side === vside ? 1 + 0.9 * Math.exp(-(((t - tv) / 0.1) ** 2)) : 1), u = Math.max(0, d - wv) / (M * 0.56);
-                const up = Math.pow(Math.min(1.3, u), 1.65);
-                // gullies: creases where warped noise crosses zero, rounded ridges between,
-                // worn deeper the higher up they are
-                const wx = x + 14 * N.fbm2(x * f * 0.6, y * f * 0.6, 3), wy = y + 14 * N.fbm2(x * f * 0.6 + 7, y * f * 0.6 - 3, 3);
-                const crease = 0.5 - Math.abs(N.fbm2(wx * f, wy * f, 4));
-                const rough = N.fbm2(x * f * 3, y * f * 3, 3);
-                let z = floorAt(t) + relief * (0.5 + 0.5 * t) * up + relief * 0.22 * crease * Math.min(1, u * 1.3) + relief * 0.03 * rough * u * u;
-                for (const q of peaks) {
-                    const r2 = ((x - q.x) ** 2 + (y - q.y) ** 2) / (q.r * q.r);
-                    z += q.h * Math.exp(-r2 * 1.6) * smooth(0.15, 0.8, u);
-                }
-                // flat-ish floor with a little roll to it
-                z += 0.6 * N.noise2(x * f * 2, y * f * 2) * Math.max(0, 1 - u * 4);
-                let W = z - 20;
-                // the river channel, its surface a little under the floor. The river never strays
-                // more than M * 0.035 off the valley line, so only look for it near there.
-                const rv = d < M * 0.035 + wr + G.dx * 1.5 + 2 ? nearest(river, rcum, x, y) : { d: Infinity };
-                if (rv.d < wr + G.dx * 1.5) {
-                    let level = floorAt(rv.t) - 0.5;
-                    if (lake && rv.t < lake.t) level = Math.min(level, lakeLevel);
-                    if (rv.d < wr) z = Math.min(z, level - 1.1 * (1 - (rv.d / wr) ** 2));
-                    // banks kept just above the water, otherwise dips in the floor turn into little pools
-                    else z = Math.max(z, level + 0.25);
-                    W = level;
-                }
-                // the lake takes over from the river where it runs through
-                if (lake) {
-                    const dt = Math.abs(t - lake.t) / (lake.len / 2), bowl = Math.max(0, 1 - dt * dt) * Math.max(0, 1 - (d / (wv * 1.05)) ** 2);
-                    if (bowl > 0) {
-                        z = Math.min(z, geo.lerp(z, lakeLevel - 3.5, Math.min(1, bowl * 1.8)));
-                        W = lakeLevel;
-                    }
-                }
-                G.h[v] = z;
-                G.W[v] = W;
+        const { Lx, Ly } = G, M = Math.min(Lx, Ly), N = PG.makeNoise(rng);
+        const phase = rng.range(0, TAU), bend = rng.range(0.035, 0.065) * Lx;
+        const axis = Array.from({ length: 49 }, (_, i) => {
+            const t = i / 48;
+            return [Lx * (0.46 - 0.12 * t) + bend * Math.sin(t * TAU + phase), -8 + (Ly + 16) * t];
+        });
+        const cum = lengths(axis), river = geo.chaikin(axis, 2), rcum = lengths(river);
+        const W0 = M * p.valley * 0.5, wr = geo.clamp(M * 0.018, 2.1, 4.5);
+        const lake = rng.chance(p.lake) ? { t: rng.range(0.57, 0.65), len: 0.18 } : null;
+        const floorAt = t => 1.4 + t * Math.min(4, Ly * 0.017);
+        const lakeLevel = lake ? floorAt(lake.t - lake.len / 2) - 0.55 : 0;
+        const peaks = [
+            { x: Lx * rng.range(0.04, 0.14), y: Ly * rng.range(0.76, 0.87), h: p.relief * 0.76, r: M * 0.68 },
+            { x: Lx * rng.range(0.38, 0.5), y: Ly * rng.range(0.87, 0.96), h: p.relief, r: M * 0.66 },
+            { x: Lx * rng.range(0.81, 0.92), y: Ly * rng.range(0.77, 0.9), h: p.relief * 0.83, r: M * 0.7 },
+        ];
+        peaks.forEach(q => { q.phase = rng.range(0, TAU); });
+        for (let j = 0; j <= G.ny; j++) for (let i = 0; i <= G.nx; i++) {
+            const x = G.px(i), y = G.py(j), v = G.id(i, j);
+            const { t, d } = nearest(axis, cum, x, y);
+            let mountain = 0;
+            for (const q of peaks) {
+                const dx = x - q.x, dy = (y - q.y) * 1.12, a = Math.atan2(dy, dx);
+                const r = Math.hypot(dx, dy) / (q.r * (1 + 0.1 * Math.cos(3 * a + q.phase)));
+                const height = q.h * Math.pow(Math.max(0, 1 - r), 1.22);
+                mountain = Math.max(mountain, height);
             }
+            mountain *= smooth(0.38, 0.74, y / Ly);
+            mountain *= 1 - 0.72 * Math.exp(-((d / Math.max(10, W0)) ** 2)) * (1 - smooth(0.64, 0.91, t));
+            const foothill = M * 0.065 * Math.exp(-(((x / Lx - 0.08) / 0.2) ** 2 + ((y / Ly - 0.34) / 0.24) ** 2));
+            let z = floorAt(t) + mountain + foothill + 0.35 * N.noise2(x / 24, y / 24);
+            z += mountain * 0.012 * N.fbm2(x / 18, y / 18, 2);
+            let W = z - 30;
+            const rv = nearest(river, rcum, x, y);
+            const channel = wr * (1 + 0.12 * Math.sin(t * 19 + phase));
+            if (rv.d < channel + G.dx * 1.5 && t < 0.79) {
+                const level = lake && t < lake.t ? Math.min(floorAt(rv.t) - 0.55, lakeLevel) : floorAt(rv.t) - 0.55;
+                if (rv.d < channel) z = Math.min(z, level - 1.2 * (1 - (rv.d / channel) ** 2));
+                else z = Math.max(z, level + 0.15);
+                W = level;
+            }
+            if (lake) {
+                const u = (t - lake.t) / (lake.len / 2), cross = d / (W0 * 0.9);
+                const bowl = Math.max(0, 1 - u * u - cross * cross);
+                if (bowl > 0) {
+                    z = geo.lerp(z, lakeLevel - 3, Math.min(1, bowl * 2.6));
+                    W = lakeLevel;
+                }
+            }
+            G.h[v] = z;
+            G.W[v] = W;
         }
         G.split();
-        return { axis, cum, river, rcum, wr, lake, lakeLevel, W0, floorAt, vside, tv };
+        return { axis, cum, river, rcum, wr, lake, lakeLevel, W0, floorAt, vside: -1, tv: 0.27, peaks };
     }
 
     // ------------------------------------------------------------------
@@ -254,15 +223,19 @@
                         if (e.length === 2) shore.push(e);
                     }
                     // contours: one segment per level that crosses the triangle
-                    const zs = tri.map(v => h[v]), lo = Math.min(...zs), hi = Math.max(...zs);
-                    for (let L = Math.ceil(lo / iv) * iv; L < hi; L += iv) {
-                        if (L > snow && Math.round(L / iv) % 4) continue;
+                    const zs = tri.map((v, q) => p.contours ? h[v] : h[v] - V.snowAt(P[q][0], P[q][1]));
+                    const lo = Math.min(...zs), hi = Math.max(...zs);
+                    const levels = [];
+                    if (p.contours) for (let L = Math.ceil(lo / iv) * iv; L < hi; L += iv) levels.push(L);
+                    else if (lo < 0 && hi > 0) levels.push(0);
+                    for (const L of levels) {
+                        if (p.contours && L > snow && Math.round(L / iv) % 4) continue;
                         const e = [];
                         for (let q = 0; q < 3; q++) {
                             const a = q, b = (q + 1) % 3, za = zs[a] - L, zb = zs[b] - L;
                             if ((za >= 0) !== (zb >= 0)) {
                                 const c = cut(P[a], P[b], za, zb);
-                                if (G.sample(W, c[0], c[1]) <= L) e.push({ c, key: Math.min(tri[a], tri[b]) * 1e6 + Math.max(tri[a], tri[b]) });
+                                if (G.sample(W, c[0], c[1]) <= c[2]) e.push({ c, key: Math.min(tri[a], tri[b]) * 1e6 + Math.max(tri[a], tri[b]) });
                             }
                         }
                         if (e.length === 2) {
@@ -272,7 +245,8 @@
                     }
                     // cliff marks down the fall line on the steep faces
                     const sl = Math.hypot(n[0], n[1]) / n[2];
-                    if (p.rock && sl > 1.05 && hach.chance(Math.min(0.7, (sl - 1.05) * 0.45) * p.rock)) {
+                    S.kind = INK;
+                    if (p.rock && sl > 1.2 && hach.chance(Math.min(0.22, (sl - 1.2) * 0.18) * p.rock)) {
                         const c = [(P[0][0] + P[1][0] + P[2][0]) / 3, (P[0][1] + P[1][1] + P[2][1]) / 3];
                         const g = [n[0] / n[2], n[1] / n[2]], gl = Math.hypot(g[0], g[1]), len = Math.min(G.dx * 1.2, 2.2);
                         const e = [c[0] + (g[0] / gl) * len, c[1] + (g[1] / gl) * len];
@@ -283,7 +257,7 @@
         }
         // stitch each level's segments into polylines
         for (const [L, segs] of segsByLevel) {
-            S.kind = L > snow ? SNOW : RED;
+            S.kind = !p.contours || L >= snow ? SNOW : EARTH;
             for (const line of stitch(segs)) S.line(line.map(q => [q[0], q[1], q[2] + 0.03]));
         }
         S.kind = BLUE;
@@ -313,6 +287,65 @@
                 if (i === nx - 1 && fc(i, j, d0(i, j) ? 0 : 1)) edge(G.id(nx, j), G.id(nx, j + 1));
             }
         }
+    }
+
+    function terrainMarks(T, G, V) {
+        const { S, p, k } = T, e = Math.max(0.8, G.dx * 0.6);
+        const gap = Math.max(2.1, 0.9 / k);
+        S.kind = SHADOW;
+        for (let y = gap; y < G.Ly; y += gap) {
+            let run = [];
+            const flush = () => { if (run.length > 2) S.line(run); run = []; };
+            for (let x = 1; x < G.Lx; x += 1.2) {
+                const yy = y + x * 0.16;
+                if (yy >= G.Ly) { flush(); break; }
+                const z = G.at(x, yy), gx = (G.at(x + e, yy) - G.at(x - e, yy)) / (2 * e);
+                const gy = (G.at(x, yy + e) - G.at(x, yy - e)) / (2 * e);
+                const light = (-gx * SUN[0] - gy * SUN[1] + SUN[2]) / Math.hypot(gx, gy, 1);
+                if (p.rock > 0 && z > 10 && z < V.snowAt(x, yy) && light < 0.4 * p.rock + 0.04 && !G.wet(x, yy)) run.push([x, yy, z + 0.07]);
+                else flush();
+            }
+            flush();
+        }
+        S.kind = INK;
+        for (const peak of V.peaks) {
+            for (const angle of [-2.65, -1.65, -0.75]) {
+                const line = [];
+                for (let i = 0; i < 40; i++) {
+                    const t = i / 39, r = peak.r * t * 0.78;
+                    const x = peak.x + Math.cos(angle + 0.1 * Math.sin(t * 5 + peak.phase)) * r;
+                    const y = peak.y + Math.sin(angle) * r;
+                    if (x < 0 || y < 0 || x > G.Lx || y > G.Ly) break;
+                    const z = G.at(x, y);
+                    if (z < 12) break;
+                    line.push([x, y, z + 0.08]);
+                }
+                if (p.rock && line.length > 2) S.line(line);
+            }
+        }
+        const rng = new PG.RNG(hash(p.seed, 907));
+        S.kind = BLUE;
+        for (let y = 2; y < G.Ly; y += Math.max(2.1, 0.9 / k)) for (let x = 2; x < G.Lx; x += 5) {
+            const xx = x + rng.range(-1.5, 1.5), yy = y + rng.range(-0.5, 0.5), len = rng.range(1.2, 3.5);
+            const a = [xx - T.cam.rx * len / 2, yy - T.cam.ry * len / 2];
+            const b = [xx + T.cam.rx * len / 2, yy + T.cam.ry * len / 2];
+            if (G.wet(...a) && G.wet(...b) && rng.chance(0.68)) S.line([[...a, G.sample(G.W, ...a) + 0.08], [...b, G.sample(G.W, ...b) + 0.08]]);
+        }
+        S.kind = INK;
+    }
+
+    function groundShadow(T, G, vertices) {
+        const shadow = PG.iso.hull(vertices.map(([x, y, z]) => {
+            let qx = x, qy = y;
+            for (let i = 0; i < 4; i++) {
+                const h = Math.max(0, z - G.at(qx, qy));
+                qx = x + 0.65 * h; qy = y - 0.4 * h;
+            }
+            return [qx, qy];
+        }));
+        T.S.kind = SHADOW;
+        for (const line of geo.hatch([shadow], 0.65 / T.k, Math.atan2(T.cam.ry, T.cam.rx))) T.S.line(drape(G, line, 0.1));
+        T.S.kind = INK;
     }
 
     const keyOf = c => `${Math.round(c[0] * 1000)},${Math.round(c[1] * 1000)}`;
@@ -356,7 +389,7 @@
         if (cam.facing(-1, 0, 0)) sides.push({ n: G.ny, pt: j => [0, G.py(j)], v: j => G.id(0, j) });
         if (cam.facing(0, 1, 0)) sides.push({ n: G.nx, pt: i => [G.px(i), G.Ly], v: i => G.id(i, G.ny) });
         if (cam.facing(1, 0, 0)) sides.push({ n: G.ny, pt: j => [G.Lx, G.py(j)], v: j => G.id(G.nx, j) });
-        const top = Math.max(...G.h);
+        const [, top] = G.bounds();
         for (const sd of sides) {
             const pts = [];
             for (let i = 0; i <= sd.n; i++) pts.push([...sd.pt(i), G.h[sd.v(i)], G.W[sd.v(i)]]);
@@ -423,84 +456,39 @@
         }
     }
 
-    // Railway along the far side of the valley. It keeps to a steady climb, so
-    // it follows the slope in and out of the gullies, smoothed into gentle
-    // curves. Where that leaves it above the ground it goes over on a
-    // viaduct, where it's below it goes into a tunnel, and in between it
-    // runs on a shelf cut into the slope.
-    function railLine(G, V, side, rng) {
-        const zmin = Math.min(...G.h), zmax = Math.max(...G.h), M = Math.min(G.Lx, G.Ly), total = V.cum[V.cum.length - 1];
-        const z0 = V.floorAt(0) + (zmax - zmin) * rng.range(0.13, 0.2), grade = rng.range(0.02, 0.032);
-        // how far out from the valley line the ground first gets up to the track, capped
-        // so it doesn't go off to the block edge where the ground stays low
-        const samples = [];
-        for (let t = -0.12; t <= 1.12; t += 0.008) {
-            const q = axisAt(V, geo.clamp(t, 0, 1)), ex = t < 0 ? t * total : t > 1 ? (t - 1) * total : 0;
-            const s = { x: q.x + q.ux * ex, y: q.y + q.uy * ex, ux: q.ux, uy: q.uy, nx: -q.uy * side, ny: q.ux * side, d: V.W0 * 0.4 };
-            const z = z0 + grade * t * total;
-            while (s.d < M * 0.6 && G.at(s.x + s.nx * s.d, s.y + s.ny * s.d) < z) s.d += 1;
-            samples.push(s);
+    // A crossing behind the village gives the train a clear silhouette and keeps
+    // the river visible beneath a continuous run of stone arches.
+    function railLine(G, V, rng) {
+        const pts = [], zs = [], inside = [], kind = [];
+        const lift = Math.max(9, Math.min(14, G.Lx * 0.067));
+        const z0 = V.floorAt(0.5) + lift, phase = rng.range(-0.2, 0.2);
+        const n = Math.ceil((G.Lx + 16) / 2);
+        for (let i = 0; i <= n; i++) {
+            const t = i / n, x = -8 + (G.Lx + 16) * t;
+            const y = G.Ly * (0.48 + 0.055 * Math.sin(Math.PI * t + phase));
+            const z = z0 + t * 2.2, ground = G.at(x, y);
+            pts.push([x, y]); zs.push(z);
+            inside.push(x > 1 && x < G.Lx - 1 && y > 1 && y < G.Ly - 1);
+            kind.push(ground > z + 5 ? 'tunnel' : ground < z - 3.5 ? 'bridge' : 'shelf');
         }
-        // smooth hard, so the curves come out wide
-        const box = (arr, r) => arr.map((_, i) => {
-            let sum = 0;
-            for (let k = -r; k <= r; k++) sum += arr[geo.clamp(i + k, 0, arr.length - 1)];
-            return sum / (2 * r + 1);
-        });
-        let ds = samples.map(s => s.d);
-        for (let pass = 0; pass < 3; pass++) ds = box(ds, 12);
-        // on the inside of a bend the offsets can cross over, so drop any point that goes backwards
-        let pts = [];
-        samples.forEach((s, i) => {
-            const q = [s.x + s.nx * ds[i], s.y + s.ny * ds[i]], last = pts[pts.length - 1];
-            if (!last || (q[0] - last[0]) * s.ux + (q[1] - last[1]) * s.uy > 0.5) pts.push(q);
-        });
-        for (let pass = 0; pass < 2; pass++) {
-            const xs = box(pts.map(q => q[0]), 4), ys = box(pts.map(q => q[1]), 4);
-            pts = xs.map((x, i) => [x, ys[i]]);
-        }
-        pts = geo.resample(pts, 2);
-        const cum = lengths(pts), zs = cum.map(s => z0 - grade * 0.12 * total + grade * s);
-        // what each stretch is, ignoring short ones
-        const inside = pts.map(([x, y]) => x > 0 && y > 0 && x < G.Lx && y < G.Ly);
-        let kind = pts.map(([x, y], i) => {
-            const g = G.at(x, y) - zs[i];
-            return g < -3.5 ? 'bridge' : g > 5 ? 'tunnel' : 'shelf';
-        });
-        const tidy = (k, min, into) => {
-            let i = 0;
-            while (i < kind.length) {
-                let j = i;
-                while (j < kind.length && kind[j] === kind[i]) j++;
-                if (kind[i] === k && (j - i) * 2 < min) for (let q = i; q < j; q++) kind[q] = into;
-                i = j;
-            }
-        };
-        tidy('bridge', 14, 'shelf');
-        tidy('tunnel', 24, 'shelf');
-        tidy('shelf', 8, 'bridge');
-        // the shelf: ground under the track and just either side set to its level
         pts.forEach(([x, y], i) => {
             if (kind[i] !== 'shelf' || !inside[i]) return;
-            for (let dj = -4; dj <= 4; dj++) {
-                for (let di = -4; di <= 4; di++) {
-                    const gi = Math.round(x / G.dx) + di, gj = Math.round(y / G.dy) + dj;
-                    if (gi < 0 || gj < 0 || gi > G.nx || gj > G.ny) continue;
-                    const d = Math.hypot(G.px(gi) - x, G.py(gj) - y);
-                    if (d > 5.5) continue;
-                    const v = G.id(gi, gj), w = 1 - smooth(3, 5.5, d);
-                    G.h[v] = geo.lerp(G.h[v], zs[i] - 0.3, w);
-                }
+            for (let dj = -3; dj <= 3; dj++) for (let di = -3; di <= 3; di++) {
+                const gi = Math.round(x / G.dx) + di, gj = Math.round(y / G.dy) + dj;
+                if (gi < 0 || gj < 0 || gi > G.nx || gj > G.ny) continue;
+                const d = Math.hypot(G.px(gi) - x, G.py(gj) - y);
+                if (d > 4.5) continue;
+                const v = G.id(gi, gj), f = 1 - smooth(2.5, 4.5, d);
+                G.h[v] = geo.lerp(G.h[v], zs[i], f);
+                G.W[v] = Math.min(G.W[v], G.h[v] - 0.5);
             }
         });
-        return { pts, zs, kind, inside };
+        return { pts, zs, inside, kind };
     }
-
-    // The valley road along one side of the river, pushed out round the lake
     function mainRoad(G, V, side) {
         const off = V.W0 * 0.62, qs = [], os = [];
         for (let i = 0; i <= 60; i++) {
-            const q = axisAt(V, -0.05 + (1.1 * i) / 60), nx = -q.uy * side, ny = q.ux * side;
+            const q = axisAt(V, 0.02 + (0.62 * i) / 60), nx = -q.uy * side, ny = q.ux * side;
             let o = off;
             while (o < off + 80 && (G.wet(q.x + nx * o, q.y + ny * o) || G.wet(q.x + nx * (o - 5), q.y + ny * (o - 5)))) o += 1;
             qs.push([q.x, q.y, nx, ny]);
@@ -578,7 +566,7 @@
                 E.top = top;
             }
         }
-        if (p.railway) E.rail = railLine(G, V, -side, rng);
+        if (p.railway) E.rail = railLine(G, V, rng);
         G.split();
         return E;
     }
@@ -765,10 +753,10 @@
 
     // Keeps things that stand on the ground out of each other's way
     class Claims {
-        constructor() { this.cells = new Map(); }
+        constructor() { this.cells = new Map(); this.radius = 0; }
         key(x, y) { return `${Math.floor(x / 8)},${Math.floor(y / 8)}`; }
         free(x, y, r) {
-            const i0 = Math.floor(x / 8), j0 = Math.floor(y / 8), n = Math.ceil((r + 12) / 8);
+            const i0 = Math.floor(x / 8), j0 = Math.floor(y / 8), n = Math.ceil((r + this.radius) / 8);
             for (let i = i0 - n; i <= i0 + n; i++) {
                 for (let j = j0 - n; j <= j0 + n; j++) {
                     for (const [a, b, q] of this.cells.get(`${i},${j}`) || []) if ((a - x) ** 2 + (b - y) ** 2 < (q + r) ** 2) return false;
@@ -777,6 +765,7 @@
             return true;
         }
         take(x, y, r) {
+            this.radius = Math.max(this.radius, r);
             const k = this.key(x, y);
             if (!this.cells.has(k)) this.cells.set(k, []);
             this.cells.get(k).push([x, y, r]);
@@ -909,21 +898,48 @@
         const zs = [[-L / 2, -D / 2], [L / 2, -D / 2], [L / 2, D / 2], [-L / 2, D / 2]].map(([a, b]) => { const q = F0.P(a, b, 0); return G.at(q[0], q[1]); });
         const zlo = Math.min(...zs), zhi = Math.max(...zs), F = turned(x, y, zhi + 0.3, ang);
         const fp = [-L / 2, -D / 2, L / 2, D / 2], top = floors * 2.8;
+        groundShadow(T, G, [-1, 1].flatMap(a => [-1, 1].flatMap(b => [F.P(a * L / 2, b * D / 2, 0), F.P(a * (L / 2 + 0.7), b * (D / 2 + 0.7), top + D * 0.3)])));
         S.kind = INK;
         S.box(F, -L / 2 - 0.2, -D / 2 - 0.2, zlo - zhi - 1, L / 2 + 0.2, D / 2 + 0.2, 0);
         footing(T, G, F, -L / 2 - 0.2, -D / 2 - 0.2, L / 2 + 0.2, D / 2 + 0.2);
         S.box(F, -L / 2, -D / 2, 0, L / 2, D / 2, top);
-        const R = gableRoof(T, F, fp, top, true, geo.rad(rng.range(24, 32)), rng, { attic: false });
+        const R = gableRoof(T, F, fp, top, true, geo.rad(rng.range(27, 34)), rng);
         shadeGable(T, F, R);
         if (rng.chance(0.5)) chimney(T, F, rng.range(-L / 3, L / 3), R.mid + 0.6, R.zb, R.ridge + 0.5);
         const front = wall(F, 0, fp);
-        if (T.sees(front.n)) door(T, front.at, L * rng.range(0.25, 0.4), 0, 1, 2);
-        if (T.k > 0.75) for (let side = 0; side < 4; side++) windows(T, wall(F, side, fp), { base: 0, floors, style: null, winW: 0.8, winH: 1, gap: 1.2, doors: side === 0 ? [L * 0.32] : [] });
+        if (T.sees(front.n)) door(T, front.at, L / 2, 0, 1.1, 2);
+        for (let side = 0; side < 4; side++) {
+            const W = wall(F, side, fp);
+            if (!T.sees(W.n)) continue;
+            // Timber bands sit between the floors; shutters frame each window.
+            S.kind = ROAD;
+            for (let f = 1; f < floors; f++) for (const c of [f * 2.8, f * 2.8 + 0.3]) S.line([W.at(0, c), W.at(W.len, c)]);
+            const n = Math.max(1, Math.floor(W.len / 3)), step = W.len / n;
+            for (let f = 0; f < floors; f++) for (let i = 0; i < n; i++) {
+                const s = (i + 0.5) * step - 0.5, c = f * 2.8 + 0.9;
+                if (side === 0 && f === 0 && Math.abs(s + 0.5 - L / 2) < 1.3) continue;
+                S.kind = INK;
+                pane(T, W.at, s, c, 1, 1.2, 'cross');
+                if (T.k > 0.55) {
+                    S.kind = ACCENT;
+                    for (const a of [s - 0.5, s + 1.1]) {
+                        pane(T, W.at, a, c, 0.4, 1.2, 'bars');
+                    }
+                }
+            }
+        }
+        S.kind = INK;
         if (floors > 1 && T.sees(front.n)) {
             S.box(F, -L / 2 + 0.3, -D / 2 - 1, 2.8, L / 2 - 0.3, -D / 2, 2.95);
+            S.kind = ACCENT;
             S.line([F.P(-L / 2 + 0.3, -D / 2 - 1, 3.9), F.P(L / 2 - 0.3, -D / 2 - 1, 3.9)]);
-            for (let a = -L / 2 + 0.3; a <= L / 2 - 0.2; a += 0.6) S.line([F.P(a, -D / 2 - 1, 2.95), F.P(a, -D / 2 - 1, 3.9)]);
+            for (let a = -L / 2 + 0.3; a <= L / 2 - 0.2; a += Math.max(0.65, 0.45 / T.k)) S.line([F.P(a, -D / 2 - 1, 2.95), F.P(a, -D / 2 - 1, 3.9)]);
+            S.kind = GREEN;
+            for (let a = -L / 2 + 1; a < L / 2 - 1; a += 2.8) {
+                S.line([F.P(a - 0.7, -D / 2 - 1.12, 3.75), F.P(a, -D / 2 - 1.2, 3.55), F.P(a + 0.7, -D / 2 - 1.12, 3.75)]);
+            }
         }
+        S.kind = INK;
         return zhi + 0.3;
     }
 
@@ -965,12 +981,15 @@
         }
         S.kind = INK;
         for (const [f, z] of sup.slice(1, -1)) pylon(T, a[0] + dx * f, a[1] + dy * f, G.at(a[0] + dx * f, a[1] + dy * f), z, A);
-        // stations: a box with a flat roof, open on the side the cable comes in
+        // Timber stations with a broad roof and an opening for the cable.
         for (const [p, dir] of [[a, 1], [b, -1]]) {
             const F = turned(p[0], p[1], G.at(p[0], p[1]), Math.atan2(u[1], u[0]));
             S.box(F, -4, -3.5, -2, 4, 3.5, 7.8);
             footing(T, G, F, -4, -3.5, 4, 3.5);
-            S.box(F, -4.6, -4.1, 7.8, 4.6, 4.1, 8.4);
+            const roof = gableRoof(T, F, [-4.5, -4, 4.5, 4], 7.8, true, geo.rad(24), rng, { attic: false });
+            shadeGable(T, F, roof);
+            for (const side of [0, 2]) windows(T, wall(F, side, [-4, -3.5, 4, 3.5]), { base: 0, floors: 2, winW: 1.5, winH: 1.6, gap: 0.8, style: 'cross' });
+            groundShadow(T, G, [-4, 4].flatMap(x => [-3.5, 3.5].flatMap(y => [F.P(x, y, 0), F.P(x, y, 9)])));
             if (T.sees(F.V(dir, 0, 0))) {
                 const hole = [F.P(4 * dir, -2.8, 3.2), F.P(4 * dir, 2.8, 3.2), F.P(4 * dir, 2.8, 7), F.P(4 * dir, -2.8, 7)];
                 S.loop(hole);
@@ -1075,7 +1094,7 @@
     function settle(T, G, V, E, rng) {
         const { S, p } = T;
         const N = PG.makeNoise(rng), claims = new Claims();
-        const zmin = Math.min(...G.h), zmax = Math.max(...G.h), treeline = geo.lerp(zmin, zmax, p.snow * 0.8);
+        const [zmin, zmax] = G.bounds(), treeline = geo.lerp(zmin, zmax, p.snow * 0.8);
         const AT = t => axisAt(V, t);
         const onBlock = (x, y, m) => x > m && y > m && x < G.Lx - m && y < G.Ly - m;
         const side = E.side, { x: cx, y: cy, ang } = E.village;
@@ -1085,8 +1104,30 @@
         };
         road(T, G, E.main, 4.5);
         claims.line(E.main, 3.5);
+        if (E.rail) claims.line(E.rail.pts.filter((_, i) => E.rail.inside[i]), 4);
+        if (E.hut) claims.take(E.hut[0], E.hut[1], 10);
+        const lanes = [E.main];
+        const addLane = pts => {
+            const path = geo.resample(geo.chaikin(pts, 2), 2);
+            if (path.length < 2 || geo.pathLength(path) < 1) return;
+            if (path.some(([x, y]) => !onBlock(x, y, 3) || !dryRound(x, y, 2) || G.slope(x, y) > 0.45)) return;
+            road(T, G, path, 3);
+            claims.line(path, 2.5);
+            lanes.push(path);
+        };
+        // A looping village lane and a quieter road along the opposite bank.
+        const mcum = lengths(E.main), mainPoint = t => { const q = pathAt(E.main, mcum, t); return [q.x, q.y]; };
+        const loop = [mainPoint(0.08)];
+        for (const t of [0.2, 0.4, 0.6]) { const q = mainPoint(t); loop.push([Math.min(G.Lx - 8, q[0] + 32), q[1]]); }
+        loop.push(mainPoint(0.72));
+        addLane(loop);
+        const west = [];
+        for (let i = 0; i <= 20; i++) {
+            const q = AT(0.07 + 0.35 * i / 20), off = Math.max(14, V.W0 * 0.75);
+            west.push([q.x - q.uy * off, q.y + q.ux * off]);
+        }
+        addLane(west);
         // where the village is on the road
-        const mcum = lengths(E.main);
         let iv = 0;
         E.main.forEach((q, i) => { if (Math.hypot(q[0] - cx, q[1] - cy) < Math.hypot(E.main[iv][0] - cx, E.main[iv][1] - cy)) iv = i; });
         // a lane off the road over the river on a stone bridge, into the other half of the village
@@ -1120,6 +1161,10 @@
             road(T, G, [vr, e0], 3);
             road(T, G, [e1, far], 3);
             claims.line(geo.resample([vr, e0, e1, far], 3), 3);
+            if (lanes.length > 1) {
+                const bank = lanes[lanes.length - 1], c = lengths(bank), q = pathAt(bank, c, nearest(bank, c, ...far).t);
+                addLane([far, [q.x, q.y]]);
+            }
             break;
         }
         if (E.hutRoad) {
@@ -1141,7 +1186,18 @@
                 S.box(F, -5, -8.4, Math.min(...zs) - Math.max(...zs) - 1, 5, 8.4, 0);
                 footing(T, G, F, -5, -8.4, 5, 8.4);
                 church(T, F, fp, rng);
+                groundShadow(T, G, [[-5, -8, 0], [5, -8, 0], [5, 8, 0], [-5, 8, 0], [0, 5, 18], [-4, 0, 8], [4, 0, 8]].map(q => F.P(...q)));
                 claims.take(x, y, 11);
+                const entry = F.P(0, -9, 0), q = pathAt(E.main, mcum, nearest(E.main, mcum, ...entry).t);
+                road(T, G, geo.resample([entry.slice(0, 2), [q.x, q.y]], 2), 2.4);
+                S.kind = ROAD;
+                const apron = [[-6, -10], [6, -10], [6, -8.5], [-6, -8.5], [-6, -10]].map(([a, b]) => F.P(a, b, 0).slice(0, 2));
+                S.line(drape(G, apron));
+                for (const a of [-5, 5]) {
+                    const b = F.P(a, -9.3, 0);
+                    bench(T, b[0], b[1], G.at(b[0], b[1]) + 0.1, PG.isokit.nearestDir(...F.V(0, -1, 0)));
+                }
+                S.kind = INK;
             }
         }
         // bottom station of the cable car at the edge of the village, on its side of the river
@@ -1154,33 +1210,52 @@
             }
             if (start) claims.take(start[0], start[1], 8);
         }
-        // Houses: most strung out along the road either side of the middle, since the flat
-        // floor is narrow, and the rest round the church
-        const nHouses = Math.round(8 + 30 * p.houses);
-        for (let i = 0, tries = 0; i < nHouses && tries < nHouses * 30; tries++) {
-            let x, y, a;
-            if (rng.chance(0.65)) {
-                const s = mcum[iv] + rng.range(-1, 1) * rng.range(0.3, 1) * (50 + 60 * p.houses);
-                let k = iv;
-                while (k > 0 && mcum[k] > s) k--;
-                while (k + 2 < mcum.length && mcum[k + 1] < s) k++;
-                const q0 = E.main[k], q1 = E.main[k + 1], l = Math.hypot(q1[0] - q0[0], q1[1] - q0[1]) || 1, ux = (q1[0] - q0[0]) / l, uy = (q1[1] - q0[1]) / l;
-                const o = rng.sign() * rng.range(9, 32);
-                x = q0[0] - uy * o;
-                y = q0[1] + ux * o;
-                a = Math.atan2(uy, ux);
-            } else {
-                const r = 11 + 45 * Math.sqrt(rng.random()), t = rng.range(0, TAU);
-                x = cx + r * Math.cos(t);
-                y = cy + r * Math.sin(t);
-                a = ang;
-            }
-            const L = rng.range(9, 13), D = rng.range(7.5, 10), rr = Math.hypot(L, D) / 2 + 1.2;
+        // Chalets face their lane, with a footpath to the front door.
+        const streets = lanes.map(path => ({ path, cum: lengths(path) }));
+        const nHouses = Math.round(38 * p.houses);
+        for (let i = 0, tries = 0; i < nHouses && tries < nHouses * 70; tries++) {
+            const street = rng.pick(streets), q = pathAt(street.path, street.cum, rng.range(0.02, 0.93));
+            const L = rng.range(9, 14), D = rng.range(7, 10), rr = Math.hypot(L, D) / 2 + 0.8;
+            const sign = rng.sign(), off = sign * (rr + 4 + rng.range(0, 5));
+            const x = q.x - q.uy * off, y = q.y + q.ux * off;
+            const a = Math.atan2(q.uy, q.ux) + (sign < 0 ? Math.PI : 0);
             if (!onBlock(x, y, rr + 2) || G.slope(x, y) > 0.45 || !claims.free(x, y, rr) || !dryRound(x, y, rr + 3)) continue;
+            const terrace = turned(x, y, 0, a).P(L / 2 + 2.3, -D / 2 + 0.5, 0);
+            const cafe = i % 4 === 0 && onBlock(terrace[0], terrace[1], 3) && dryRound(terrace[0], terrace[1], 2) && claims.free(terrace[0], terrace[1], 2);
             claims.take(x, y, rr);
-            chalet(T, G, x, y, a + (rng.chance(0.5) ? 0 : Math.PI / 2), L, D, rng.chance(0.65) ? 2 : 1, rng);
+            const z = chalet(T, G, x, y, a, L, D, rng.chance(0.85) ? 2 : 1, rng);
+            const F = turned(x, y, z, a), entry = F.P(0, -D / 2 - 0.5, 0);
+            const walk = [entry.slice(0, 2), [q.x, q.y]];
+            road(T, G, geo.resample(walk, 1.5), 1.3);
+            claims.line(geo.resample(walk, 2), 1);
+            if (cafe) {
+                const zt = G.at(terrace[0], terrace[1]) + 0.15;
+                claims.take(terrace[0], terrace[1], 2);
+                S.kind = ACCENT;
+                patioSet(T, turned(terrace[0], terrace[1], zt, a), 0, 0, rng);
+                S.kind = INK;
+            }
             i++;
         }
+        // Walkers and benches give the streets a human scale.
+        for (const { path, cum } of streets) {
+            const len = cum[cum.length - 1], count = Math.round(len * p.houses / 12);
+            for (let i = 0; i < count; i++) {
+                const q = pathAt(path, cum, rng.range(0.08, 0.9));
+                const x = q.x - q.uy * 0.7, y = q.y + q.ux * 0.7;
+                if (!onBlock(x, y, 3) || G.wet(x, y)) continue;
+                person(T, x, y, G.at(x, y) + 0.12, rng);
+                if (i % 3 === 0) {
+                    const bx = q.x + q.uy * 3.6, by = q.y - q.ux * 3.6;
+                    if (onBlock(bx, by, 2) && dryRound(bx, by, 1.5) && claims.free(bx, by, 1.2)) {
+                        claims.take(bx, by, 1.2);
+                        S.kind = ROAD;
+                        bench(T, bx, by, G.at(bx, by) + 0.1, PG.isokit.nearestDir(-q.uy, q.ux));
+                    }
+                }
+            }
+        }
+        S.kind = INK;
         // the hut at the top of its road, with a flag
         if (E.hut) {
             const [hx, hy] = E.hut;
@@ -1216,7 +1291,7 @@
         }
         if (E.rail) drawRail(T, G, E.rail, claims, rng);
         // forest: in clumps on the lower and middle slopes, thinning out up to the tree line
-        const sp = geo.lerp(9, 4.5, p.forest), f = 1 / 45;
+        const sp = geo.lerp(12, 6, p.forest), f = 1 / 35;
         S.kind = GREEN;
         for (let y = sp / 2; y < G.Ly; y += sp) {
             for (let x = sp / 2; x < G.Lx; x += sp) {
@@ -1225,10 +1300,13 @@
                 const z = G.at(tx, ty), sl = G.slope(tx, ty), up = (z - zmin) / (treeline - zmin);
                 if (up > 1 || sl > 0.95 || G.wet(tx, ty)) continue;
                 const clump = N.fbm2(tx * f, ty * f, 3) + 0.25 * (1 - Math.abs(up - 0.45) * 2) - 0.1 * (up < 0.08 ? 3 : 0);
-                if (clump < 0.28 - 0.4 * p.forest || !claims.free(tx, ty, 1.6)) continue;
+                if (!p.forest || clump < 0.3 - 0.38 * p.forest || !claims.free(tx, ty, 2.2)) continue;
                 claims.take(tx, ty, 1.4);
                 S.kind = GREEN;
-                conifer(T, tx, ty, z - 0.2, rng.range(7, 12) * (1.1 - 0.4 * up), rng);
+                const height = rng.range(7, 12) * (1.1 - 0.4 * up);
+                groundShadow(T, G, [[tx - 1, ty - 1, z], [tx + 1, ty + 1, z], [tx, ty, z + height]]);
+                S.kind = GREEN;
+                conifer(T, tx, ty, z - 0.2, height, rng);
             }
         }
         // overhead
@@ -1249,9 +1327,13 @@
 
     function buildValley(T, G, V, E, rng) {
         const { p } = T;
-        V.snow = geo.lerp(Math.min(...G.h), Math.max(...G.h), p.snow);
+        const [zmin, zmax] = G.bounds();
+        V.snow = geo.lerp(zmin, zmax, p.snow);
+        const snowNoise = PG.makeNoise(new PG.RNG(hash(p.seed, 908)));
+        V.snowAt = (x, y) => V.snow + p.relief * 0.055 * snowNoise.noise2(x / 18, y / 18);
         drawGround(T, G, V);
-        drawSides(T, G, Math.min(...G.h) - p.base, rng);
+        terrainMarks(T, G, V);
+        if (p.cutaway) drawSides(T, G, zmin - p.base, rng);
         settle(T, G, V, E, rng);
         return V;
     }
@@ -1260,36 +1342,38 @@
         id: 'alpine',
         name: 'Alpine Valley',
         category: 'Scenes',
-        description: 'A mountain valley cut out like a diorama and drawn like a topographic map, with contours, a river, forests and a village.',
+        description: 'A storybook mountain village with red-roofed chalets, a stone railway viaduct, fir woods and snow-capped peaks.',
         fit: false,
         params: [
             { type: 'section', label: 'View' },
-            { id: 'size', label: 'Block size (m)', type: 'range', min: 120, max: 400, step: 5, value: 220, random: [180, 280],
-                hint: 'How much ground the block takes in. The scale follows so it fits the page' },
-            { id: 'aspect', label: 'Block depth', type: 'range', min: 0.6, max: 2, step: 0.05, value: 1.7, random: [1.3, 1.8],
-                hint: 'How far back the block goes, as a share of its width' },
-            { id: 'yaw', label: 'Camera turn (°)', type: 'range', min: 25, max: 65, step: 0.5, value: 37, random: [33, 50] },
-            { id: 'elev', label: 'Camera height (°)', type: 'range', min: 20, max: 60, step: 0.5, value: 39, random: [34, 43] },
-            { id: 'base', label: 'Base depth (m)', type: 'range', min: 5, max: 60, step: 1, value: 34, random: [22, 42],
-                hint: 'How far the block goes down under the lowest ground' },
+            { id: 'size', label: 'Valley size (m)', type: 'range', min: 120, max: 400, step: 5, value: 160, random: [140, 190],
+                hint: 'Smaller valleys bring the buildings closer' },
+            { id: 'aspect', label: 'Valley depth', type: 'range', min: 0.6, max: 2, step: 0.05, value: 1.35, random: [1.1, 1.5] },
+            { id: 'yaw', label: 'Camera turn (°)', type: 'range', min: 25, max: 65, step: 0.5, value: 30, random: [27, 39] },
+            { id: 'elev', label: 'Camera height (°)', type: 'range', min: 20, max: 60, step: 0.5, value: 37, random: [33, 41] },
+            { id: 'framing', label: 'Framing', type: 'select', value: 'close', random: false,
+                options: [['close', 'Village close-up'], ['whole', 'Whole valley']] },
+            { id: 'cutaway', label: 'Cutaway base', type: 'checkbox', value: false },
+            { id: 'base', label: 'Base depth (m)', type: 'range', min: 5, max: 60, step: 1, value: 8, random: false, show: p => p.cutaway },
             { type: 'section', label: 'Landscape' },
-            { id: 'relief', label: 'Mountain height (m)', type: 'range', min: 30, max: 240, step: 5, value: 165, random: [110, 185] },
-            { id: 'valley', label: 'Valley width', type: 'range', min: 0.1, max: 0.5, step: 0.01, value: 0.24, random: [0.18, 0.32] },
-            { id: 'lake', label: 'Lake', type: 'range', min: 0, max: 1, step: 0.01, value: 0.7, random: [0, 1], hint: 'Chance of a lake in the valley' },
+            { id: 'relief', label: 'Mountain height (m)', type: 'range', min: 30, max: 240, step: 5, value: 75, random: [65, 100] },
+            { id: 'valley', label: 'Valley width', type: 'range', min: 0.1, max: 0.5, step: 0.01, value: 0.36, random: [0.3, 0.44] },
+            { id: 'lake', label: 'Lake', type: 'range', min: 0, max: 1, step: 0.01, value: 0.8, random: [0.4, 1], hint: 'Chance of a lake above the village' },
             { id: 'snow', label: 'Snow line', type: 'range', min: 0.3, max: 1, step: 0.01, value: 0.72, random: [0.6, 0.85],
                 hint: 'Share of the way up above which the ground is left white' },
-            { id: 'contour', label: 'Contour interval (m)', type: 'range', min: 1, max: 20, step: 0.5, value: 4.5, random: [3.5, 5.5] },
-            { id: 'rock', label: 'Cliff marks', type: 'range', min: 0, max: 1, step: 0.01, value: 0.7, random: [0.4, 1] },
+            { id: 'contours', label: 'Topographic contours', type: 'checkbox', value: false },
+            { id: 'contour', label: 'Contour interval (m)', type: 'range', min: 1, max: 20, step: 0.5, value: 8, random: false, show: p => p.contours },
+            { id: 'rock', label: 'Mountain shading', type: 'range', min: 0, max: 1, step: 0.01, value: 0.7, random: [0.4, 1] },
             { type: 'section', label: 'Life' },
             { id: 'forest', label: 'Forest', type: 'range', min: 0, max: 1, step: 0.01, value: 0.55, random: [0.3, 0.85] },
-            { id: 'houses', label: 'Village', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.3, 1],
+            { id: 'houses', label: 'Village', type: 'range', min: 0, max: 1, step: 0.01, value: 0.8, random: [0.55, 0.95],
                 hint: 'How many chalets there are' },
             { id: 'church', label: 'Church', type: 'checkbox', value: true, random: 0.8 },
             { id: 'hut', label: 'Road up to a hut', type: 'checkbox', value: true, random: 0.8,
                 hint: 'Hairpins up the mountainside to a hut on a shoulder' },
             { id: 'cable', label: 'Cable car', type: 'checkbox', value: true, random: 0.7 },
             { id: 'railway', label: 'Railway', type: 'checkbox', value: true, random: 0.8,
-                hint: 'Along the far side of the valley, on viaducts over the gullies and into tunnels through the spurs' },
+                hint: 'A mountain train on a curved stone viaduct above the village' },
             { id: 'falls', label: 'Waterfall', type: 'checkbox', value: true, random: 0.8 },
             { id: 'fliers', label: 'Paragliders & birds', type: 'checkbox', value: true, random: 0.6 },
             { type: 'section', label: 'Pens' },
@@ -1312,13 +1396,18 @@
                 if (grid) {
                     for (let v = 0; v < grid.h.length; v += 3) { const q = grid.pt(v); put(q[0], q[1], q[2] + 16); }
                 } else for (const [x, y] of [[0, 0], [Lx, 0], [Lx, Ly], [0, Ly]]) put(x, y, zHi);
-                return { k: Math.min((W * 0.94) / (x1 - x0), (H * 0.94) / (y1 - y0)), mid: c0.ground((x0 + x1) / 2, (y0 + y1) / 2, 0) };
+                const heightK = (H * 0.94) / (y1 - y0);
+                return { k: Math.min((W * 0.94) / (x1 - x0), heightK), heightK, mid: c0.ground((x0 + x1) / 2, (y0 + y1) / 2, 0) };
             };
-            const guess = fit(-p.base, p.relief * 1.4);
+            const base = p.cutaway ? p.base : 0;
+            const guess = fit(-base, p.relief * 1.15);
             const G = new Ground(Lx, Ly, geo.clamp(1.3 / guess.k, 1.2, 3));
             const V = landscape(G, p, rng);
             const E = earthworks(G, V, rng, p);
-            const zmin = Math.min(...G.h), { k, mid } = fit(zmin - p.base, 0, G);
+            const [zmin] = G.bounds(), fitted = fit(zmin - base, 0, G);
+            const close = p.framing === 'close' && !p.cutaway;
+            const k = close ? Math.min(fitted.k * 1.5, fitted.heightK) : fitted.k, mid = fitted.mid;
+            if (close) { mid[0] += Lx * 0.065 * c0.rx; mid[1] += Lx * 0.065 * c0.ry; }
             const cam = makeCamera(p.yaw, p.elev, k, W, H, mid[0], mid[1]);
             const S = new Scene(cam, W, H);
             const T = {
@@ -1327,10 +1416,10 @@
                 sees: n => cam.facing(n[0], n[1], n[2]),
                 segs: r => segments(r, k),
                 picket: Math.max(0.28, 0.9 / k),
-                // roofs hatched in black like the buildings on a map, the shaded side closer
-                tones: { lit: INK, dark: INK, canopy: RED },
-                hLit: 0.9,
-                hDark: 0.55,
+                tones: { lit: RED, dark: INK, canopy: ACCENT },
+                waterKind: BLUE,
+                hLit: 0.65,
+                hDark: 0.4,
                 lit: n => (n[0] * SUN[0] + n[1] * SUN[1] + n[2] * SUN[2]) / Math.hypot(n[0], n[1], n[2]) >= 0.75 * SUN[2],
             };
             buildValley(T, G, V, E, rng);

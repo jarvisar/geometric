@@ -24,7 +24,7 @@ for (const id of ids) {
         if (info.pens !== count || info.used !== count) throw new Error(`${id}: ${JSON.stringify(info)}`);
     }
 }
-log('All 34 browser controls render one and eight colors');
+log(`All ${ids.length} browser controls render one and eight colors`);
 
 await evaluate(`plotterApp.select('town')`);
 await click('#resetMenuBtn');

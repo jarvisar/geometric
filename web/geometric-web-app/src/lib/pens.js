@@ -30,6 +30,11 @@
         flower: profile(4, 'Each petal family has its own color. The inner ring shifts the palette.', botanical),
         phyllotaxis: profile(4, 'Seed growth bands and Fibonacci spiral families share the pens.', botanical),
         attractor: profile(3, 'Colors reveal depth or progress along the orbit.', cool),
+        ribbons: profile(2, 'Color follows each ribbon around its loops. The crossings and folds stay the same at every pen count.', [BLUE, GOLD, RED, PURPLE, CYAN, GREEN, BROWN, INK]),
+        stairwell: profile(2, 'Colors follow the walls into the shaft, with shaded bands marking the depth.', [INK, BLUE, RED, GOLD, CYAN, PURPLE, GREEN, BROWN]),
+        tidal: profile(2, 'Water uses the first color. Extra pens separate elevation bands on the land.', [BLUE, INK, GOLD, GREEN, PURPLE, RED, CYAN, BROWN]),
+        cosmic: profile(3, 'Dark outlines hold the panels together. Accent inks alternate between skies, planets and landscape hatching.', [INK, RED, BLUE, GOLD, PURPLE, GREEN, CYAN, BROWN]),
+        skyline: profile(3, 'Dark architecture, blue glass and shadows, and gold rooftop details. More pens separate bridges, gardens and people.'),
         flowfield: profile(4, 'Color follows flow direction, position or patches of noise.', cool),
         ridgelines: profile(4, 'Colors separate near and distant ridges.', cool),
         topo: profile(4, 'Elevation bands share the colors. Index contours stay on the first pen.', [INK, GREEN, BROWN, BLUE, GOLD, RED, PURPLE, CYAN]),
@@ -52,7 +57,7 @@
         town: profile(4, 'Default palette: dark buildings, brown streets and fences, green plants, blue water. More pens separate cars, people and details.'),
         harbour: profile(4, 'Roofs, shadows and awnings use separate inks. More pens separate plants, figures, water and wood.'),
         fairground: profile(4, 'Rides, tents and shadows use separate inks. More pens separate plants, people, water and paths.'),
-        alpine: profile(4, 'Contours, rock, water and forest use separate inks. More pens separate roads, figures, snow and strata.'),
+        alpine: profile(4, 'Dark architecture, red roofs, blue shade and gold details. More pens separate fir woods, people, water and timber.'),
         image: profile(3, 'Colors follow image darkness in every drawing mode.', [BLUE, PURPLE, INK, RED, BROWN, GREEN, CYAN, GOLD]),
     };
 
@@ -68,6 +73,16 @@
     ];
     const scene = (maps, groups, roles) => ({ maps, groups, roles });
     P.scenes = {
+        skyline: scene([
+            [INK, INK, INK, INK, INK, INK, INK, INK],
+            [INK, INK, INK, GOLD, INK, INK, INK, INK],
+            [INK, BLUE, BLUE, GOLD, INK, INK, INK, INK],
+            [INK, BLUE, BLUE, GOLD, INK, RED, INK, INK],
+            [INK, BLUE, BLUE, GOLD, GREEN, RED, INK, INK],
+            [INK, BLUE, BLUE, GOLD, GREEN, RED, PURPLE, INK],
+            [INK, BLUE, CYAN, GOLD, GREEN, RED, PURPLE, INK],
+            [INK, BLUE, CYAN, GOLD, GREEN, RED, PURPLE, BROWN],
+        ], [0, 1, 2, 3, 4, 5, 6, 7], ['Architecture', 'Glass', 'Shadows', 'Antennas & lights', 'Roof gardens', 'Skybridges', 'People', 'Roofs & streets']),
         town: scene([
             [INK, INK, INK, INK, INK, INK, INK, INK],
             [INK, BROWN, INK, INK, INK, INK, INK, BROWN],
@@ -80,16 +95,7 @@
         ], [0, 1, 2, 3, 3, 3, 1, 3], ['Buildings', 'Streets', 'Plants', 'Details', 'Vehicles', 'People', 'Water', 'Fences & benches']),
         harbour: scene(illustrated, [0, 1, 2, 3, 0, 0, 2, 0], ['Structure', 'Roofs', 'Shadows', 'Awnings', 'Plants', 'Figures', 'Water', 'Wood']),
         fairground: scene(illustrated, [0, 1, 2, 3, 0, 0, 2, 0], ['Structure', 'Tents', 'Shadows', 'Rides & flags', 'Plants', 'People', 'Water', 'Paths']),
-        alpine: scene([
-            [INK, INK, INK, INK, INK, INK, INK, INK],
-            [INK, RED, INK, INK, INK, INK, RED, RED],
-            [INK, RED, BLUE, INK, INK, INK, RED, RED],
-            [INK, RED, BLUE, GREEN, INK, INK, RED, RED],
-            [INK, RED, BLUE, GREEN, GOLD, INK, RED, RED],
-            [INK, RED, BLUE, GREEN, GOLD, PURPLE, RED, RED],
-            [INK, RED, BLUE, GREEN, GOLD, PURPLE, CYAN, RED],
-            [INK, RED, BLUE, GREEN, GOLD, PURPLE, CYAN, BROWN],
-        ], [0, 1, 2, 3, 0, 0, 1, 1], ['Rock & buildings', 'Contours', 'Water', 'Forest', 'Roads', 'Figures', 'Snow', 'Strata']),
+        alpine: scene(illustrated, [0, 1, 2, 3, 0, 0, 2, 0], ['Architecture & rock', 'Roofs & trains', 'Shade & snow', 'Shutters & balconies', 'Fir woods', 'People & fliers', 'Water', 'Timber & paths']),
     };
 
     P.count = n => Math.max(1, Math.min(PG.MAX_PENS, Math.round(Number(n)) || 1));

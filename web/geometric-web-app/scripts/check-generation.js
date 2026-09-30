@@ -29,7 +29,7 @@ const run = job => new Promise((resolve, reject) => {
             assert.deepEqual(background.layers, result.layers, `${def.id}: worker changed geometry`);
             assert.deepEqual(background.stats, result.stats);
         }
-        console.log('All 34 worker results match the synchronous pipeline');
+        console.log(`All ${PG.generators.length} worker results match the synchronous pipeline`);
         const clock = globalThis.performance;
         try {
             for (const points of [500, 2500, 10000]) for (const budget of [0, 400]) {

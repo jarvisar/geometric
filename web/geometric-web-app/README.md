@@ -11,7 +11,7 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 
 ## Designs
 
-32 designs, each with its own controls, seeded randomness and a curated **Randomize**.
+39 designs, each with its own controls, seeded randomness and a curated **Randomize**.
 
 **Curves** — centred figures, mostly single continuous strokes
 * **Spirograph**: hypotrochoids and epitrochoids with real tooth counts, so every curve closes exactly. Nested pen-hole rings.
@@ -24,6 +24,7 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 * **Flower**: the original nested-petal flower, fixed and extended.
 * **Phyllotaxis**: sunflower seed heads, as dots or Fibonacci spiral nets.
 * **Strange Attractor**: Lorenz, Aizawa, Thomas, Halvorsen and more, integrated in 3D and projected.
+* **Ribbon Sculpture**: linked loops, a trefoil knot or a folded rosette, built from twisted ribbon surfaces. Fine transverse ribs describe the folds, with hidden lines removed at crossings. Adjust the twist, width, camera tilt and optional lengthwise threads.
 
 **Fields**: designs that fill the page
 * **Flow Field**: evenly spaced streamlines (Jobard–Lefer) through noise, curl, vortex, wave or spiral fields.
@@ -54,7 +55,11 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 * **Town**: an isometric town built as a small 3D scene, with houses, apartments, A-frames, windmills, cars, fences, trees and yard clutter. The middle gets built up with terraces, shops and squares, and there can be a church, a clock tower, boulevards, roundabouts and a river with bridges and boats. Hidden lines are removed exactly, so only the visible outlines get plotted. The camera angle, scale, block size and how busy the streets are can all be changed. Up to eight pens, where 5 to 8 give cars, people, the river and fences a pen each.
 * **Harbour**: a fishing town on the quay with piers, moored boats, canals, docks, wharves with cranes, canal houses, a church and a clock tower. The lighthouse sits on a straight or bent breakwater or on its own island. Drawn for four pens: red and black roof hatching, blue shadows and water, yellow canopies. Six pens make the trees green and the people and cars purple, and eight add light blue water and brown piers and boats.
 * **Fairground**: a funfair with a big wheel, a figure-of-eight roller coaster, a striped big top, a carousel, a helter skelter, swing rides, a drop tower, a pirate ship, teacups, bumper cars, a boating lake with swan pedalos, game stalls and bunting. The paths come from a Voronoi diagram, so they wind between the rides. Drawn for the same pens as Harbour, except with eight it's the paths that go brown.
-* **Alpine Valley**: a block of mountain valley cut out like a museum model and drawn in the colours of a Swiss topo map, with red contours, black rock and buildings, blue water and green forest. There's a village along the valley road, hairpins up to a hut, a cable car to the highest summit, and a railway along the other side that crosses gullies on viaducts and goes through the spurs in tunnels. The contours are traced over the 3D ground, so ridges hide what's behind them. Six pens add yellow roads and purple people and paragliders, and eight put the contours on the snow in light blue (like glacier contours on the real maps) and the strata down the sides in brown.
+* **Alpine Valley**: an illustrated mountain village with red roofs, timber balconies, shutters and cafe terraces. A train crosses a stone viaduct above the river, with fir woods, a hillside hut and cable cars up to the snowy peaks. It shares Harbour and Fairground's ink, red, blue and gold palette. Extra pens separate the forest, people, water and timber. Choose a village close-up or the whole valley, with optional topographic contours and a cutaway base.
+* **Skyline District**: a dense city of glass towers and stepped terraces, linked by skybridges. A faceted landmark rises among rooftop gardens, water tanks, antennas and tiny people. Dark architecture, blue glazing and gold lights separate the details; extra pens pick out gardens, bridges, people and roofs.
+* **Infinite Stairwell**: a tiled architectural shaft receding into a distant vanishing point. Choose stepped, square or octagonal walls, change the depth and perspective, or twist the levels into a spiral.
+* **Tidal Atlas**: the same island terrain at successive sea levels, arranged as a vertical sequence or a grid. Blue water surrounds land drawn with ridges, elevation contours or a wire mesh. One study makes a standalone island print.
+* **Cosmic Comics**: changing comic pages of alien mountains, dunes, ringed planets, stars and sunbursts. Fine hatching stays behind the foreground silhouettes. Choose a page with a large feature panel, a regular contact sheet or one postcard, with ink and alternating red and blue accents.
 
 **Image**
 * **Image**: turns a photo into a squiggle spiral, squiggled rows, cross-hatching or a single-line TSP portrait. Works with a built-in demo scene until you drop in a picture.

@@ -29,11 +29,12 @@ await evaluate(`plotterApp.regenerate()`);
 if (!await evaluate(`plotterApp.state.params.image.image==='offline-photo.png' && JSON.stringify(plotterApp.result.layers)===${JSON.stringify(before)}`)) {
     throw new Error('Offline reload lost photo contents or geometry');
 }
-for (const gen of await evaluate(`PG.generators.map(g=>g.id)`)) {
+const designs = await evaluate(`PG.generators.map(g=>g.id)`);
+for (const gen of designs) {
     await evaluate(`plotterApp.select('${gen}'); plotterApp.regenerate()`);
     if (!await evaluate(`!!plotterApp.result && document.querySelector('#errorMsg').hidden`)) throw new Error(`Offline ${gen} failed`);
 }
 await click('#designBtn'); await sleep(1500);
 await shot('offline-gallery.png');
 await key('Escape');
-log(`Offline reload, uploaded photo, all 34 worker designs and gallery OK (${cached.length} cached resources)`);
+log(`Offline reload, uploaded photo, all ${designs.length} worker designs and gallery OK (${cached.length} cached resources)`);

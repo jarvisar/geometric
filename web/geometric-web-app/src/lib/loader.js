@@ -9,7 +9,7 @@
     PG.GENERATOR_FILES = [
         // Curves
         'spirograph', 'mystery', 'harmonograph', 'maurer', 'superformula', 'guilloche',
-        'timestable', 'flower', 'phyllotaxis', 'attractor',
+        'timestable', 'flower', 'phyllotaxis', 'attractor', 'ribbons',
         // Fields
         'flowfield', 'ridgelines', 'topo', 'chladni', 'fieldlines', 'moire', 'warp',
         // Tiles
@@ -17,7 +17,7 @@
         // Packing
         'circlepack', 'apollonian', 'subdivide', 'voronoi',
         // Scenes
-        'town', 'harbour', 'fairground', 'alpine',
+        'town', 'harbour', 'fairground', 'alpine', 'skyline', 'stairwell', 'tidal', 'cosmic',
         // Image
         'image',
     ];
