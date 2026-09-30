@@ -19,7 +19,7 @@ const setup = async () => evaluate(`
     URL.createObjectURL = blob => { if (blob.type !== 'text/javascript') __downloads.push(blob); return create(blob); };
     HTMLAnchorElement.prototype.click = function () {};
 `);
-const modes = { ribbons: ['form', 'rosette'], stairwell: ['section', 'octagon'], tidal: ['style', 'contours'], cosmic: ['layout', 'single'], skyline: ['landmark', false] };
+const modes = { ribbons: ['form', 'rosette'], stairwell: ['stairs', 'none'], tidal: ['style', 'contours'], cosmic: ['layout', 'single'], skyline: ['landmark', 'none'] };
 await setup();
 for (const id of ids) {
     await evaluate(`plotterApp.select('${id}'); plotterApp.resetParams(); plotterApp.regenerate()`);
@@ -32,8 +32,8 @@ for (const id of ids) {
     const changed = await evaluate('__hash()');
     assert(changed !== initial, `${id}: control did not change geometry`);
     if (id === 'ribbons') assert(await evaluate(`document.querySelector('[data-param="loops"]').hidden`), 'Ribbon loop control remains visible for rosette');
-    if (id === 'stairwell') assert(await evaluate(`document.querySelector('[data-param="steps"]').hidden`), 'Step control remains visible for octagon');
-    if (id === 'cosmic') assert(await evaluate(`document.querySelector('[data-param="cols"]').hidden && document.querySelector('[data-param="rows"]').hidden`), 'Comic grid controls remain visible for postcard');
+    if (id === 'stairwell') assert(await evaluate(`document.querySelector('[data-param="steps"]').hidden`), 'Step control remains visible for an empty shaft');
+    if (id === 'cosmic') assert(await evaluate(`['cols', 'rows', 'panels', 'gutter'].every(id => document.querySelector('[data-param="' + id + '"]').hidden)`), 'Comic layout controls remain visible for postcard');
     await sleep(650);
     await open('index.html'); await evaluate(`plotterApp.regenerate()`); await setup();
     assert(await evaluate('__hash()') === changed, `${id}: reload changed geometry`);

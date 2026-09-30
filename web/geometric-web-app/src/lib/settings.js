@@ -70,7 +70,7 @@
         pen: { name: string(200), color, width: number(0.05, 5), visible: boolean },
     };
 
-    function readParams(id, from) {
+    function readParams(id, from, session = false) {
         const def = PG.byId[id];
         if (!own(PG.byId, id)) fail(`unknown design ${id}`);
         object(from, `params.${id}`);
@@ -83,10 +83,17 @@
             const v = own(from, q.id) ? from[q.id] : q.value;
             if (v === undefined && q.type === 'image') continue;
             const name = `params.${id}.${q.id}`;
-            if (q.type === 'range') out[q.id] = number(q.min, q.max, q.id === 'pens')(v, name);
-            else if (q.type === 'select') out[q.id] = choice(q.options.map(o => o[0]))(v, name);
-            else if (q.type === 'checkbox') out[q.id] = boolean(v, name);
-            else if (q.type === 'text' || q.type === 'image') out[q.id] = string()(v, name);
+            const read = q.type === 'range' ? number(q.min, q.max, q.id === 'pens')
+                : q.type === 'select' ? choice(q.options.map(o => o[0]))
+                : q.type === 'checkbox' ? boolean
+                : q.type === 'text' || q.type === 'image' ? string() : null;
+            if (!read) continue;
+            // A saved session outlives design updates, so a value from an older version of a
+            // design goes back to its default instead of throwing away the whole session
+            try { out[q.id] = read(v, name); } catch (err) {
+                if (!session || v === q.value) throw err;
+                out[q.id] = q.value;
+            }
         }
         if (!own(from, 'pens')) {
             const migrated = PG.pens.migrate(def, { ...legacy, sets: out.sets });
@@ -119,7 +126,7 @@
         }
         if (own(obj, 'params')) {
             object(obj.params, 'params');
-            for (const [id, params] of Object.entries(obj.params)) next.params[id] = readParams(id, params);
+            for (const [id, params] of Object.entries(obj.params)) next.params[id] = readParams(id, params, session);
         }
         if (!own(next.params, next.gen)) next.params[next.gen] = readParams(next.gen, {});
         if (own(obj, 'images')) {

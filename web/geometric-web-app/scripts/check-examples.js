@@ -37,15 +37,21 @@ for (const id of ids) {
     }
     for (const clip of ['circle', 'hexagon', 'diamond']) cases.push([clip, defaults, { clip, rotate: 37, frame: true }]);
     cases.push(['largest custom paper', defaults, { paperW: 1200, paperH: 1200 }]);
-    if (id === 'ribbons') for (const form of ['chain', 'knot', 'rosette']) {
-        cases.push([`wide ${form}`, { ...defaults, form, width: 0.65, loops: 5, ribs: 700, rails: 12, twists: 5, tilt: 60 }, {}]);
+    if (id === 'ribbons') for (const form of ['chain', 'mobius', 'knot', 'eight', 'borromean', 'hopf', 'coil', 'infinity', 'rosette']) {
+        cases.push([`wide ${form}`, { ...defaults, form, width: 0.7, loops: 5, rings: 16, coils: 24, knot: '2,7', gap: 0.6, rails: 8, twists: 6, folds: 1, swell: 0.8, waves: 8, tilt: 60, pattern: 'lattice', back: 'cross', edges: 'solid' }, {}]);
+        cases.push([`edge-on ${form}`, { ...defaults, form, tilt: -60, turn: 90, lean: 90, pattern: 'ogee', slant: 2, back: 'sparse' }, { paperW: 105, paperH: 148 }]);
     }
-    if (id === 'stairwell') cases.push(['deep twisted well', { ...defaults, levels: 100, tiles: 24, twist: 3, recede: 0.97, steps: 0.5 }, {}]);
-    if (id === 'tidal') for (const style of ['ridges', 'contours', 'wire']) {
-        cases.push([`high water ${style}`, { ...defaults, style, studies: 4, lines: 130, water: 75, rise: 65, relief: 60, elev: 20, layout: 'grid', waterLines: false, marks: false }, {}]);
+    if (id === 'stairwell') for (const section of ['round', 'square', 'octagon']) {
+        cases.push([`deep ${section} pool`, { ...defaults, section, levels: 240, tiles: 32, stairs: 'double', width: 6, steps: 6, fov: 110, bottom: 'pool', openings: 'both' }, {}]);
     }
-    if (id === 'cosmic') cases.push(['small dense panels', { ...defaults, cols: 5, rows: 8, gutter: 8, layers: 5, spacing: 0.35 }, { paperW: 105, paperH: 148 }]);
-    if (id === 'skyline') cases.push(['tall dense city', { ...defaults, scale: 0.7, block: 24, height: 100, elev: 25, bridges: 1, antennas: 1 }, { paperW: 420, paperH: 594 }]);
+    if (id === 'tidal') for (const style of ['ridges', 'contours', 'hachures', 'wire']) {
+        cases.push([`high water ${style}`, { ...defaults, style, studies: 6, first: 90, last: 99, relief: 60, elev: 20, layout: 'grid', sea: 'both', ripples: 14, marks: false }, {}]);
+        cases.push([`dense ${style} stack`, { ...defaults, style, studies: 6, first: 0, last: 99, relief: 60, spacing: 0.35, land: 'volcano', layout: 'stack', cutaway: false }, { paperW: 420, paperH: 594 }]);
+    }
+    if (id === 'cosmic') for (const layout of ['story', 'grid']) {
+        cases.push([`small dense ${layout}`, { ...defaults, layout, panels: 40, cols: 5, rows: 8, gutter: 8, detail: 1, stars: 2, spacing: 0.35 }, { paperW: 105, paperH: 148 }]);
+    }
+    if (id === 'skyline') cases.push(['tall dense city', { ...defaults, scale: 0.7, block: 36, height: 120, variety: 1, elev: 25, bridges: 1, cables: 1, clutter: 1, signs: 1, parks: 0 }, { paperW: 420, paperH: 594 }]);
     let worst = 0;
     for (const [name, params, changes] of cases) {
         label = `${id}: ${name}`;
@@ -72,7 +78,7 @@ for (const id of ids) {
 }
 
 // Comic panel masks must preserve empty gutters, even with dense sun rays and planets.
-const def = PG.byId.cosmic, params = { ...PG.defaultParams(def), layout: 'grid', cols: 4, rows: 6, gutter: 5, frames: false };
+const def = PG.byId.cosmic, params = { ...PG.defaultParams(def), layout: 'grid', cols: 4, rows: 6, gutter: 5, frame: 'none' };
 const result = PG.run(def, params, settings), width = settings.paperW - settings.margin * 2, height = settings.paperH - settings.margin * 2;
 const cw = (width - (params.cols - 1) * params.gutter) / params.cols, ch = (height - (params.rows - 1) * params.gutter) / params.rows;
 for (const layer of result.layers) for (const line of layer.paths) {
@@ -80,23 +86,45 @@ for (const layer of result.layers) for (const line of layer.paths) {
     const left = settings.margin + col * (cw + params.gutter), top = settings.margin + row * (ch + params.gutter);
     for (const [px, py] of line) assert.ok(px >= left - 1e-5 && px <= left + cw + 1e-5 && py >= top - 1e-5 && py <= top + ch + 1e-5, 'Comic line crosses a panel gutter');
 }
+// The comic layout has uneven panels, so read them back from the thin frames the generator
+// draws, then check a frameless page stays inside them.
+const raw = (params, seed, W, H) => {
+    const shape = PG.shapes.rect(0, 0, W, H);
+    return def.generate(params, { width: W, height: H, seed, rng: new PG.RNG(seed), noise: PG.makeNoise(new PG.RNG(seed)), images: {},
+        shape: { ...shape, polygon: () => shape.outline().slice(0, -1) } }).layers;
+};
+for (const [seed, W, H, panels] of [[1, 186, 273, 14], [5, 186, 273, 30], [9, 273, 186, 8], [12, 81, 124, 40]]) {
+    const story = { ...PG.defaultParams(def), panels, gutter: 4 };
+    const rects = raw({ ...story, frame: 'thin' }, seed, W, H)[0].filter(q => q.length === 5 && q[0][0] === q[3][0] && q[0][1] === q[1][1] && q[1][0] === q[2][0] && q[2][1] === q[3][1])
+        .map(q => [q[0][0], q[0][1], q[2][0], q[2][1]]);
+    assert.ok(rects.length >= Math.min(panels, 8), `Comic layout seed ${seed}: panel frames not found`);
+    for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
+        const [a, b] = [rects[i], rects[j]];
+        assert.ok(a[2] <= b[0] + 1e-6 || b[2] <= a[0] + 1e-6 || a[3] <= b[1] + 1e-6 || b[3] <= a[1] + 1e-6, `Comic layout seed ${seed}: panels overlap`);
+    }
+    for (const layer of raw({ ...story, frame: 'none' }, seed, W, H)) for (const line of layer) {
+        const [x, y] = line[0], r = rects.find(r => x >= r[0] - 1e-6 && x <= r[2] + 1e-6 && y >= r[1] - 1e-6 && y <= r[3] + 1e-6);
+        assert.ok(r && line.every(([px, py]) => px >= r[0] - 1e-6 && px <= r[2] + 1e-6 && py >= r[1] - 1e-6 && py <= r[3] + 1e-6), `Comic layout seed ${seed}: line crosses a gutter`);
+    }
+}
 console.log(`${total} new-design cases passed: raw coordinates, paper sizes, seeds, controls, extremes, crops, SVG and repeatability. Comic gutters remain clear.`);
 
-// Closed, rounded cloud outlines must mask their whole area, including concave lobes.
-const chaikin = PG.geo.chaikin, face = PG.iso.Scene.prototype.face;
+// Cloud masks (columns between the top and bottom profiles) must cover the whole closed outline.
+const { face, line } = PG.iso.Scene.prototype;
 let cloudArea = 0, maskArea = 0;
 try {
-    PG.geo.chaikin = (...args) => {
-        const points = chaikin(...args);
-        if (args[2]) cloudArea += Math.abs(PG.geo.polygonArea(points));
-        return points;
-    };
     PG.iso.Scene.prototype.face = function (points, ...args) {
-        if (points.every(p => p[2] === 4)) maskArea += Math.abs(PG.geo.polygonArea(points));
+        if (this.part === 'cloud') maskArea += Math.abs(PG.geo.polygonArea(points));
         return face.call(this, points, ...args);
+    };
+    PG.iso.Scene.prototype.line = function (points, ...args) {
+        const a = points[0], b = points[points.length - 1];
+        if (this.part === 'cloud' && points.length > 3 && a[0] === b[0] && a[1] === b[1]) cloudArea += Math.abs(PG.geo.polygonArea(points));
+        return line.call(this, points, ...args);
     };
     label = 'cosmic: cloud masks';
     for (const seed of [1, 2, 3, 17]) PG.run(def, PG.defaultParams(def), { ...settings, seed });
-    assert.ok(cloudArea > 0 && Math.abs(cloudArea - maskArea) < 1e-5, `Cloud masks leave holes: ${maskArea} of ${cloudArea} square millimetres covered`);
-} finally { PG.geo.chaikin = chaikin; PG.iso.Scene.prototype.face = face; }
-console.log('Rounded cloud masks cover their full silhouettes');
+    PG.run(def, { ...PG.defaultParams(def), world: 'skies' }, settings);
+    assert.ok(cloudArea > 0 && Math.abs(cloudArea - maskArea) < 1e-9 * cloudArea, `Cloud masks leave holes: ${maskArea} of ${cloudArea} square millimetres covered`);
+} finally { Object.assign(PG.iso.Scene.prototype, { face, line }); }
+console.log('Cloud masks cover their full silhouettes');
