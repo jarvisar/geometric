@@ -97,15 +97,16 @@
     }
 
     // String of pennants between two world points, sagging in the middle
-    function pennants(T, p0, p1, rng) {
+    function pennants(T, p0, p1, rng, droop = 0.08) {
         const S = T.S, L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
         if (L < 2) return;
-        const sag = L * 0.08, at = t => [geo.lerp(p0[0], p1[0], t), geo.lerp(p0[1], p1[1], t), geo.lerp(p0[2], p1[2], t) - sag * 4 * t * (1 - t)];
+        const sag = L * droop, at = t => [geo.lerp(p0[0], p1[0], t), geo.lerp(p0[1], p1[1], t), geo.lerp(p0[2], p1[2], t) - sag * 4 * t * (1 - t)];
         S.line(Array.from({ length: 13 }, (_, i) => at(i / 12)));
         const n = Math.floor(L / 0.7), flip = rng.chance(0.5);
         for (let i = 1; i < n; i++) {
-            const q = at(i / n), w = 0.18, ux = ((p1[0] - p0[0]) / L) * w, uy = ((p1[1] - p0[1]) / L) * w;
-            const tri = [[q[0] - ux, q[1] - uy, q[2]], [q[0] + ux, q[1] + uy, q[2]], [q[0], q[1], q[2] - 0.4]];
+            // top corners on the string, so a steep string isn't hidden behind its own pennants
+            const q = at(i / n), d = 0.18 / L;
+            const tri = [at(i / n - d), at(i / n + d), [q[0], q[1], q[2] - 0.4]];
             S.face(tri, false);
             inKind(S, T.tones ? ((i % 2) === (flip ? 1 : 0) ? RED : YELLOW) : S.kind, () => S.loop(tri));
         }
@@ -135,6 +136,9 @@
         S.lathe(x, y, [[1.6, 0.8], [1.6, 4.2]], T.segs(1.6));
         const zc = 4.3, rc = r + 0.35, roof = [[rc, zc + 0.7], [rc * 0.55, zc + 1.9], [0.5, zc + 2.6], [0, zc + 2.75]];
         S.lathe(x, y, [[rc, zc]].concat(roof), T.segs(rc));
+        // lathe only outlines smooth profiles, so the crease between the frieze
+        // and the roof needs its own ring or the canopy has no edge at the back
+        S.loop(ring(T.segs(rc), (c, s) => [x + (rc * 1.015 + 0.01) * c, y + (rc * 1.015 + 0.01) * s, zc + 0.7]));
         stripes(T, x, y, roof, 2 * Math.round(r * 1.3), a0);
         valance(T, x, y, rc + 0.02, zc, 2 * Math.round(r * 1.3), 0.35);
         flag(T, x, y, zc + 2.75, 1.4);
@@ -179,10 +183,11 @@
         }
         const top = hw + 12.9;
         flag(T, x, y, top, 2.2);
-        // pennants from the king pole out to the eaves
+        // pennants from the king pole out to the eaves, nearly taut or they
+        // sag into the roof and only bits of them poke out
         for (let i = 0; i < 4; i++) {
             const a = a0 + Math.PI / 4 + (i * Math.PI) / 2;
-            pennants(T, [x, y, top + 1.6], [x + (R + 0.5) * Math.cos(a), y + (R + 0.5) * Math.sin(a), hw + 0.2], rng);
+            pennants(T, [x, y, top + 1.6], [x + (R + 0.5) * Math.cos(a), y + (R + 0.5) * Math.sin(a), hw + 0.5], rng, 0.02);
         }
         // way in on the side facing us, dark inside
         const c = T.cam, fa = Math.atan2(-c.fy, -c.fx), ux = -Math.sin(fa), uy = Math.cos(fa);
@@ -302,6 +307,8 @@
         S.lathe(x, y, [[0.9, 0.45], [0.7, H]], 16);
         const top = [[rc, H + 0.5], [0.8, H + 2.2], [0, H + 2.5]];
         S.lathe(x, y, [[rc, H]].concat(top), T.segs(rc));
+        // crease under the umbrella, as on the carousel
+        S.loop(ring(T.segs(rc), (c, s) => [x + (rc * 1.015 + 0.01) * c, y + (rc * 1.015 + 0.01) * s, H + 0.5]));
         stripes(T, x, y, top, n, a0);
         valance(T, x, y, rc + 0.02, H, n, 0.3);
         flag(T, x, y, H + 2.5, 1.2);
@@ -336,6 +343,8 @@
         S.line([F.P(0, 0, H + 1.4), F.P(0, 0, H + 4)]);
         const g = rng.range(4, H - 8);
         S.lathe(x, y, [[1.5, g], [3.3, g + 0.3], [3.3, g + 1.3], [1.5, g + 1.5]], T.segs(3.3));
+        // the lathe draws nothing round the outside of this ring, see the carousel
+        for (const z of [g + 0.3, g + 1.3]) S.loop(ring(T.segs(3.3), (c, s) => [x + 3.35 * c, y + 3.35 * s, z]));
         if (T.tones) inKind(S, YELLOW, () => S.loop(ring(T.segs(3.3), (c, s) => [x + 3.36 * c, y + 3.36 * s, g + 0.8])));
         const m = 14;
         for (let i = 0; i < m; i++) {
@@ -383,8 +392,10 @@
     function teacups(T, x, y, r, rng) {
         const S = T.S;
         S.lathe(x, y, [[r, 0], [r, 0.45]], T.segs(r));
-        // teapot in the middle
-        S.lathe(x, y, [[1.1, 0.45], [1.6, 1.3], [1.4, 2.2], [0.7, 2.5]], T.segs(1.6));
+        // teapot in the middle, rounded off into plenty of rings. The outline
+        // runs straight from ring to ring, so with only a few it cuts inside
+        // the pot round the shoulder and gets hidden
+        S.lathe(x, y, geo.chaikin([[1.1, 0.45], [1.6, 1.3], [1.4, 2.2], [0.7, 2.5]], 2), T.segs(1.6));
         S.lathe(x, y, [[0.5, 2.5], [0.25, 2.8], [0, 2.95]], 10);
         const c = T.cam;
         S.line([[x + c.rx * 1.4, y + c.ry * 1.4, 1.2], [x + c.rx * 2.3, y + c.ry * 2.3, 2.2], [x + c.rx * 2.5, y + c.ry * 2.5, 2.3]]);

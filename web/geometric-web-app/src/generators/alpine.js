@@ -544,7 +544,12 @@
                 const keep = G.h.slice();
                 level(G, c.x, c.y, 11, c.z);
                 let route = null;
-                for (const grade of [0.18, 0.26]) if (!route) route = climb(G, from, [c.x, c.y], grade);
+                // on steep ground a gentle grade only fits hairpins narrower than the
+                // road, which draws as a scribble, so go steeper until it untangles
+                for (const grade of [0.18, 0.26, 0.4, 0.6]) {
+                    if (!route) route = climb(G, from, [c.x, c.y], grade);
+                    if (route && tangled(route, 3.5)) route = null;
+                }
                 if (route) {
                     E.hut = [c.x, c.y, c.z];
                     E.hutRoad = route;
@@ -874,6 +879,17 @@
         const path = [];
         for (let v = t; v >= 0; v = prev[v]) path.push([G.px(v % (nx + 1)), G.py(Math.floor(v / (nx + 1)))]);
         return geo.chaikin(path.reverse(), 2);
+    }
+
+    // Does the path come back within w of itself further along
+    function tangled(path, w) {
+        const cum = lengths(path);
+        for (let i = 0; i < path.length; i++) {
+            for (let j = i + 1; j < path.length; j++) {
+                if (cum[j] - cum[i] > 2 * w && Math.hypot(path[j][0] - path[i][0], path[j][1] - path[i][1]) < w) return true;
+            }
+        }
+        return false;
     }
 
     // Line round a base where its walls go into the ground. Without it a base

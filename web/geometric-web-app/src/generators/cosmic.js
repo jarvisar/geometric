@@ -99,6 +99,7 @@
         const S = new PG.iso.Scene({ project: (x, y, z) => [x - X, y - Y, -z] }, W, H);
         const win = PG.shapes.rect(X - 0.5, Y - 0.5, X + W + 0.5, Y + H + 0.5);
         const put = (pts, z) => S.line(chop(pts).map(([x, y]) => [x, y, z]));
+        const crosses = [];
         const D = {
             S, X, Y, W, H,
             sees: b => !b || (b[2] >= X - 1 && b[0] <= X + W + 1 && b[3] >= Y - 1 && b[1] <= Y + H + 1),
@@ -114,6 +115,19 @@
             },
             // Small marks are dropped rather than cut when anything covers them
             mark(pts, z, role = INK) { S.kind = role; S.line(pts.map(([x, y]) => [x, y, z]), true); },
+            // Both strokes of a cross get a kind of their own, so render() can drop the cross when only one survives
+            cross(x, y, s, z, role = INK) {
+                S.kind = 8 + crosses.length; crosses.push(role);
+                S.line([[x - s, y, z], [x + s, y, z]], true); S.line([[x, y - s, z], [x, y + s, z]], true);
+            },
+            render() {
+                const out = [];
+                PG.iso.render(S).forEach((paths, kind) => {
+                    if (kind < 8) out[kind] = paths;
+                    else if (paths.length === 2) (out[crosses[kind - 8]] ||= []).push(...paths);
+                });
+                return out;
+            },
             face(pts, z) { S.face(pts.map(([x, y]) => [x, y, z]), false); },
             // Masks for an x-monotone shape: columns between the top profile and the bottom one (or the panel bottom)
             columns(top, bot, z, cull = true) {
@@ -492,8 +506,9 @@
             let v = up ? Infinity : -Infinity;
             for (const [cx, cy, r] of list) {
                 const d = x - cx;
-                if (d * d >= r * r) continue;
-                const s = Math.sqrt(r * r - d * d);
+                // keep the samples right on the edge or the end lumps lose their tip and the cloud ends in a wall
+                if (Math.abs(d) > r * (1 + 1e-9)) continue;
+                const s = Math.sqrt(Math.max(0, r * r - d * d));
                 v = up ? Math.min(v, cy - s) : Math.max(v, cy + s);
             }
             return v;
@@ -655,7 +670,7 @@
             const kind = rng.random(), s = rng.range(0.55, 1.1), role = rng.chance(0.2) ? rng.pick(E.starRoles) : INK;
             if (avoid.some(([u, v, r]) => Math.hypot(x - u, y - v) < r + 1.5)) continue;
             if (kind < 0.5) D.mark(geo.circle(x, y, rng.range(0.22, 0.38), 6), 1, role);
-            else if (kind < 0.9) { D.mark([[x - s, y], [x + s, y]], 1, role); D.mark([[x, y - s], [x, y + s]], 1, role); }
+            else if (kind < 0.9) D.cross(x, y, s, 1, role);
             else if (kind < 0.97) D.mark(geo.close(Array.from({ length: 8 }, (_, j) => { const rr = j % 2 ? s * 0.35 : s * 1.7, a = PI * j / 4; return [x + rr * Math.cos(a), y + rr * Math.sin(a)]; })), 1, role);
             else D.mark(geo.circle(x, y, s * 0.8, 10), 1, role);
         }
@@ -679,8 +694,7 @@
         const x = X + W * rng.range(0.2, 0.8), y = Y + H * rng.range(0.1, 0.35), a = rng.range(0.25, 0.7), l = Math.min(W, H) * rng.range(0.2, 0.35), dx = Math.cos(a) * l * rng.sign(), dy = Math.sin(a) * l;
         D.line([[x, y], [x + dx, y + dy]], 1.5, INK);
         D.line([[x + dy * 0.04, y - dx * 0.04], [x + dx * 0.6 + dy * 0.04, y + dy * 0.6 - dx * 0.04]], 1.5, COOL);
-        const s = 1.2, tx = x + dx, ty = y + dy;
-        D.mark([[tx - s, ty], [tx + s, ty]], 1.6, INK); D.mark([[tx, ty - s], [tx, ty + s]], 1.6, INK);
+        D.cross(x + dx, y + dy, 1.2, 1.6, INK);
     }
     function saucer(E, rng, D, x, y, size, z, ground, move = 0) {
         const rx = size, ry = size * 0.26, body = geo.ellipse(x, y, rx, ry, 0, 32).slice(0, -1), dome = [];
@@ -711,7 +725,7 @@
         for (let k = 0; k < 6; k++) {
             const [px, py] = P(rng.range(-0.3, 0.3) * size * 0.3, -size * (0.7 + k * 0.36)), pr = size * (0.1 + k * 0.04);
             if (py > D.Y + D.H + pr) break;
-            const c = puff(E, rng, px, py, pr, z - 0.3 - k * 0.01);
+            const c = puff(E, rng, px, py, pr, z - 0.3 - k * 0.02);
             if (c) draw(D, c);
         }
     }
@@ -809,7 +823,7 @@
             for (let k = 0, y = top; k < 9; k++) {
                 const r = amp * (0.07 + k * 0.045);
                 y -= r * 1.05;
-                const c = puff(E, rng, xc + drift * k * (1 + k * 0.25) + rng.range(-0.2, 0.2) * r, y, r, z - 0.6 - k * 0.01);
+                const c = puff(E, rng, xc + drift * k * (1 + k * 0.25) + rng.range(-0.2, 0.2) * r, y, r, z - 0.6 - k * 0.02);
                 if (c) add(c);
             }
             return s;
@@ -840,7 +854,10 @@
                     list.push([x, heightAt(pts, x) + depth * clamp(f + rng.range(-0.2, 0.2) * (j > 0), 0.05, 1)]);
                 }
             }
-            list.sort((a, b) => a[1] - b[1]).forEach(([x, y], k) => add(make(x, y, z + 0.3 + k * 0.01)));
+            // Outlines sit 0.01 in front of their masks and a pine's tiers span 0.06, so neighbours need
+            // more depth than that between them or they show through each other
+            const step = Math.min(0.08, 1.3 / list.length);
+            list.sort((a, b) => a[1] - b[1]).forEach(([x, y], k) => add(make(x, y, z + 0.3 + k * step)));
         };
         const bush = (x, y, size, z) => cloud(E, rng, x, y, size, size * rng.range(0.4, 0.6), z, { part: 'bush', role: green, lumps: 1.5, angle: ang });
         // little patches of grass stripes
@@ -857,9 +874,11 @@
         const many = per => Math.round(w / u * per * (0.4 + detail) * rng.range(0.7, 1.3));
         const tree = (size, kind = 'round') => (x, y, z) => kind === 'pine' ? pine(E, rng, x, y, size * rng.range(0.8, 1.25), z, green)
             : rng.chance(0.25) ? bush(x, y, size * rng.range(0.4, 0.6), z) : rng.chance(0.12) ? boulder(E, rng, x, y, size * rng.range(0.2, 0.35), z, BROWN) : lollipop(E, rng, x, y, size * rng.range(0.75, 1.25), z, green);
+        let giant = null;
         const rising = (pl, z) => {
-            const r = Math.min(w * 0.32, h * 0.42) * rng.range(0.8, 1.1);
-            add(planet(E, pl, x0 + w * rng.range(0.25, 0.75), hz + r * rng.range(-0.25, 0.3), r, z, E.lightVec));
+            const r = Math.min(w * 0.32, h * 0.42) * rng.range(0.8, 1.1), x = x0 + w * rng.range(0.25, 0.75), y = hz + r * rng.range(-0.25, 0.3);
+            giant = [x, y, r * (pl.ring ? pl.outer : 1.1)];
+            add(planet(E, pl, x, y, r, z, E.lightVec));
         };
         // A giant planet rising behind the horizon in feature panels
         if (hero && biome !== 'moon' && rng.chance(0.5)) rising(E.cast.planets[2], 15);
@@ -883,8 +902,8 @@
                 foot += h * rng.range(0.01, 0.03);
                 flat(foot, 26, rng.pick([GREEN, BROWN, GOLD]), 0.6);
                 if (big) { const mid = hill(lerp(foot, yb, 0.5), h * rng.range(0.04, 0.07), 27, rng.pick([green, tint])); props(mid.pts, 27, many(3), h * 0.04, tree(u * 0.08, snow ? 'pine' : 'round'), 6); }
-                const fore = hill(yb - h * 0.02, h * rng.range(0.07, 0.12), 28, green);
-                props(fore.pts, 28, many(3), h * 0.06, trees, 4);
+                const fore = hill(yb - h * 0.02, h * rng.range(0.07, 0.12), 29, green);
+                props(fore.pts, 29, many(3), h * 0.06, trees, 4);
                 tufts(fore, many(8), h * 0.1);
             }
         } else if (biome === 'hills') {
@@ -911,8 +930,9 @@
                 }
             } else {
                 flat(hz, 21, rng.pick([BROWN, GOLD]), 0.55);
+                // depth follows the base, stretched out so rocks with close bases don't show through each other
                 for (let k = 0, n = Math.max(1, Math.round(w / (h * 0.6) * rng.range(0.6, 1.2) * (kind === 'arches' ? 1.6 : 1))); k < n; k++) {
-                    const base = hz + h * rng.range(0.02, 0.16), size = Math.min(h * rng.range(0.14, 0.32), pw * 0.45), x = x0 + w * rng.range(0.05, 0.95), z = 22 + (base - hz) / h;
+                    const base = hz + h * rng.range(0.02, 0.16), size = Math.min(h * rng.range(0.14, 0.32), pw * 0.45), x = x0 + w * rng.range(0.05, 0.95), z = 22 + (base - hz) / h * 20;
                     if (kind === 'mesas') add(rng.chance(0.15) ? arch(E, rng, x, base, size * rng.range(0.8, 1.3), size, z) : mesa(E, rng, x, base, size * rng.range(0.5, 2.4), size, z));
                     else add(k === 0 || rng.chance(0.3) ? arch(E, rng, x, base, size * rng.range(0.8, 1.3), size * 1.1, z) : mesa(E, rng, x, base, size * rng.range(0.18, 0.35), size * rng.range(0.8, 1.3), z));
                 }
@@ -969,7 +989,7 @@
         }
         // a saucer crossing a shared panorama left to right, either arriving and beaming down
         // in the last panel or beaming in the first and flying off
-        const flight = count > 1 && E.p.visitors && rng.chance(0.35) ? rng.sign() : 0;
+        const flight = count > 1 && E.p.visitors && rng.chance(0.35) && E.fly() ? rng.sign() : 0;
         const skyline = D => {
             let y = -Infinity;
             if (!far) return D.Y + D.H;
@@ -985,6 +1005,8 @@
             if (sun) sunDisc(E, D, sun, phase === 'set' && prng.chance(0.6));
             stars(E, prng, D, bottom, E.p.stars * (biome === 'moon' ? 1.4 : phase === 'night' ? 1 : phase === 'set' ? 0.25 : 0.08), avoid);
             if (phase === 'night' && (biome === 'snow' || biome === 'peaks') && prng.chance(0.3)) aurora(E, prng, D, hz);
+            // small planets stay clear of the giant, or only slivers of them show around its rim
+            if (giant) avoid.push(giant);
             if (E.p.story === 'approach') featured(E, prng, D, t, hz, avoid, sun);
             scatter(E, prng, D, prng.int(phase === 'night' ? 1 : 0, phase === 'night' ? 3 : 1), hz - h * 0.08, avoid, 3, [0.03, 0.07], sun);
             if (phase === 'night' && prng.chance(0.25)) shootingStar(D, prng, D.X, D.Y, D.W, hz - D.Y);
@@ -1096,7 +1118,7 @@
                             const x = D.X + D.W / 2 + u * c - v * sn, y = D.Y + D.H / 2 + u * sn + v * c;
                             if (x > D.X - r && x < D.X + D.W + r && y > D.Y - r && y < D.Y + D.H + r && !avoid.some(([p, q, rr]) => Math.hypot(x - p, y - q) < rr + r)) rocks.push([x, y, r]);
                         }
-                        rocks.sort((p, q) => p[2] - q[2]).forEach(([x, y, r], k) => { draw(D, rock(E, prng, x, y, r, 4 + k * 0.01)); avoid.push([x, y, r]); });
+                        rocks.sort((p, q) => p[2] - q[2]).forEach(([x, y, r], k) => { draw(D, rock(E, prng, x, y, r, 4 + k * 0.02)); avoid.push([x, y, r]); });
                     }
                     scatter(E, prng, D, prng.int(tallish ? 2 : 1, tallish ? 4 : 3), D.Y + D.H, avoid, 3, [0.04, 0.12], null);
                     const cx = D.X + D.W * prng.range(0.2, 0.8), cy = D.Y + D.H * prng.range(0.2, 0.8), size = m * prng.range(0.25, 0.4);
@@ -1172,6 +1194,8 @@
             // Visitors: a couple per page at most
             let visits = p.visitors ? 1 + (n > 10) + (n > 25) : 0;
             E.visit = (rng, D) => visits > 0 && Math.min(D.W, D.H) > 18 && rng.chance(Math.min(0.35, 2.5 / n + 0.05)) && visits-- > 0;
+            // a saucer crossing a shared landscape counts as one visitor
+            E.fly = () => visits > 0 && visits-- > 0;
             const time = Array.from({ length: n }, (_, i) => n > 1 ? i / (n - 1) : 0.5);
             const elev = time.map(t => p.story === 'dusk' ? 1.05 - 1.5 * t + crng.range(-0.08, 0.08) : p.story === 'dawn' ? 1.05 - 1.5 * (1 - t) + crng.range(-0.08, 0.08) : crng.range(-0.55, 1));
             // A journey opens in the mountains (mostly ink linework) and the rest follows in any order
@@ -1213,7 +1237,7 @@
                     for (const s of scene.shared) draw(D, s);
                     scene.local(D, rngOf(seed, 5, idx), elev[idx]);
                     const f = p.frame === 'bold' ? 0.4 : 0, inner = PG.shapes.rect(f, f, w - f, h - f);
-                    PG.iso.render(D.S).forEach((paths, role) => {
+                    D.render().forEach((paths, role) => {
                         const into = layers[penOf(role, pens)];
                         for (const q of PG.clipPaths(paths, inner)) into.push(q.map(([u, v]) => [u + X, v + Y]));
                     });

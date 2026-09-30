@@ -183,6 +183,7 @@
             { id: 'twists', label: 'Half twists', type: 'range', min: 0, max: 6, step: 1, value: 2, random: [0, 3], show: p => p.form !== 'hopf',
               hint: 'Per loop. Möbius bands always get an odd number.' },
             { id: 'folds', label: 'Fold sharpness', type: 'range', min: 0, max: 1, step: 0.05, value: 0.5, random: [0, 0.9],
+              show: p => p.form !== 'hopf' && (p.twists > 0 || p.form === 'mobius'),
               hint: 'Gathers the twists into sharp folds instead of spreading them evenly' },
             { id: 'lean', label: 'Band angle (°)', type: 'range', min: -90, max: 90, step: 5, value: 0, random: [-40, 40],
               hint: 'Turns the band about its centre line' },
@@ -465,15 +466,18 @@
                 // One zigzag stroke along the band, stepping along the edges between neighbouring ribs. With
                 // odd = 0 or 1 each rib's direction follows its index, so two families that share rib ends
                 // step along opposite halves of the edges and never draw the same bit twice.
-                const stitch = (use, make, side, n, odd, gap = 1) => {
+                const stitch = (use, make, side, n, odd, gap = 1, bridge = null) => {
                     const runs = [];
                     let path = [], prev = -1, r0 = -1;
                     for (let r = 0; r < N; r++) {
-                        if (!use(r)) continue;
+                        const on = use(r);
+                        if (!on && !(bridge && bridge(r))) continue;
                         const pts = make(r);
                         if (prev >= 0 && r - prev > gap) { runs.push(path); path = []; }
                         if (odd === undefined ? path.length && path[path.length - 1][1] > 0 : (r + odd) % 2) pts.reverse();
-                        path.push(...pts);
+                        // a bridged rib keeps its steps along the edges but not the rib itself
+                        if (on) path.push(...pts);
+                        else { path.push(pts[0]); runs.push(path); path = [pts[pts.length - 1]]; }
                         if (r0 < 0) r0 = r;
                         prev = r;
                     }
@@ -516,7 +520,8 @@
                 if (pattern === 'lattice') for (let r = 0; r < N; r++) emit(second(r), only, 1);
                 if (back === 'cross') {
                     const use = r => (pattern === 'stripes' ? skip(r) : !skip(r)) && !flat(r);
-                    if (p.edges === 'stitch' && shared) stitch(use, second, 1, 1, 1);
+                    // skipping a flat rib would also drop its half of the edge steps and leave gaps in the outline
+                    if (p.edges === 'stitch' && shared) stitch(use, second, 1, 1, 1, 1, r => !skip(r) && flat(r));
                     else for (let r = 0; r < N; r++) if (use(r)) emit(pattern === 'lattice' ? [[r + ph + 0.5, -1, capOf(r)], [r + ph + 0.5, 1, capOf(r)]] : second(r), 1, 1);
                 }
 

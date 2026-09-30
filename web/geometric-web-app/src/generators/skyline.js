@@ -286,8 +286,18 @@
         S.kind = ARCH;
     }
 
+    // Height of the neighbour standing in front of wall W of lot L, between s0 and s1 along it
+    function cover(L, W, s0, s1) {
+        const spans = L.cover && L.cover[W.n[0] < -0.5 ? 0 : W.n[0] > 0.5 ? 1 : W.n[1] < -0.5 ? 2 : 3];
+        if (!spans) return 0;
+        const k = Math.abs(W.u[0]) > 0.5 ? 0 : 1, a = W.at(s0, 0)[k], b = W.at(s1, 0)[k];
+        let h = 0;
+        for (const [c0, c1, ch] of spans) if (c0 < Math.max(a, b) && c1 > Math.min(a, b)) h = Math.max(h, ch);
+        return h;
+    }
+
     // Rooms, cages and air conditioners hung all over a wall, Kowloon style
-    function barnacles(T, W, z0, z1, rng, amount) {
+    function barnacles(T, W, z0, z1, rng, amount, L) {
         if (!W.seen || amount <= 0) return;
         const cw = 1.3, cols = Math.floor((W.len - 0.4) / cw), rows = Math.floor((z1 - z0 - 1) / FL);
         if (cols < 2 || rows < 1) return;
@@ -299,8 +309,11 @@
         for (let t = Math.round(cols * rows * 0.4 * amount); t > 0; t--) {
             const w = rng.int(2, 3), c = rng.int(0, cols - w), r = rng.int(0, rows - 1), n = Math.min(rows - r, rng.weighted([[4, 1], [2, 2], [1, 3]]));
             if (c < 0 || !free(c, c + w, r, r + n)) continue;
+            const s0 = 0.2 + c * cw + 0.12, s1 = 0.2 + (c + w) * cw - 0.12, zb = z0 + r * FL + 0.5;
+            // below the roof of a close neighbour it's hidden anyway, or pokes up through it
+            if (zb < cover(L, W, s0 - 0.5, s1 + 0.5)) continue;
             for (let rr = r; rr < r + n; rr++) for (let cc = c; cc < c + w; cc++) used[rr * cols + cc] = 1;
-            room(T, W, 0.2 + c * cw + 0.12, 0.2 + (c + w) * cw - 0.12, z0 + r * FL + 0.5, z0 + (r + n) * FL - 0.4, rng.range(0.8, 1.8), rng);
+            room(T, W, s0, s1, zb, z0 + (r + n) * FL - 0.4, rng.range(0.8, 1.8), rng);
         }
     }
 
@@ -447,7 +460,16 @@
         if (w < 2.5 || d < 2.5) return;
         quiet(S, () => {
             const occ = new kit.Occupancy(w, d);
-            const spot = (a, b) => { const q = occ.place(rng, a, b); return q ? [x0 + q[0], y0 + q[1]] : null; };
+            const spot = (a, b) => {
+                const q = occ.place(rng, a, b);
+                if (!q) return null;
+                // o.poly is a chamfered roof, whose cut corners aren't there to stand on
+                if (o.poly && ![[0, 0], [a, 0], [a, b], [0, b]].every(([u, v]) => geo.pointInPolygon(x0 + q[0] + u, y0 + q[1] + v, o.poly))) {
+                    occ.rects.pop();
+                    return null;
+                }
+                return [x0 + q[0], y0 + q[1]];
+            };
             S.kind = ARCH;
             if (o.pad && Math.min(w, d) > 9) {
                 const R = Math.min(Math.min(w, d) / 2 - 0.5, 9);
@@ -487,7 +509,7 @@
         for (const W of ws) {
             if (!W.seen || W.len < 5) continue;
             if (rng.chance(p.signs * 0.45) && z1 - z0 > 12) {
-                const s = rng.chance(0.5) ? rng.range(0.8, 2) : W.len - rng.range(0.8, 2), zb = z0 + rng.range(4, 9);
+                const s = rng.chance(0.5) ? rng.range(0.8, 2) : W.len - rng.range(0.8, 2), zb = Math.max(z0 + rng.range(4, 9), cover(L, W, s - 0.5, s + 0.5));
                 blade(T, W, s, zb, Math.min(z1 - 2, zb + rng.range(6, 14)), rng);
             }
             if (rng.chance(p.signs * 0.35) && z1 - z0 > 16) {
@@ -541,7 +563,7 @@
                 z = parapet(T, rp, L.h);
             }
             const b = geo.bbox([rp]);
-            rooftop(T, b.minX + 0.8, b.minY + 0.8, b.maxX - 0.8, b.maxY - 0.8, z, rng, { pad: L.h > 50 && rng.chance(0.4), mast: 0.15, tank: 0.2, sign: 0.1 });
+            rooftop(T, b.minX + 0.8, b.minY + 0.8, b.maxX - 0.8, b.maxY - 0.8, z, rng, { pad: L.h > 50 && rng.chance(0.4), mast: 0.15, tank: 0.2, sign: 0.1, poly: rp.length > 4 ? rp : null });
         }
     }
 
@@ -560,7 +582,7 @@
                 // squatters' rooms crusted over the lower floors, so no bridge down there
                 if (rng.chance(T.p.clutter * 0.5)) {
                     const zt = Math.min(top - 1, rng.range(12, 34));
-                    quiet(T.S, () => { for (const W of ws) barnacles(T, W, FL + 0.5, zt, rng, T.p.clutter); });
+                    quiet(T.S, () => { for (const W of ws) barnacles(T, W, FL + 0.5, zt, rng, T.p.clutter, L); });
                     L.flat[5] = zt + 1;
                 }
             }
@@ -658,10 +680,12 @@
 
     function taperTower(T, L) {
         const { rng } = L, S = T.S, cx = (L.x0 + L.x1) / 2, cy = (L.y0 + L.y1) / 2, n = rng.pick([4, 4, 6, 8]);
-        const rin = Math.min(L.x1 - L.x0, L.y1 - L.y0) / 2 - 0.4, R0 = rin / Math.cos(Math.PI / n), t = rng.range(0.4, 0.7), h = L.h;
+        // a hexagon's corners point along x, past its flat sides
+        const hx = (L.x1 - L.x0) / 2 - 0.4, hy = (L.y1 - L.y0) / 2 - 0.4, rin = Math.min(hy, n === 6 ? hx * Math.cos(Math.PI / 6) : hx);
+        const R0 = rin / Math.cos(Math.PI / n), t = rng.range(0.4, 0.7), h = L.h;
         S.kind = ARCH;
         S.lathe(cx, cy, [[R0, 0], [R0 * t, h]], n, false, NROT(n));
-        T.block([[cx - rin, cy - rin], [cx + rin, cy + rin]], h, L.id);
+        T.block(ngon(cx, cy, R0, n), h, L.id);
         const floors = Math.round(h / FL), fh = h / floors, glass = rng.chance(0.5);
         const r = z => R0 * geo.lerp(1, t, z / h);
         for (let f = 1; f < floors; f++) {
@@ -698,8 +722,14 @@
 
     function twistTower(T, L) {
         const { rng } = L, S = T.S, cx = (L.x0 + L.x1) / 2, cy = (L.y0 + L.y1) / 2, half = Math.min(L.x1 - L.x0, L.y1 - L.y0) / 2 - 0.4;
-        const total = rng.range(0.7, 1.2) * rng.sign(), a = half / (Math.cos(total / 2) + Math.sin(Math.abs(total) / 2)) - 0.5;
-        const floors = Math.max(4, Math.round(L.h / FL)), th0 = rng.range(0, Math.PI / 2), plate = 0.4;
+        const total = rng.range(0.7, 1.2) * rng.sign(), floors = Math.max(4, Math.round(L.h / FL)), th0 = rng.range(0, Math.PI / 2), plate = 0.4;
+        // sized by the widest any floor gets once turned, so none pokes out of the lot
+        let e = 1;
+        for (let f = 0; f < floors; f++) {
+            const th = th0 - total / 2 + total * f / (floors - 1);
+            e = Math.max(e, Math.abs(Math.cos(th)) + Math.abs(Math.sin(th)));
+        }
+        const a = half / e - 0.5;
         S.kind = ARCH;
         T.block([[cx - half, cy - half], [cx + half, cy + half]], L.h, L.id);
         for (let f = 0; f < floors; f++) {
@@ -807,8 +837,11 @@
         for (const W of ws) {
             if (!W.seen) continue;
             shopfront(T, W, 0, rng);
-            quiet(S, () => barnacles(T, W, FL + 0.5, h - 1.5, rng, T.p.clutter));
-            if (rng.chance(T.p.signs)) blade(T, W, rng.chance(0.5) ? 0.8 : W.len - 0.8, rng.range(5, 9), Math.min(h - 2, rng.range(14, 24)), rng);
+            quiet(S, () => barnacles(T, W, FL + 0.5, h - 1.5, rng, T.p.clutter, L));
+            if (rng.chance(T.p.signs)) {
+                const s = rng.chance(0.5) ? 0.8 : W.len - 0.8;
+                blade(T, W, s, Math.max(rng.range(5, 9), cover(L, W, s - 0.5, s + 0.5)), Math.min(h - 2, rng.range(14, 24)), rng);
+            }
             for (let k = rng.int(0, Math.round(3 * T.p.signs)); k > 0; k--) pipe(T, W, rng.range(0.8, W.len - 0.8), rng.range(0, 6), h + 0.2, rng);
         }
         const z = parapet(T, poly, h);
@@ -874,13 +907,26 @@
                     });
                 }
             }
-            crane(T, cx + cr + 1.6, cy + cr + 1.6, 0, floors * FL + rng.range(10, 18), rng.range(0, TAU), rng, floors * FL);
         });
+        // built once every lot is standing, so the jib can swing clear of the neighbours
+        const hm = floors * FL + rng.range(10, 18), ang = rng.range(0, TAU);
+        T.cranes.push(() => crane(T, cx + cr + 1.6, cy + cr + 1.6, 0, hm, ang, rng, floors * FL, L.id));
     }
 
     // Tower crane: lattice mast and jib, counter jib with its weight, a hook on a line
-    function crane(T, x, y, z0, hm, ang, rng, work) {
-        const S = T.S, m = 0.85, keep = S.kind;
+    function crane(T, x, y, z0, hm, ang, rng, work, id) {
+        const S = T.S, m = 0.85, keep = S.kind, Lj = rng.range(26, 40), Lc = rng.range(9, 12), d = rng.range(0.35, 0.85) * Lj, hz = Math.max(work + 3, 8) - (z0 + hm);
+        // turn it until the jib clears the roofs round about and the hook hangs in the open
+        const hits = a => {
+            const c = Math.cos(a), s = Math.sin(a), P = (u, v = 0) => [x + c * u - s * v, y + s * u + c * v];
+            for (let u = -Lc; u <= Lj; u += 2) if (T.solids.hit(...P(u), z0 + hm - 2, id, id)) return true;
+            for (const u of [d - 2.2, d, d + 2.2]) for (const v of [-0.6, 0.6]) {
+                const q = P(u, v);
+                if (T.solids.hit(...q, z0 + hm + hz - 2.4, id, id) || T.paths.some(([path, half, , hi]) => z0 + hm + hz - 2.4 < hi && path.dist(...q) < half + 2.2)) return true;
+            }
+            return false;
+        };
+        for (let k = 0; k < 12 && hits(ang); k++) ang += TAU / 12;
         S.kind = PAD;
         const C = [[-m, -m], [m, -m], [m, m], [-m, m]];
         for (const [a, b] of C) S.line([[x + a, y + b, z0], [x + a, y + b, z0 + hm]]);
@@ -890,7 +936,7 @@
             for (let k = 0; k <= n; k++) { const c = C[k % 2 ? j : i]; pts.push([x + c[0], y + c[1], z0 + hm * k / n]); }
             S.line(pts);
         }
-        const F = turned(x, y, z0 + hm, ang), Lj = rng.range(26, 40), Lc = rng.range(9, 12);
+        const F = turned(x, y, z0 + hm, ang);
         S.box(F, -1.3, -1.3, 0, 1.3, 1.3, 1);
         S.box(F, 0.3, -2.8, -1.4, 2.3, -1.1, 1);
         const bot = s => [F.P(1.3, s, 1), F.P(Lj, s, 1)], topc = [F.P(1.3, 0, 2.6), F.P(Lj, 0, 1.8)];
@@ -908,7 +954,6 @@
         S.line([F.P(-1.2, -1.2, 1), apex, F.P(1.2, 1.2, 1)]);
         S.line([F.P(-1.2, 1.2, 1), apex, F.P(1.2, -1.2, 1)]);
         S.line([F.P(Lj * 0.7, 0, 2.1), apex, F.P(-Lc + 1.3, 0, 3.4)]);
-        const d = rng.range(0.35, 0.85) * Lj, hz = Math.max(work + 3, 8) - (z0 + hm);
         S.box(F, d - 0.6, -0.8, 0.6, d + 0.6, 0.8, 1);
         S.line([F.P(d, 0, 0.6), F.P(d, 0, hz + 0.7)]);
         S.box(F, d - 0.35, -0.25, hz, d + 0.35, 0.25, hz + 0.7);
@@ -959,7 +1004,8 @@
     }
 
     function domeHall(T, L) {
-        const { rng } = L, S = T.S, cx = (L.x0 + L.x1) / 2, cy = (L.y0 + L.y1) / 2, r = Math.min(L.x1 - L.x0, L.y1 - L.y0) / 2 - 1, hb = rng.range(4, 7);
+        // leaves room on the -y side for the entrance, which sticks out 2.5 m
+        const { rng } = L, S = T.S, cx = (L.x0 + L.x1) / 2, cy = (L.y0 + L.y1) / 2, r = Math.min(L.x1 - L.x0, L.y1 - L.y0 - 3) / 2 - 1, hb = rng.range(4, 7);
         S.kind = ARCH;
         S.lathe(cx, cy, [[r, 0], [r, hb]], T.segs(r));
         S.loop(ring(T.segs(r), (c, s) => [cx + (r + 0.04) * c, cy + (r + 0.04) * s, hb - 1]));
@@ -982,7 +1028,7 @@
             facade(T, W, FL + 0.3, h, 'grid', rng);
             shadeWall(T, W, 0, W.len, 0, h);
             if (rng.chance(T.p.signs * 0.5)) pipe(T, W, rng.range(0.8, W.len - 0.8), 0, h + 0.2, rng);
-            if (h > 11 && rng.chance(T.p.clutter * 0.6)) quiet(S, () => barnacles(T, W, FL + 0.5, h - 1, rng, T.p.clutter * 0.8));
+            if (h > 11 && rng.chance(T.p.clutter * 0.6)) quiet(S, () => barnacles(T, W, FL + 0.5, h - 1, rng, T.p.clutter * 0.8, L));
             if (W.len > 3 && rng.chance(0.7)) T.anchor(W.at(rng.range(0.5, W.len - 0.5), h - 0.8, 0.03), W.n, L.id);
         }
         const z = parapet(T, poly, h, 0.6);
@@ -1094,8 +1140,10 @@
         S.kind = ARCH;
         for (let i = 0; i < 3; i++) {
             const a = TAU * i / 3 + rng.range(0, 1), c = Math.cos(a), s = Math.sin(a), px = -s, py = c, foot = r0 + 12, top = H * 0.2;
-            S.solid([[x + c * r0 + px, y + s * r0 + py, 0], [x + c * foot + px, y + s * foot + py, 0], [x + c * foot - px, y + s * foot - py, 0], [x + c * r0 - px, y + s * r0 - py, 0],
-                [x + c * r0 * 0.9 + px, y + s * r0 * 0.9 + py, top], [x + c * (foot - 0.8) + px, y + s * (foot - 0.8) + py, 3], [x + c * (foot - 0.8) - px, y + s * (foot - 0.8) - py, 3], [x + c * r0 * 0.9 - px, y + s * r0 * 0.9 - py, top]], BOX);
+            // inner face sunk a little into the shaft, which tapers faster than the leg leans in
+            const i0 = r0 - 0.3, i1 = geo.lerp(r0, r1, top / zp) - 0.3;
+            S.solid([[x + c * i0 + px, y + s * i0 + py, 0], [x + c * foot + px, y + s * foot + py, 0], [x + c * foot - px, y + s * foot - py, 0], [x + c * i0 - px, y + s * i0 - py, 0],
+                [x + c * i1 + px, y + s * i1 + py, top], [x + c * (foot - 0.8) + px, y + s * (foot - 0.8) + py, 3], [x + c * (foot - 0.8) - px, y + s * (foot - 0.8) - py, 3], [x + c * i1 - px, y + s * i1 - py, top]], BOX);
         }
         S.lathe(x, y, [[r0, 0], [r1, zp]], T.segs(r0));
         shadeRound(T, x, y, 0, zp, r0, r1);
@@ -1143,11 +1191,14 @@
             S.line([[cx + (R + 6) * Math.cos(a), cy + (R + 6) * Math.sin(a), 0.01], [cx + (R + 10) * Math.cos(a), cy + (R + 10) * Math.sin(a), 0.01]]);
         }
         const corners = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
-        const w = x1 - x0, spare = (Math.min(w, y1 - y0) / 2 - R - 10) * Math.SQRT2 + (Math.min(w, y1 - y0) / 2 - R) * 0.4;
+        const w = x1 - x0, spare = (Math.min(w, y1 - y0) / 2 - R - 10) * Math.SQRT2 + (Math.min(w, y1 - y0) / 2 - R) * 0.4, sats = [];
         for (const [x, y] of corners) {
-            const dx = Math.sign(cx - x), dy = Math.sign(cy - y), r = geo.clamp(spare * 0.45, 5, 11);
-            satellite(T, x + dx * (r + 1.5), y + dy * (r + 1.5), r, rng.range(1.6, 2.6) * r, rng.pick([6, 8]), rng);
+            const dx = Math.sign(cx - x), dy = Math.sign(cy - y), r = geo.clamp(spare * 0.45, 5, 11), sx = x + dx * (r + 1.5), sy = y + dy * (r + 1.5);
+            satellite(T, sx, sy, r, rng.range(1.6, 2.6) * r, rng.pick([6, 8]), rng);
+            sats.push([sx, sy, r + 2]);
         }
+        // on small blocks the ring of trees runs into the satellites
+        const open = (x, y) => sats.every(([sx, sy, sr]) => Math.hypot(x - sx, y - sy) > sr);
         const a = lm.foot + 1.5, b = R + 4.5;
         if (lm.kind === 'needle' && b - a > 3) {
             inKind(S, ARCH, () => { for (const r of [a, b]) S.loop(ring(T.segs(r), (c, s) => [cx + r * c, cy + r * s, 0.02])); });
@@ -1161,13 +1212,13 @@
         const rr = R + 13;
         for (let i = 0; i < 20; i++) {
             const a = TAU * (i + 0.5) / 20, x = cx + rr * Math.cos(a), y = cy + rr * Math.sin(a);
-            if (x < x0 + 2 || x > x1 - 2 || y < y0 + 2 || y > y1 - 2) continue;
+            if (x < x0 + 2 || x > x1 - 2 || y < y0 + 2 || y > y1 - 2 || !open(x, y)) continue;
             tree(T, x, y, 0, rng);
         }
         quiet(S, () => {
             for (let i = 0; i < 16; i++) {
-                const a = rng.range(0, TAU), r = rng.range(R + 5, R + 12);
-                inKind(S, LIFE, () => kit.person(T, cx + r * Math.cos(a), cy + r * Math.sin(a), 0, rng));
+                const a = rng.range(0, TAU), r = rng.range(R + 5, R + 12), x = cx + r * Math.cos(a), y = cy + r * Math.sin(a);
+                if (open(x, y)) inKind(S, LIFE, () => kit.person(T, x, y, 0, rng));
             }
         });
     }
@@ -1275,10 +1326,10 @@
         const cars = Math.round(len / 14 * p.traffic * rng.range(0.6, 1.4));
         quiet(S, () => {
             for (let i = 0; i < cars; i++) {
-                const v = rng.pick(lanes), u = rng.range(a + 5, b - 5), dir = axis === 0 ? (v < 0 ? 0 : 2) : (v < 0 ? 3 : 1);
-                if (busy.some(q => Math.abs(q[0] - u) < 6.5 && q[1] === v)) continue;
+                const v = rng.pick(lanes), u = rng.range(a + 5, b - 5), dir = axis === 0 ? (v < 0 ? 0 : 2) : (v < 0 ? 3 : 1), [x, y] = P(u, v);
+                // inner lanes pass close to the piers of the highway overhead
+                if (busy.some(q => Math.abs(q[0] - u) < 6.5 && q[1] === v) || T.piers.some(q => Math.hypot(q[0] - x, q[1] - y) < 4.5)) continue;
                 busy.push([u, v]);
-                const [x, y] = P(u, v);
                 inKind(S, LIFE, () => kit.car(T, x, y, 0, dir, rng, true));
             }
         });
@@ -1350,7 +1401,7 @@
         for (const [o, z] of edges) S.line(path.pts.map((_, i) => path.off(i, o, z)));
     }
 
-    function highway(T, path, rng) {
+    function highway(T, path, rng, avoid) {
         const S = T.S, wd = 13, zd = 11.5, zb = zd - 2.2, gw = 5, half = wd / 2;
         S.kind = ARCH;
         sweep(T, path, [[-half, half, zd - 0.6, zd], [-half, -half + 0.4, zd, zd + 1.1], [half - 0.4, half, zd, zd + 1.1], [-gw / 2, gw / 2, zb, zd - 0.6]],
@@ -1359,6 +1410,7 @@
             const { p, t } = path.at(d), F = turned(p[0], p[1], 0, Math.atan2(t[1], t[0]));
             S.box(F, -0.9, -1.1, 0, 0.9, 1.1, zb - 1.3);
             S.box(F, -1.1, -gw / 2 - 1.2, zb - 1.3, 1.1, gw / 2 + 1.2, zb);
+            T.piers.push(p);
         }
         inKind(S, PAD, () => { for (const o of [-0.2, 0.2]) S.line(path.pts.map((_, i) => path.off(i, o, zd + 0.02))); });
         inKind(S, ROAD, () => {
@@ -1372,7 +1424,8 @@
             S.line([[p[0] + n[0] * o, p[1] + n[1] * o, zd + 1.1], [p[0] + n[0] * o, p[1] + n[1] * o, zd + 7], [p[0] + n[0] * (o - sg * 2), p[1] + n[1] * (o - sg * 2), zd + 7.4]]);
         }
         const g = path.len * rng.range(0.3, 0.7), { p, t } = path.at(g), F = turned(p[0], p[1], zd, Math.atan2(t[1], t[0]));
-        if (Math.abs(t[0]) > 0.99 || Math.abs(t[1]) > 0.99) {
+        // the sign gantry would reach up into the monorail where the two cross
+        if ((Math.abs(t[0]) > 0.99 || Math.abs(t[1]) > 0.99) && !(avoid && avoid.dist(p[0], p[1]) < 3)) {
             for (const s of [-half, half]) S.box(F, -0.3, s - 0.3, 1.1, 0.3, s + 0.3, 7.5);
             S.box(F, -0.4, -half, 7.5, 0.4, half, 8.3);
             const side = T.sees([-t[0], -t[1], 0]) ? -0.45 : 0.45;
@@ -1489,14 +1542,15 @@
             b.used = (b.used || 0) + 1;
             const wires = rng.weighted([[3, 1], [2, 2], [1, 3]]), sag0 = L * rng.range(0.04, 0.1);
             for (let w = 0; w < wires; w++) {
-                const sag = sag0 * (1 + 0.45 * w), pts = [];
+                const sag = sag0 * (1 + 0.45 * w);
+                const at = f => [a.p[0] + (b.p[0] - a.p[0]) * f, a.p[1] + (b.p[1] - a.p[1]) * f, a.p[2] + (b.p[2] - a.p[2]) * f - 4 * sag * f * (1 - f)];
+                // tested every metre, finer than it's drawn, or it cuts through building corners
                 let ok = true;
-                for (let k = 0; k <= 12 && ok; k++) {
-                    const f = k / 12, q = [a.p[0] + (b.p[0] - a.p[0]) * f, a.p[1] + (b.p[1] - a.p[1]) * f, a.p[2] + (b.p[2] - a.p[2]) * f - 4 * sag * f * (1 - f)];
-                    if (k && k < 12 && (q[2] < 2.5 || blocked(q[0], q[1], q[2], a.id, b.id))) ok = false;
-                    pts.push(q);
+                for (let k = 1, n = Math.ceil(L); k < n && ok; k++) {
+                    const q = at(k / n);
+                    if (q[2] < 2.5 || blocked(q[0], q[1], q[2], a.id, b.id)) ok = false;
                 }
-                if (ok) S.line(pts);
+                if (ok) S.line(Array.from({ length: 13 }, (_, k) => at(k / 12)));
             }
         }
     }
@@ -1517,6 +1571,10 @@
                 const z = Math.ceil(rng.range(bottom, top - 3.8) / FL) * FL, c = rng.range(lo + 1.6, hi - 1.6);
                 if (z + 3.8 > top + 4) continue;
                 const box = axis ? [c - 1.6, a1, c + 1.6, b0] : [a1, c - 1.6, b0, c + 1.6];
+                // a lot between the two in the same block would be in the way
+                let clear = true;
+                for (let u = 0.5; u < gap && clear; u += 1) for (const v of [-1.6, 0, 1.6]) if (T.solids.hit(axis ? c + v : a1 + u, axis ? a1 + u : c + v, 0, A.id, B.id)) clear = false;
+                if (!clear) continue;
                 S.kind = ARCH;
                 const ws = prism(T, rect(...box), z, z + 3.4);
                 S.box(F0, box[0] - 0.15, box[1] - 0.15, z + 3.4, box[2] + 0.15, box[3] + 0.15, z + 3.8);
@@ -1573,7 +1631,7 @@
         if (park) out.push([x0, y0, x1, y1]);
         else split(x0, y0, x1, y1, 0);
         let prev = null;
-        return out.map(([a0, b0, a1, b1], k) => {
+        const lots = out.map(([a0, b0, a1, b1], k) => {
             const cx = (a0 + a1) / 2, cy = (b0 + b1) / 2;
             let cap = Infinity;
             if (hw && hw.dist(cx, cy) - Math.hypot(a1 - a0, b1 - b0) / 2 < 9) cap = 18;
@@ -1592,6 +1650,13 @@
             h = Math.max(type === 'low' || type === 'parking' ? h : 14, Math.min(h, cap));
             return { id: hash(i, j, k), x0: a0, y0: b0, x1: a1, y1: b1, h: Math.round(h / FL) * FL + 0.4, type, rng: new PG.RNG(hash(T.seed, i, j, k, 9)), i, j };
         });
+        // Neighbours right beside each side (-x, +x, -y, +y) as [from, to, height] along it,
+        // so rooms and blade signs don't hang into them
+        for (const L of lots) L.cover = [0, 1, 2, 3].map(s => lots.filter(M => {
+            const d = [L.x0 - M.x1, M.x0 - L.x1, L.y0 - M.y1, M.y0 - L.y1][s];
+            return M !== L && M.type !== 'park' && d > -0.01 && d < 4 && (s < 2 ? M.y0 < L.y1 && M.y1 > L.y0 : M.x0 < L.x1 && M.x1 > L.x0);
+        }).map(M => s < 2 ? [M.y0, M.y1, M.h + 1] : [M.x0, M.x1, M.h + 1]));
+        return lots;
     }
 
     PG.register({
@@ -1642,7 +1707,7 @@
             const T = {
                 S, cam, p, k, B, W, H, seed, detail: p.detail, sees: n => cam.facing(n[0], n[1], n[2] || 0), segs: r => segments(r, k),
                 picket: Math.max(0.45, 0.75 / k), tones: p.shade ? {} : null, hLit: p.gap, hDark: p.gap, gap: p.gap, shade: p.shade,
-                light, dark: n => light(n) < 0.02, anchors: [], solids: new Solids(), waterKind: GLASS, lm,
+                light, dark: n => light(n) < 0.02, anchors: [], solids: new Solids(), waterKind: GLASS, lm, piers: [], paths: [], cranes: [],
             };
             T.anchor = (q, n, id) => T.anchors.push({ p: q, n, id });
             T.block = (poly, z, id) => {
@@ -1687,12 +1752,12 @@
             const visible = (x0, y0, x1, y1, h) => S.onPage([0, h].flatMap(z => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(q => cam.project(q[0], q[1], z))));
             for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
                 if (superblock(i, j) && (i !== -1 || j !== -1)) continue;
-                const sb = superblock(i, j), x0 = i * B + widthX(i) / 2, x1 = (sb ? i + 2 : i + 1) * B - widthX(sb ? i + 2 : i + 1) / 2;
-                const y0 = j * B + widthY(j) / 2, y1 = (sb ? j + 2 : j + 1) * B - widthY(sb ? j + 2 : j + 1) / 2;
+                const sb = superblock(i, j), ie = sb ? i + 2 : i + 1, je = sb ? j + 2 : j + 1;
+                const x0 = i * B + widthX(i) / 2, x1 = ie * B - widthX(ie) / 2, y0 = j * B + widthY(j) / 2, y1 = je * B - widthY(je) / 2;
                 if (!visible(x0, y0, x1, y1, sb ? lm.H * 1.2 : p.height * 2.2 + 10)) continue;
                 const brng = new PG.RNG(hash(seed, i, j, 3));
                 // tall lots behind the top edge can still reach into the page, their kerbs can't
-                if (visible(x0, y0, x1, y1, 8)) sidewalk(T, x0, y0, x1, y1, brng, [widthX(i) >= 15, widthX(i + 1) >= 15, widthY(j) >= 15, widthY(j + 1) >= 15]);
+                if (visible(x0, y0, x1, y1, 8)) sidewalk(T, x0, y0, x1, y1, brng, [widthX(i) >= 15, widthX(ie) >= 15, widthY(j) >= 15, widthY(je) >= 15]);
                 if (sb) {
                     lm.R = Math.min(x1 - x0, y1 - y0) * 0.3;
                     withBase(T, 0.2, () => {
@@ -1710,6 +1775,11 @@
                 }
             }
 
+            // elevated roads before the streets, so the cars below keep clear of the highway piers
+            const paths = T.paths;
+            if (hw) { highway(T, hw, rng, mono); paths.push([hw, 8, 7, 14]); }
+            if (mono) { monorail(T, mono, 21, hw, rng); paths.push([mono, 2.5, 16, 25]); }
+
             for (let i = i0; i <= i1 + 1; i++) for (let j = j0; j <= j1; j++) {
                 if (lm && i === 0 && (j === -1 || j === 0)) continue;
                 const a = j * B + widthY(j) / 2, b = (j + 1) * B - widthY(j + 1) / 2, w = widthX(i);
@@ -1723,10 +1793,8 @@
                 street(T, 0, j * B, a, b, w, new PG.RNG(hash(seed, i, j, 22)));
             }
 
-            const paths = [];
-            if (hw) { highway(T, hw, rng); paths.push([hw, 8, 7, 14]); }
-            if (mono) { monorail(T, mono, 21, hw, rng); paths.push([mono, 2.5, 16, 25]); }
             skybridges(T, lots, rng, transitLines);
+            for (const f of T.cranes) withBase(T, 0.2, () => quiet(S, f));
             if (p.airship) {
                 // high over one side of the page, clear of the tallest roof under it
                 const arng = new PG.RNG(hash(seed, 31)), len = arng.range(55, 68), sg = arng.chance(0.5) ? -1 : 1, lx = cam.project(0, 0, 0)[0];

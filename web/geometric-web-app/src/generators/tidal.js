@@ -177,8 +177,9 @@
     const cubic = (a, b, c, d, t) => b + 0.5 * t * (c - a + t * (2 * a - 5 * b + 4 * c - d + t * (3 * (b - c) + d - a)));
 
     // The eroded grid is the slow part, so it's kept for the next generate
-    // when only the view or the linework changes.
-    let erodedCache = null, terrainCache = null;
+    // when only the view or the linework changes. Terrain keeps two, since
+    // every generate asks for the coarse layout copy and the render one.
+    let erodedCache = null, terrainCache = [];
     function eroded(kind, seed) {
         const key = kind + ',' + seed;
         if (erodedCache && erodedCache.key === key) return erodedCache;
@@ -240,8 +241,8 @@
     // Heights (about 0..1) on an rn x rn grid over the tile, upsampled from the
     // erosion grid with a little rock texture on top
     function terrain(kind, seed, rn, rough) {
-        const key = [kind, seed, rn, rough].join();
-        if (terrainCache && terrainCache.key === key) return terrainCache;
+        const key = [kind, seed, rn, rough].join(), hit = terrainCache.find(t => t.key === key);
+        if (hit) return hit;
         const { h, N2, crater } = eroded(kind, seed), n = EN;
         const g = (i, j) => h[geo.clamp(j, 0, n - 1) * n + geo.clamp(i, 0, n - 1)];
         // D8 drainage runs in eight fixed directions. Sampling the grid through a
@@ -315,8 +316,10 @@
             }
         }
         const sorted = Float32Array.from(out).sort();
-        return (terrainCache = { key, n: rn, h: out, cell: L / (rn - 1), lo: sorted[0], hi: sorted[sorted.length - 1], lake,
-            quantile: f => sorted[Math.round(geo.clamp(f, 0, 1) * (sorted.length - 1))] });
+        const T = { key, n: rn, h: out, cell: L / (rn - 1), lo: sorted[0], hi: sorted[sorted.length - 1], lake,
+            quantile: f => sorted[Math.round(geo.clamp(f, 0, 1) * (sorted.length - 1))] };
+        terrainCache = [T, ...terrainCache.slice(0, 1)];
+        return T;
     }
 
     // ------------------------------------------------------------------
@@ -758,7 +761,7 @@
         const gap = Math.max(1.6, p.spacing * 4) / (C.k * C.ce), out = put(STRATA);
         const count = Math.ceil((Math.max(...strip.map(q => q[2])) - zlo) / gap) + 2;
         const bed = (l, s) => l <= 0 ? zlo : zlo + l * gap + gap * 0.9 * N3.fbm2(s * 3 + l * 0.37, l * 1.7, 3) + (s - 0.5) * gap * 1.5;
-        const inside = (z, i) => z > zlo + gap * 0.3 && z < strip[i][2] - gap * 0.35;
+        const inside = (z, i, floor = zlo + gap * 0.3) => z > floor && z < strip[i][2] - gap * 0.35;
         const runs = (zf, emit) => {
             let seg = null;
             for (let i = 0; i < m; i++) {
@@ -779,12 +782,13 @@
                 runs(mid(0.33), seg => chop(page(seg), 0.25, 1.1, 0, out, V));
                 runs(mid(0.67), seg => chop(page(seg), 0.25, 1.1, 0.67, out, V));
             } else if (kind === 'bedrock') {
-                // short strokes leaning across the bed, about 1.3 mm apart
+                // Short strokes leaning across the bed, about 1.3 mm apart. They start
+                // low in the bed, so the usual floor would drop all but the thick end.
                 const every = Math.max(1, Math.round(1.3 / (C.k * L / (m - 1) * 0.8)));
                 for (let i = every; i + every < m; i += every) {
                     const t = i / (m - 1), j = i + Math.round(every * 0.6);
                     const z0 = geo.lerp(bed(0, t), bed(1, t), 0.2), z1 = geo.lerp(bed(0, t), bed(1, t), 0.8);
-                    if (j < m && inside(z0, i) && inside(z1, j) && (i < (m - 1) / 2) === (j < (m - 1) / 2)) {
+                    if (j < m && inside(z0, i, zlo + gap * 0.1) && inside(z1, j) && (i < (m - 1) / 2) === (j < (m - 1) / 2)) {
                         const A = [strip[i][0], strip[i][1], z0], B = [strip[j][0], strip[j][1], z1];
                         if (V.clear(...A) && V.clear(...B)) out.push([C.P(...A), C.P(...B)]);
                     }
@@ -962,6 +966,10 @@
             return { top, bot, right: staffU(L * fx), left: staffU(L * fy) };
         });
         const staffs = p.marks && layout !== 'stack';
+        // The border sits 1.7 mm off the front edges on the ground. Where an edge
+        // runs steeply down the page that puts it a lot further below the edge.
+        const drop = (f, g) => p.marks ? Math.max(2.6, 1.7 * se / (f * Math.hypot(g, f * se)) + 0.9) : 0;
+        const dropL = drop(fx, fy), dropR = drop(fy, fx);
         const cols = n <= 2 ? n : W > H * 1.2 ? Math.ceil(n / 2) : 2;
         const offsets = (k, s) => {
             const pitch = tileW + (staffs ? 9 : 4) / k;
@@ -977,10 +985,13 @@
             });
         };
         const run = (k, s) => {
-            const gap = 3 / k, band = p.marks ? 2.6 / k : 0, sIn = Math.round(3 / k / wb), sOut = staffs ? Math.ceil(7 / k / wb) : 0;
+            const gap = 3 / k, sIn = Math.round(3 / k / wb), sOut = staffs ? Math.ceil(7 / k / wb) : 0;
             const studies = offsets(k, s).map(([A, side], i) => {
                 const o = Math.round(A / wb), O = outline[i], top = new Map(), bot = new Map();
-                for (let b = 0; b < NB; b++) { top.set(o + b, O.top[b]); bot.set(o + b, O.bot[b] - band); }
+                for (let b = 0; b < NB; b++) {
+                    top.set(o + b, O.top[b]);
+                    bot.set(o + b, O.bot[b] - (aL + (b + 0.5) * wb >= 0 ? dropR : dropL) / k);
+                }
                 if (staffs) {
                     const [lo, hi] = side > 0 ? O.right : O.left;
                     for (let b = sIn; b < sOut; b++) {
@@ -1035,7 +1046,7 @@
     }
 
     PG.register({
-        id: 'tidal', name: 'Tidal Atlas', category: 'Scenes', fit: false,
+        id: 'tidal', name: 'Tidal Atlas', category: 'Fields', fit: false,
         description: 'One eroded landscape drawn again and again as the sea rises, its valleys drowning into fjords and its ridges into island chains.',
         params: [
             { type: 'section', label: 'Studies' },
@@ -1132,11 +1143,14 @@
                     if (layout !== 'stack') staff(C, V, sea, levels, Math.min(bottom, T.lo * rel), T.hi * rel, side, put);
                 }
                 if (layout === 'stack') {
-                    const { top, a0, da, cols } = V;
+                    // down to the outer edge of the border, or the slabs below draw through it
+                    const { top, a0, da, cols } = V, [ex, ey] = axes(C);
+                    const bx = p.marks ? 1.7 / Math.hypot(...ex) : 0, by = p.marks ? 1.7 / Math.hypot(...ey) : 0, ac = -bx * c.rx - by * c.ry;
                     footprints.push(([X, Y]) => {
                         const a = (X - ox) / k, q = Math.round((a - a0) / da);
                         if (q < 0 || q >= cols || top[q] === -Infinity) return false;
-                        return Y > oy - k * (top[q] - shift * c.ce) && Y < C.P(a >= 0 ? a / c.rx : 0, a < 0 ? a / c.ry : 0, bottom)[1];
+                        const low = a >= ac ? C.P((a + by * c.ry) / c.rx, -by, bottom) : C.P(-bx, (a + bx * c.rx) / c.ry, bottom);
+                        return Y > oy - k * (top[q] - shift * c.ce) && Y < low[1];
                     });
                 }
             }

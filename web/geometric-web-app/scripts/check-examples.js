@@ -41,8 +41,8 @@ for (const id of ids) {
         cases.push([`wide ${form}`, { ...defaults, form, width: 0.7, loops: 5, rings: 16, coils: 24, knot: '2,7', gap: 0.6, rails: 8, twists: 6, folds: 1, swell: 0.8, waves: 8, tilt: 60, pattern: 'lattice', back: 'cross', edges: 'solid' }, {}]);
         cases.push([`edge-on ${form}`, { ...defaults, form, tilt: -60, turn: 90, lean: 90, pattern: 'ogee', slant: 2, back: 'sparse' }, { paperW: 105, paperH: 148 }]);
     }
-    if (id === 'stairwell') for (const section of ['round', 'square', 'octagon']) {
-        cases.push([`deep ${section} pool`, { ...defaults, section, levels: 240, tiles: 32, stairs: 'double', width: 6, steps: 6, fov: 110, bottom: 'pool', openings: 'both' }, {}]);
+    if (id === 'stairwell') for (const section of ['round', 'square', 'octagon', 'hexagon']) for (const look of ['down', 'up']) {
+        cases.push([`deep ${section} ${look}`, { ...defaults, section, look, steps: 40, turns: 16, pitch: 0.6, eye: 0.2, fov: 120, shift: 100, posts: 4 }, {}]);
     }
     if (id === 'tidal') for (const style of ['ridges', 'contours', 'hachures', 'wire']) {
         cases.push([`high water ${style}`, { ...defaults, style, studies: 6, first: 90, last: 99, relief: 60, elev: 20, layout: 'grid', sea: 'both', ripples: 14, marks: false }, {}]);

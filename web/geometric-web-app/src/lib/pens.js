@@ -31,7 +31,7 @@
         phyllotaxis: profile(4, 'Seed growth bands and Fibonacci spiral families share the pens.', botanical),
         attractor: profile(3, 'Colors reveal depth or progress along the orbit.', cool),
         ribbons: profile(2, 'The first two pens are the two sides of the ribbon, so every twist and fold shows. From three pens the wall shadow gets its own color, and more pens split each side by loop, then along the band.', [BLUE, GOLD, CYAN, RED, PURPLE, BROWN, GREEN, INK]),
-        stairwell: profile(3, 'Dark walls and openings, blue stairs with lighter shading. More pens split out depth bands, handrails, doorways, the bottom and the landings.', [INK, BLUE, CYAN, GOLD, RED, PURPLE, GREEN, BROWN]),
+        stairwell: profile(3, 'Black steps and walls, a blue handrail and balusters, and light blue shading. More pens split out the floor or skylight, the balusters, the string, the walls and every other turn.', [INK, BLUE, CYAN, GOLD, PURPLE, RED, BROWN, GREEN]),
         tidal: profile(3, 'Blue water and black land. More pens add the cut block, lowland and hill bands, red survey marks and a lighter sea surface.', [BLUE, INK, BROWN, GREEN, RED, CYAN, GOLD, PURPLE]),
         cosmic: profile(3, 'Dark outlines, a warm sun and sunsets, and cool skies and water. More pens split off sand, distant ranges, plants, crystals and rock.', [INK, RED, BLUE, GOLD, PURPLE, GREEN, CYAN, BROWN]),
         skyline: profile(3, 'Black architecture and shade, red signs and pipes, yellow pads, road markings and cranes. More pens separate glass, trees, traffic, cables and streets.'),

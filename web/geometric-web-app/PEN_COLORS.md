@@ -35,7 +35,7 @@ preview, clipping and export. Custom pen colors still belong to the user.
 | Circle Packing, Apollonian | Circle size or recursive generation |
 | Subdivision, Voronoi | Quilt tones or coherent patches of neighboring cells |
 | Town, Harbour, Fairground, Alpine, Skyline District | Scene materials and objects |
-| Infinite Stairwell | Walls, stairs and their shading, then depth bands, handrails, doorways, the bottom and landings |
+| Infinite Stairwell | Steps and walls, the handrail and shading, then the floor or skylight, balusters, string, walls and every other turn |
 | Tidal Atlas | Water and land, then the cut block, elevation bands, survey marks and the sea surface |
 | Cosmic Comics | Dark outlines, a warm sun and cool skies, then sand, distant ranges, plants, crystals and rock |
 | Image | Tonal bands in every drawing mode |

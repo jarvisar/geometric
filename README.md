@@ -9,10 +9,10 @@ Visit the [Plotter Geometry web app](https://geometric.jarvisar.com/) to access 
 Currently supports 39 designs:
 
 - Curves: spirograph, mystery curves, harmonograph, Maurer rose, superformula, guilloché, times table, flower, phyllotaxis, strange attractors (Lorenz, Aizawa, Thomas and more) and ribbon sculptures of knots and linked bands
-- Fields: flow fields, ridgelines, topographic contour maps, Chladni patterns, electric and magnetic field lines, moiré and op-art warp
+- Fields: flow fields, ridgelines, topographic contour maps, an island drowning as the sea rises, Chladni patterns, electric and magnetic field lines, moiré and op-art warp
 - Tiles: Truchet tiles, Islamic star patterns, Penrose tiling, hyperbolic tiling, Celtic knots, whirls, mazes and L-system fractals
 - Packing: circle packing, Apollonian gaskets, recursive subdivision and Voronoi
-- Scenes: an isometric town of houses, apartments, A-frames, windmills, cars and trees, a harbour town with boats and a lighthouse, a fairground of rides and tents, an alpine valley cut out like a topographic model, a cyberpunk skyline, a stair shaft in one-point perspective and an island drowning as the sea rises, all with hidden lines removed. There are also comic pages of little alien landscapes.
+- Scenes: an isometric town of houses, apartments, A-frames, windmills, cars and trees, a harbour town with boats and a lighthouse, a fairground of rides and tents, an alpine valley cut out like a topographic model, a cyberpunk skyline and a spiral stairwell in one-point perspective, all with hidden lines removed. There are also comic pages of little alien landscapes.
 - Image: converts photos into spiral, squiggle, cross-hatch or single-line TSP art
 
 ## Usage

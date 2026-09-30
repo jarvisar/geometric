@@ -1,629 +1,478 @@
 /*
- * Infinite Stairwell: a stair shaft seen straight down (or up) in one-point
- * perspective. Walls, steps, landings and doorways are all cells of one grid,
- * so the tiles run on across every step. Round and octagonal wells bend the
- * same grid into wedges.
+ * Infinite Stairwell: looking straight down a stairwell, or up it from the
+ * floor, in one-point perspective. The handrail and balusters wind away to a
+ * floor pattern or a skylight at the far end.
  *
  * PG.iso.Scene removes the hidden lines. It interpolates depth linearly over
  * each projected face, which stays exact under perspective when depth is
- * -K / distance. Grid lines that would sit closer than GAP on paper thin out
- * in powers of two as the shaft recedes, so the far end never turns into a blot.
+ * -K / distance. Balusters and step edges thin out in powers of two as the
+ * well recedes, so the far end doesn't fill in with ink.
  */
 (function () {
     'use strict';
     const { geo, TAU } = PG;
-    const { hash, Scene } = PG.iso;
+    const { Scene } = PG.iso;
 
-    const WALL = 0, STAIR = 1, SHADE = 2, DEEP = 3, RAIL = 4, DOOR = 5, FLOOR = 6, LAND = 7, REFLECT = 8;
-    // Pen layer for each group, by pen count. Doorways and the bottom stay in
-    // the dark ink until they get pens of their own.
+    const TREAD = 0, RAIL = 1, SHADE = 2, BOTTOM = 3, POST = 4, STRING = 5, WALL = 6, DEEP = 7;
+    // Pen layer for each group, by pen count
     const MAPS = [
         [0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 1, 1, 0, 1, 0, 0, 1],
-        [0, 1, 2, 0, 1, 0, 0, 1],
-        [0, 1, 2, 3, 1, 0, 0, 1],
-        [0, 1, 2, 3, 4, 0, 0, 1],
-        [0, 1, 2, 3, 4, 5, 0, 1],
-        [0, 1, 2, 3, 4, 5, 6, 1],
+        [0, 1, 0, 0, 1, 0, 0, 0],
+        [0, 1, 2, 0, 1, 0, 0, 0],
+        [0, 1, 2, 3, 1, 0, 0, 0],
+        [0, 1, 2, 3, 4, 0, 0, 0],
+        [0, 1, 2, 3, 4, 5, 0, 0],
+        [0, 1, 2, 3, 4, 5, 6, 0],
         [0, 1, 2, 3, 4, 5, 6, 7],
     ];
-    // face types, the highest one names an edge shared by several faces
-    const T_WALL = 1, T_FLOOR = 2, T_STAIR = 3, T_LAND = 4, T_DOOR = 5;
-    const GROUP = [WALL, WALL, FLOOR, STAIR, LAND, DOOR];
-    const GAP = 0.5, HATCH = 0.6, MIN_STEP = 1.2, RAIL_H = 3;
-    const NB = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
-    const STEP = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
-    const LIGHT = [-0.339, -0.565, 0.753];
+    const GAP = 0.45, RAIL_H = 0.45, INSET = 0.035;
 
-    const key = (i, j, k) => ((k + 8) * 4096 + j + 64) * 4096 + i + 64;
-    const mod = (a, n) => ((a % n) + n) % n;
     const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
     const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-    const norm = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+    const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+    const at = (q, z) => [q[0], q[1], z];
+    const pow2 = x => x <= 1 ? 1 : 2 ** Math.ceil(Math.log2(x));
 
-    // Lattice corners of the face between cell (i, j, k) and its neighbour in direction d
-    function quad(i, j, k, d) {
-        if (d < 2) { const I = i + (d === 0 ? 1 : 0); return [[I, j, k], [I, j + 1, k], [I, j + 1, k + 1], [I, j, k + 1]]; }
-        if (d < 4) { const J = j + (d === 2 ? 1 : 0); return [[i, J, k], [i + 1, J, k], [i + 1, J, k + 1], [i, J, k + 1]]; }
-        const K = k + (d === 4 ? 1 : 0);
-        return [[i, j, K], [i + 1, j, K], [i + 1, j + 1, K], [i, j + 1, K]];
+    // Point at angle a on a well of apothem rho, round when k is 0
+    function edge(k, rot, rho, a) {
+        let d = rho;
+        if (k) {
+            const s = TAU / k;
+            d = rho / Math.cos((((a - rot) % s) + s) % s - s / 2);
+        }
+        return [d * Math.cos(a), d * Math.sin(a)];
     }
 
-    // The shaft's cross-section as a grid of cells. Square wells use plain
-    // cubes. Polygon wells run i around the wall and j inward, shrinking each
-    // ring toward the axis, so every face is still a flat convex quad.
-    function makeWell(p, W, H) {
-        const N = p.tiles;
-        if (p.section === 'square' || p.section === 'rect') {
-            let Nx = N, Ny = N;
-            if (p.section === 'rect') {
-                if (H >= W) Ny = geo.clamp(Math.round(N * H / W), N, 2 * N);
-                else Nx = geo.clamp(Math.round(N * W / H), N, 2 * N);
-            }
-            const x0 = -Nx / 2, y0 = -Ny / 2, rim = [], floor = [];
-            for (let i = 0; i < Nx; i++) rim.push([i, 0], [i, Ny - 1]);
-            for (let j = 1; j < Ny - 1; j++) rim.push([0, j], [Nx - 1, j]);
-            for (let j = 0; j < Ny; j++) for (let i = 0; i < Nx; i++) floor.push([i, j]);
-            return {
-                M: 0, size: Math.min(Nx, Ny), rim, floor, maxWidth: Math.floor(Math.min(Nx, Ny) / 2) - 2,
-                // clockwise on paper, each from the corner it starts at: along s, inward b
-                walls: [
-                    { len: Nx, at: (s, b) => [s, b] },
-                    { len: Ny, at: (s, b) => [Nx - b, s] },
-                    { len: Nx, at: (s, b) => [Nx - s, Ny - b] },
-                    { len: Ny, at: (s, b) => [b, Ny - s] },
-                ],
-                wrap: i => i,
-                inside: (i, j) => i >= 0 && j >= 0 && i < Nx && j < Ny,
-                V: (i, j, k) => [x0 + i, y0 + j, -k],
-                outline: [[x0, y0], [-x0, y0], [-x0, -y0], [x0, -y0]],
-                camera: (fx, fy) => [x0 + Nx * fx, y0 + Ny * fy],
-            };
+    // A step of a round or polygonal stair between angles a0 and a1, cut into
+    // m convex pieces (and at the polygon's corners, where the edges bend).
+    function wedge(k, rot, r, a0, a1, m, posts) {
+        const cuts = [a0], lo = Math.min(a0, a1), hi = Math.max(a0, a1), corner = [false];
+        if (k) {
+            const s = TAU / k, vs = [];
+            for (let v = rot + Math.ceil((lo - rot) / s) * s; v < hi - 1e-9; v += s) if (v > lo + 1e-9) vs.push(v);
+            if (a1 < a0) vs.reverse();
+            for (const v of vs) { cuts.push(v); corner.push(true); }
         }
-        const round = p.section === 'round';
-        const n = round ? Math.max(24, 8 * Math.round(Math.PI * N / 8)) : 8;
-        const m = round ? 1 : Math.max(2, Math.round(N / (1 + Math.SQRT2)));
-        const M = n * m, Ra = m / (2 * Math.tan(Math.PI / n)), Rc = m / (2 * Math.sin(Math.PI / n));
-        const C = [];
-        for (let s = 0; s <= n; s++) {
-            const a = TAU * (s - 0.5) / n - Math.PI / 2;
-            C.push([Rc * Math.cos(a), Rc * Math.sin(a)]);
+        cuts.push(a1); corner.push(false);
+        const as = [a0], flags = [false];
+        for (let i = 1; i < cuts.length; i++) {
+            const n = Math.max(1, Math.round(m * Math.abs(cuts[i] - cuts[i - 1]) / Math.abs(a1 - a0)));
+            for (let q = 1; q <= n; q++) { as.push(geo.lerp(cuts[i - 1], cuts[i], q / n)); flags.push(q === n && corner[i]); }
         }
-        const rim = [];
-        for (let i = 0; i < M; i++) rim.push([i, 0]);
+        const inner = as.map(a => edge(k, rot, r, a)), outer = as.map(a => edge(k, rot, 1, a));
+        const pieces = [];
+        for (let i = 1; i < as.length; i++) pieces.push([inner[i - 1], outer[i - 1], outer[i], inner[i]]);
         return {
-            M, Ra, size: 2 * Ra, rim, maxWidth: Math.floor(Ra) - 2,
-            walls: [{ len: M, at: (s, b) => [s, b] }],
-            wrap: i => mod(i, M),
-            inside: (i, j) => j >= 0,
-            V: (i, j, k) => {
-                i = mod(i, M);
-                const s = Math.min(n - 1, Math.floor(i / m)), t = i / m - s, g = 1 - j / Ra, a = C[s], b = C[s + 1];
-                return [(a[0] + (b[0] - a[0]) * t) * g, (a[1] + (b[1] - a[1]) * t) * g, -k];
-            },
-            outline: C.slice(0, n),
-            camera: null,
+            pieces, inner, outer, corners: flags,
+            rail: as.map(a => [...edge(k, rot, r + INSET, a), (a - a0) / (a1 - a0)]),
+            posts: Array.from({ length: posts }, (_, q) => edge(k, rot, r + INSET, geo.lerp(a0, a1, (q + 0.5) / posts))),
         };
     }
 
-    // Smallest scale (mm per unit at the camera's distance from the near rim)
-    // that keeps the page inside the rim, seen from o with the vanishing point
-    // at (vx, vy). Also returns the distance from o to the nearest wall.
-    function fitRim(outline, o, W, H, vx, vy) {
-        let k = 0, clear = Infinity;
-        for (let s = 0; s < outline.length; s++) {
-            const a = outline[s], b = outline[(s + 1) % outline.length];
-            let nx = b[1] - a[1], ny = a[0] - b[0];
-            const l = Math.hypot(nx, ny);
-            nx /= l; ny /= l;
-            if (nx * a[0] + ny * a[1] < 0) { nx = -nx; ny = -ny; }
-            const room = nx * (a[0] - o[0]) + ny * (a[1] - o[1]);
-            clear = Math.min(clear, room);
-            for (const [cx, cy] of [[0, 0], [W, 0], [W, H], [0, H]]) k = Math.max(k, ((cx - vx) * nx + (cy - vy) * ny) / room);
+    // Square stairwell: a landing in each corner and a straight flight of n
+    // steps along each side. Units go landing, step, step... down the well.
+    function squareUnit(u, n, b, posts, hand) {
+        const side = Math.floor(u / (n + 1)), idx = u % (n + 1);
+        const c = Math.cos(side * Math.PI / 2), s = Math.sin(side * Math.PI / 2);
+        const T = ([x, y]) => [hand * (x * c - y * s), x * s + y * c];
+        const e = b + INSET;
+        if (idx === 0) {
+            return {
+                landing: true, pieces: [[[b, b], [1, b], [1, 1], [b, 1]].map(T)],
+                inner: [T([b, b])], outer: [[1, b], [1, 1], [b, 1]].map(T), corners: [true],
+                newel: T([e, e]), rail: null, posts: [],
+            };
         }
-        return { k, clear };
+        const w = 2 * b / n, xa = b - (idx - 1) * w, xb = b - idx * w;
+        return {
+            pieces: [[[xa, b], [xa, 1], [xb, 1], [xb, b]].map(T)],
+            inner: [[xa, b], [xb, b]].map(T), outer: [[xa, 1], [xb, 1]].map(T), corners: [false, false],
+            rail: [[...T([xa, e]), 0], [...T([xb, e]), 1]],
+            posts: Array.from({ length: posts }, (_, q) => T([geo.lerp(xa, xb, (q + 0.5) / posts), e])),
+        };
     }
 
-    function makeCamera(o, f, vx, vy, up, K) {
-        const s = up ? 1 : -1;
+    // Straight down or up, with the vanishing point at (vx, vy) on the page
+    function makeCamera(o, f, vx, vy, s, K) {
         return {
+            dist: z => s * (z - o[2]),
             project: (x, y, z) => {
                 const d = s * (z - o[2]);
-                return [vx + f * (x - o[0]) / d, vy + f * (y - o[1]) / d, -K / d];
+                return [vx + f * (x - o[0]) / d, vy + s * f * (y - o[1]) / d, -K / d];
             },
             // the point on the plane through P with normal n that shows at (sx, sy)
             lift: (sx, sy, n, P) => {
-                const r = [(sx - vx) / f, (sy - vy) / f, s];
+                const r = [(sx - vx) / f, s * (sy - vy) / f, s];
                 const t = dot(n, sub(P, o)) / dot(n, r);
                 return [o[0] + t * r[0], o[1] + t * r[1], o[2] + t * r[2]];
             },
         };
     }
 
-    // Stair units for one turn, in walking order: corner landings and runs of
-    // steps, each a list of cells plus handrail points (lattice x, y).
-    function stairPlan(well, w, L, dw) {
-        const U = [], eps = 0.3;
-        const cells = (wall, a0, a1) => {
+    const newell = pts => {
+        let nx = 0, ny = 0, nz = 0;
+        for (let i = 0; i < pts.length; i++) {
+            const a = pts[i], b = pts[(i + 1) % pts.length];
+            nx += (a[1] - b[1]) * (a[2] + b[2]); ny += (a[2] - b[2]) * (a[0] + b[0]); nz += (a[0] - b[0]) * (a[1] + b[1]);
+        }
+        return [nx, ny, nz];
+    };
+
+    function build(p, W, H, rng) {
+        const up = p.look === 'up', hand = rng.chance(0.5) ? 1 : -1;
+        const square = p.section === 'square', k = { round: 0, square: 4, hexagon: 6, octagon: 8 }[p.section];
+        const rot = k ? Math.PI / k : 0, r = p.eye, P = p.pitch;
+        const U = square ? 4 * (p.steps + 1) : p.steps, rise = P / U, thick = p.stairs === 'solid' ? rise : rise * 0.4;
+        const T = p.turns, J = T * U;
+        const f = Math.min(W, H) / 2 / Math.tan(geo.rad(p.fov) / 2);
+        const vx = W * p.cx / 100, vy = H * p.cy / 100, reach = Math.hypot(Math.max(vx, W - vx), Math.max(vy, H - vy));
+        const phase = rng.range(0, 1), ang = rng.range(0, TAU), off = p.shift / 100 * (r - INSET) * 0.85;
+        // The stair carries on past the camera, so the camera height only turns it.
+        // Down looks from somewhere in the top turn, up from just over the floor.
+        const o = [off * Math.cos(ang), off * Math.sin(ang), up ? P * (0.25 + 0.5 * phase) : T * P + P * (0.3 + 0.5 * phase)];
+        const s = up ? 1 : -1, far = up ? T * P - o[2] + P : o[2];
+        const cam = makeCamera(o, f, vx, vy, s, 10 * far * far / rise), dist = cam.dist;
+        // anything nearer than this is off the page anyway
+        const near = Math.max(0.12, f * Math.max(0.05, r - off) / reach);
+        const S = new Scene(cam, W, H);
+
+        const clipPoly = pts => {
             const out = [];
-            for (let a = a0; a < a1; a++) for (let b = 0; b < w; b++) {
-                const q = wall.at(a + 0.5, b + 0.5);
-                out.push([Math.floor(q[0]), Math.floor(q[1])]);
+            for (let i = 0; i < pts.length; i++) {
+                const a = pts[i], b = pts[(i + 1) % pts.length], da = dist(a[2]) - near, db = dist(b[2]) - near;
+                if (da >= 0) out.push(a);
+                if ((da >= 0) !== (db >= 0)) out.push(mix(a, b, da / (da - db)));
             }
             return out;
         };
-        const steps = (wall, a0, a1) => {
-            const run = a1 - a0, ns = Math.max(1, Math.floor(run / L));
-            for (let t = 0; t < ns; t++) {
-                const s0 = a0 + Math.floor(t * run / ns), s1 = a0 + Math.floor((t + 1) * run / ns);
-                if (s1 > s0) U.push({
-                    cells: cells(wall, s0, s1), rail: [wall.at((s0 + s1) / 2, w - eps)],
-                    window: t === Math.floor(ns / 2) ? { wall, a0: s0 + Math.floor((s1 - s0 - 1) / 2) } : null,
+        const face = pts => { const q = clipPoly(pts); if (q.length >= 3) S.face(q, false); };
+        const line = (pts, kind) => {
+            S.kind = kind;
+            let run = [];
+            for (let i = 0; i < pts.length; i++) {
+                const a = pts[i], da = dist(a[2]) - near;
+                if (da >= 0) run.push(a);
+                if (i + 1 < pts.length) {
+                    const b = pts[i + 1], db = dist(b[2]) - near;
+                    if ((da >= 0) !== (db >= 0)) {
+                        run.push(mix(a, b, da / (da - db)));
+                        if (da >= 0) { if (run.length > 1) S.line(run); run = []; }
+                    }
+                }
+            }
+            if (run.length > 1) S.line(run);
+        };
+        // Hatching drawn evenly on paper, then lifted back onto its face
+        const hatch = (pts, gap, angle, kind) => {
+            const q = clipPoly(pts);
+            if (q.length < 3) return;
+            const n = newell(q), flat = q.map(v => cam.project(...v));
+            for (const [a, b] of geo.hatch([flat], gap, angle)) line([cam.lift(a[0], a[1], n, q[0]), cam.lift(b[0], b[1], n, q[0])], kind);
+        };
+        const onPaper = (len, z) => f * len / Math.max(near, dist(z));
+        // a vertical face shows when the camera is on the side its normal points to
+        const facing = (a, n) => n[0] * (o[0] - a[0]) + n[1] * (o[1] - a[1]) > 0;
+        const LIGHT = [-0.6, -0.8];
+
+        const zOf = j => (J - j) * rise;
+        const plans = [];
+        for (let j = up ? 0 : Math.floor(J - o[2] / rise) - 1; j < J; j++) {
+            const z = zOf(j);
+            if (up ? dist(z) < near : dist(z - thick) < near) continue;
+            let plan;
+            if (square) plan = squareUnit(((j % U) + U) % U, p.steps, r, p.posts, hand);
+            else {
+                const a0 = hand * TAU * (j / U + phase), a1 = hand * TAU * ((j + 1) / U + phase);
+                const m = geo.clamp(Math.ceil(Math.abs(a1 - a0) / (2 * Math.acos(Math.max(0, 1 - 0.04 / onPaper(1, z))))), 1, 24);
+                plan = wedge(k, rot, r, a0, a1, m, p.posts);
+            }
+            plan.j = j; plan.z = z;
+            plans.push(plan);
+        }
+
+        // A solid stair has a closed string along the eye and a smooth soffit
+        // under it, both following the pitch line through the nosings
+        const solid = p.stairs === 'solid', HS = rise + 0.12, SW = 0.006;
+        const shadeFace = (quad, n, tone) => {
+            if (!p.shade) return;
+            const lit = (n[0] * LIGHT[0] + n[1] * LIGHT[1]) / (Math.hypot(n[0], n[1]) || 1) + tone;
+            // spacings double so the lines of neighbouring faces meet up
+            if (lit < 0.35) hatch(quad, lit < -0.25 ? 0.45 : 0.9, up ? 0.35 : -0.95, SHADE);
+        };
+        // step edges thin out in powers of two so they stay GAP apart on paper
+        const going = square ? 2 * r / p.steps : TAU * r / U;
+        const bandOf = z => Math.floor((up ? z : T * P - z) / P) % 2 ? DEEP : TREAD;
+        for (const U1 of plans) {
+            const { z, j } = U1, zb = z - thick, zs = up ? zb : z, band = bandOf(z);
+            const every = U1.landing ? 1 : pow2(GAP / onPaper(going, zs));
+            const back = [U1.inner[0], U1.outer[0]], front = [U1.inner.at(-1), U1.outer.at(-1)];
+            const vertical = (a, b) => {
+                const quad = [at(a, z), at(b, z), at(b, zb), at(a, zb)];
+                let n = [b[1] - a[1], a[0] - b[0]];
+                face(quad);
+                if (!facing(a, n)) n = [-n[0], -n[1]];
+                if (facing(a, n)) shadeFace(quad, n, 0);
+            };
+            // a solid stair seen from below is all soffit
+            if (solid && up && !U1.landing) continue;
+            for (const q of U1.pieces) face(q.map(v => at(v, zs)));
+            if (!solid) for (let i = 1; i < U1.inner.length; i++) vertical(U1.inner[i - 1], U1.inner[i]);
+            vertical(back[0], back[1]);
+            vertical(front[0], front[1]);
+            if (up && p.shade) for (const q of U1.pieces) hatch(q.map(v => at(v, zb)), 1.1, 0.9, SHADE);
+
+            if (!solid) {
+                line(U1.inner.map(v => at(v, z)), STRING);
+                line(U1.inner.map(v => at(v, zb)), STRING);
+            }
+            line(U1.outer.map(v => at(v, zs)), WALL);
+            if (j % every === 0) {
+                line([at(back[0], z), at(back[1], z)], band);
+                if (up) line([at(back[0], zb), at(back[1], zb)], band);
+                if (!solid) line([at(back[0], zb), at(back[0], z)], STRING);
+            }
+            if (U1.landing || (j + 1) % every === 0) {
+                line([at(front[0], z), at(front[1], z)], band);
+                // the nosing's rounded edge, where the step is big enough on paper
+                const q = U1.pieces.at(-1), w = Math.min(0.025, 0.2 * geo.dist(q[0], q[3]));
+                if (!up && !U1.landing && onPaper(w, z) > 2 * GAP) {
+                    const inset = (a, b) => { const l = geo.dist(a, b) || 1; return [b[0] + (a[0] - b[0]) * w / l, b[1] + (a[1] - b[1]) * w / l]; };
+                    line([at(inset(q[0], q[3]), z), at(inset(q[1], q[2]), z)], band);
+                }
+                if (!solid) {
+                    line([at(front[0], zb), at(front[1], zb)], band);
+                    line([at(front[0], zb), at(front[0], z)], STRING);
+                }
+            }
+            if (!solid) U1.inner.forEach((v, i) => { if (U1.corners[i] && i > 0 && i < U1.inner.length - 1) line([at(v, zb), at(v, z)], STRING); });
+        }
+
+        if (solid) {
+            // runs of the string between landings, as samples of [inner, outer, pitch height]
+            const runs = [];
+            let run = null;
+            for (const U1 of plans) {
+                if (U1.landing) { run = null; continue; }
+                if (!run) runs.push(run = []);
+                U1.inner.forEach((v, i) => {
+                    const h = U1.z + rise * (1 - U1.rail[i][2]), last = run.at(-1);
+                    // a step starts where the last one ended, so mark that sample instead
+                    if (last && geo.dist(last[0], v) < 1e-9) { if (i === 0) last[4] = U1.j; return; }
+                    run.push([v, U1.outer[i], h, U1, i === 0 ? U1.j : null]);
                 });
             }
-        };
-        const landing = (wall, a0, a1, rail) => U.push({
-            // square wells keep the door off the corner so the corner line stays whole
-            land: true, cells: cells(wall, a0, a1), rail, door: { wall, a0: well.M ? a0 + Math.floor((a1 - a0 - dw) / 2) : Math.max(1, Math.floor((a1 - a0 - dw) / 2)) },
-        });
-        if (!well.M) {
-            for (const wall of well.walls) {
-                landing(wall, 0, w, [wall.at(w - eps, w - eps)]);
-                if (wall.len > 2 * w) steps(wall, w, wall.len - w);
-            }
-        } else {
-            const wall = well.walls[0], Q = well.M / 4, lw = Math.min(Q - 1, Math.max(2, w));
-            for (let q = 0; q < 4; q++) {
-                const a0 = q * Q - Math.floor(lw / 2);
-                landing(wall, a0, a0 + lw, [wall.at(a0 + eps, w - eps), wall.at(a0 + lw - eps, w - eps)]);
-                steps(wall, a0 + lw, a0 + Q);
-            }
-        }
-        return U;
-    }
-
-    // Cut paths into dashes of 1 to 3.5 mm. Each path seeds its own pattern from
-    // where it starts, so the pen count never changes the dashes.
-    function dashes(paths) {
-        const out = [];
-        for (const path of paths) {
-            const r = new PG.RNG(hash(Math.round(path[0][0] * 100), Math.round(path[0][1] * 100), path.length));
-            let on = r.chance(0.7), left = on ? r.range(1, 3.5) : r.range(0.4, 1.2), run = on ? [path[0]] : null;
-            for (let i = 1; i < path.length; i++) {
-                let a = path[i - 1];
-                const b = path[i];
-                let seg = geo.dist(a, b);
-                while (seg > left) {
-                    const c = geo.lerpPt(a, b, left / seg);
-                    if (on) { run.push(c); out.push(run); run = null; } else run = [c];
-                    seg -= left;
-                    a = c;
-                    on = !on;
-                    left = on ? r.range(1, 3.5) : r.range(0.4, 1.2);
+            for (const pts of runs) {
+                // the string sits a hair inside the eye, so it hides the ends of the treads
+                const q = pts.map(([v]) => { const l = Math.hypot(v[0], v[1]) || 1; return [v[0] * (1 - SW / l), v[1] * (1 - SW / l)]; });
+                const top = pts.map(([, , h], i) => at(q[i], h + 0.04)), bot = pts.map(([, , h], i) => at(q[i], h - HS));
+                for (let i = 1; i < pts.length; i++) {
+                    const quad = [top[i - 1], top[i], bot[i], bot[i - 1]], a = q[i - 1], b = q[i];
+                    let n = [b[1] - a[1], a[0] - b[0]];
+                    if (n[0] * a[0] + n[1] * a[1] > 0) n = [-n[0], -n[1]];
+                    face(quad);
+                    shadeFace(quad, n, 0.15);
                 }
-                left -= seg;
-                if (on) run.push(b);
+                line(top, STRING);
+                line(bot, STRING);
+                if (!up) continue;
+                // the soffit, with a line under every step and darker toward the wall
+                const soffit = (i, rho) => {
+                    const [v, w, h] = pts[i];
+                    return [geo.lerp(q[i][0], w[0], rho), geo.lerp(q[i][1], w[1], rho), h - HS];
+                };
+                for (let i = 1; i < pts.length; i++) {
+                    for (const [r0, r1, shaded] of [[0, 0.5, false], [0.5, 1, true]]) {
+                        const A = soffit(i - 1, r0), B = soffit(i - 1, r1), C = soffit(i, r1), D = soffit(i, r0);
+                        face([A, B, C]); face([A, C, D]);
+                        if (p.shade && shaded) { hatch([A, B, C], 1.1, 0.9, SHADE); hatch([A, C, D], 1.1, 0.9, SHADE); }
+                    }
+                }
+                line(pts.map((_, i) => soffit(i, 1)), WALL);
+                pts.forEach(([, , h, , j], i) => {
+                    if (j === null || j === undefined || j % pow2(GAP / onPaper(going, h - HS))) return;
+                    line(Array.from({ length: 9 }, (_, s) => soffit(i, s / 8)), bandOf(h));
+                });
             }
-            if (on && run && run.length > 1) out.push(run);
         }
-        return out.filter(q => geo.pathLength(q) > 0.3);
+
+        // stone courses on the wall, only really seen in the turn below the camera
+        if (!up && p.courses) {
+            const n = k ? k * 12 : 96, ring = (zz, d) => Array.from({ length: n + 1 }, (_, i) => at(edge(k, rot, 1 + d, rot + TAU * i / n), zz));
+            const course = 0.24, z1 = o[2] - near;
+            for (let c = 0, zz = 0; zz < z1; c++, zz += course) {
+                if (onPaper(course, zz) < GAP * 2) continue;
+                line(ring(zz, 0), WALL);
+                const joints = Math.round(TAU / 0.3 / 2) * 2;
+                for (let i = 0; i < joints; i++) {
+                    const a = rot + TAU * (i + (c % 2) * 0.5) / joints, v = edge(k, rot, 1, a);
+                    line([at(v, zz), at(v, Math.min(z1, zz + course))], WALL);
+                }
+            }
+        }
+
+        // handrail and balusters
+        if (p.rail !== 'none') {
+            const runs = [], posts = [], rw = 0.022, rh = 0.03, br = 0.009, spacing = going / p.posts;
+            let run = null;
+            for (const U1 of plans) {
+                if (U1.newel) posts.push([U1.newel, U1.z, U1.z + rise + RAIL_H + 0.06, true]);
+                if (!U1.rail) { run = null; continue; }
+                if (!run) runs.push(run = []);
+                for (const [x, y, t] of U1.rail) {
+                    const q = [x, y, U1.z + rise * (1 - t) + RAIL_H];
+                    if (!run.length || Math.hypot(q[0] - run.at(-1)[0], q[1] - run.at(-1)[1], q[2] - run.at(-1)[2]) > 1e-9) run.push(q);
+                }
+                U1.posts.forEach((v, i) => posts.push([v, U1.z, U1.z + rise * (1 - (i + 0.5) / U1.posts.length) + RAIL_H - rh]));
+            }
+            for (const pts of runs) {
+                if (pts.length < 2) continue;
+                const side = pts.map((q, i) => {
+                    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+                    const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+                    return [-dy / l * rw, dx / l * rw];
+                });
+                const L0 = pts.map((q, i) => [q[0] + side[i][0], q[1] + side[i][1], q[2]]);
+                const R0 = pts.map((q, i) => [q[0] - side[i][0], q[1] - side[i][1], q[2]]);
+                const lo = q => [q[0], q[1], q[2] - rh];
+                // the rail is a bar, split into triangles because its faces twist a little round a helix
+                for (let i = 1; i < pts.length; i++) {
+                    for (const [A, B] of [[L0, R0], [L0.map(lo), L0], [R0.map(lo), R0], [L0.map(lo), R0.map(lo)]]) {
+                        face([A[i - 1], B[i - 1], B[i]]);
+                        face([A[i - 1], B[i], A[i]]);
+                    }
+                }
+                // far down the four edges would run together, so it becomes one line
+                const wide = pts.map(q => onPaper(2 * rw, up ? q[2] - rh : q[2]) > 2.5 * GAP);
+                const pieces = (A, keep) => {
+                    let part = [];
+                    A.forEach((q, i) => {
+                        if (keep(i)) part.push(q);
+                        else { if (part.length > 1) line(part, RAIL); part = []; }
+                        if (keep(i) && i + 1 < A.length && !keep(i + 1)) { part.push(A[i + 1]); line(part, RAIL); part = []; }
+                    });
+                    if (part.length > 1) line(part, RAIL);
+                };
+                for (const A of [L0, R0, L0.map(lo), R0.map(lo)]) pieces(A, i => wide[i]);
+                pieces(pts.map(q => [q[0], q[1], q[2] + 0.001]), i => !wide[i]);
+            }
+            posts.forEach(([q, z0, z1, newel], i) => {
+                if (!newel && (p.rail !== 'balusters' || i % pow2(GAP / onPaper(spacing, up ? z1 : z0)))) return;
+                // near ones get both sides and hide what's behind them
+                const wide = newel ? 1.8 * br : br;
+                if (onPaper(2 * wide, up ? z0 : z1) < 0.6) { line([at(q, z0), at(q, z1)], POST); return; }
+                const dx = q[0] - o[0], dy = q[1] - o[1], l = Math.hypot(dx, dy) || 1;
+                const a = [q[0] - dy / l * wide, q[1] + dx / l * wide], b = [q[0] + dy / l * wide, q[1] - dx / l * wide];
+                face([at(a, z0), at(b, z0), at(b, z1), at(a, z1)]);
+                line([at(a, z0), at(a, z1)], POST);
+                line([at(b, z0), at(b, z1)], POST);
+            });
+        }
+
+        if (!up && p.bottom !== 'void') floor(p, k, rot, line, face, f, dist(0));
+        if (up) skylight(p, k, rot, r, T * P, line, face);
+        // corners of a polygonal well run the whole height
+        for (let i = 0; i < k; i++) {
+            const q = edge(k, rot, 1, rot + TAU * i / k);
+            line([at(q, up ? 0 : o[2]), at(q, up ? T * P : 0)], WALL);
+        }
+        return S;
     }
 
-    // A compass rose set into the floor. Each tier of points sits a hair
-    // higher than the one below so its faces hide the points underneath.
-    function compass(S, R, z, sp, square) {
-        const at = (r, a, zz) => [r * Math.cos(a), r * Math.sin(a), zz];
-        const ring = (r, zz) => {
-            const pts = [];
-            for (let i = 0; i <= 96; i++) pts.push(at(r, TAU * i / 96, zz));
-            S.line(pts);
-        };
-        // in a polygon well the edge of the floor tiles is already the outer ring
-        const r0 = square ? R : 0.9 * R, r1 = r0 * 0.88;
-        ring(r0, z);
-        ring(r1, z);
-        for (let t = 0; t < 32; t++) {
-            const a = TAU * t / 32 - Math.PI / 2;
-            S.line([at(t % 4 ? (r0 + r1) / 2 : r1, a, z), at(r0, a, z)]);
+    function floor(p, k, rot, line, face, f, d) {
+        const ring = (rho, kk) => Array.from({ length: 97 }, (_, i) => at(edge(kk, rot, rho, TAU * i / 96), 0));
+        line(ring(1, k), BOTTOM);
+        const sp = 0.5 * d / f;
+        if (p.bottom === 'checker') {
+            const n = 8, s = 2 / n, lim = Array.from({ length: k || 48 }, (_, i) => edge(k, rot, 0.999, rot + TAU * i / (k || 48)));
+            const clip = poly => {
+                let out = poly;
+                for (let i = 0; i < lim.length && out.length; i++) {
+                    const a = lim[i], b = lim[(i + 1) % lim.length];
+                    out = geo.clipPolygonHalfPlane(out, a, [a[1] - b[1], b[0] - a[0]]);
+                }
+                return out;
+            };
+            for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+                const x = -1 + i * s, y = -1 + j * s, cell = clip([[x, y], [x + s, y], [x + s, y + s], [x, y + s]]);
+                if (cell.length < 3) continue;
+                line(geo.close(cell).map(v => at(v, 0)), BOTTOM);
+                if ((i + j) % 2) for (const [a, b] of geo.hatch([cell], sp, Math.PI / 4)) line([at(a, 0), at(b, 0)], BOTTOM);
+            }
+            return;
         }
-        // [points, offset, tip, shoulder radius, half width]
-        const tiers = [[8, TAU / 16, 0.46, 0.13, TAU / 16], [4, TAU / 8, 0.66, 0.17, TAU / 8], [4, 0, 0.84, 0.21, TAU / 8]];
-        tiers.forEach(([n, off, tip, sh, half], lv) => {
-            const zz = z + 0.06 * (lv + 1);
+        // compass rose: rings, a band of ticks, and a star of points, each half hatched
+        const r0 = 0.86, r1 = 0.76;
+        line(ring(r0, 0), BOTTOM); line(ring(r1, 0), BOTTOM);
+        for (let t = 0; t < 64; t++) {
+            const a = TAU * t / 64;
+            line([at(edge(0, 0, t % 4 ? (r0 + r1) / 2 : r1, a), 0), at(edge(0, 0, r0, a), 0)], BOTTOM);
+        }
+        // each tier sits a hair above the one under it so it hides those points
+        [[16, TAU / 32, 0.42, 0.1], [8, TAU / 16, 0.58, 0.13], [4, 0, 0.74, 0.16]].forEach(([n, a0, tip, sh], lv) => {
+            const z = 0.004 * (lv + 1);
             for (let q = 0; q < n; q++) {
-                const a = off + TAU * q / n - Math.PI / 2, T = at(tip * r1, a, zz), L = at(sh * r1, a - half, zz), Rt = at(sh * r1, a + half, zz), O = [0, 0, zz];
-                S.face([O, L, T, Rt], false);
-                S.line([O, L, T, Rt, O]);
-                S.line([O, T]);
-                const tri = [[0, 0], [T[0], T[1]], [Rt[0], Rt[1]]];
-                for (const [u, v] of geo.hatch([tri], sp, a)) S.line([[u[0], u[1], zz], [v[0], v[1], zz]]);
+                const a = a0 + TAU * q / n, half = Math.PI / n;
+                const O = [0, 0], Tp = edge(0, 0, tip, a), A = edge(0, 0, sh, a - half), B = edge(0, 0, sh, a + half);
+                face([O, A, Tp, B].map(v => at(v, z)));
+                line([O, A, Tp, B, O].map(v => at(v, z)), BOTTOM);
+                line([at(O, z), at(Tp, z)], BOTTOM);
+                for (const [u, v] of geo.hatch([[O, Tp, B]], sp, a)) line([at(u, z), at(v, z)], BOTTOM);
             }
         });
-        const zc = z + 0.3, rc = 0.07 * r1, disc = [];
-        for (let i = 0; i < 24; i++) disc.push(at(rc, TAU * i / 24, zc));
-        S.face(disc, false);
-        ring(rc, zc);
+    }
+
+    // A glazed lantern over a round opening in the ceiling, seen from below
+    function skylight(p, k, rot, r, zc, line, face) {
+        const ro = Math.min(0.92, r + 0.25), n = 96;
+        for (let i = 0; i < n; i++) {
+            const a = TAU * i / n, b = TAU * (i + 1) / n;
+            face([at(edge(0, 0, ro, a), zc), at(edge(k, rot, 1, a), zc), at(edge(k, rot, 1, b), zc), at(edge(0, 0, ro, b), zc)]);
+        }
+        const circle = (rho, z) => Array.from({ length: n + 1 }, (_, i) => at(edge(0, 0, rho, TAU * i / n), z));
+        line(circle(ro, zc), BOTTOM);
+        line(circle(ro * 0.96, zc + 0.04), BOTTOM);
+        if (p.bottom === 'void') return;
+        const h = ro * 0.7, ribs = 16, rings = 5;
+        const pt = (t, a) => {
+            const rr = ro * Math.cos(t * Math.PI / 2) * 0.96, zz = zc + 0.04 + h * Math.sin(t * Math.PI / 2);
+            return [rr * Math.cos(a), rr * Math.sin(a), zz];
+        };
+        for (let q = 0; q < ribs; q++) line(Array.from({ length: 13 }, (_, i) => pt(0.88 * i / 12, TAU * q / ribs)), BOTTOM);
+        for (let i = 1; i <= rings; i++) line(Array.from({ length: n + 1 }, (_, q) => pt(0.88 * i / rings, TAU * q / n)), BOTTOM);
+        line(Array.from({ length: n + 1 }, (_, q) => pt(0.97, TAU * q / n)), BOTTOM);
     }
 
     PG.register({
         id: 'stairwell', name: 'Infinite Stairwell', category: 'Scenes', fit: false,
-        description: 'Looking straight down a tiled stair shaft into the dark, or up at the sky, in one-point perspective. Steps, landings and doorways share one grid, with hidden lines removed.',
+        description: 'Looking straight down a stairwell, or up it from the floor, in one-point perspective. The handrail and balusters wind away to a floor pattern or a skylight.',
         params: [
-            { type: 'section', label: 'Shaft' },
-            { id: 'section', label: 'Section', type: 'select', value: 'round', random: ['round', 'round', 'square', 'square', 'rect', 'octagon'],
-              options: [['round', 'Round well'], ['square', 'Square'], ['rect', 'Page shaped'], ['octagon', 'Octagonal']] },
-            { id: 'tiles', label: 'Tiles across', type: 'range', min: 8, max: 32, step: 1, value: 20, random: [12, 24] },
-            { id: 'levels', label: 'Depth (levels)', type: 'range', min: 30, max: 240, step: 1, value: 110, random: [60, 160] },
-            { id: 'pattern', label: 'Wall tiles', type: 'select', value: 'brick', random: true,
-              options: [['grid', 'Square grid'], ['brick', 'Running bond'], ['ashlar', 'Large blocks']] },
-            { id: 'openings', label: 'Openings', type: 'select', value: 'doors', random: ['none', 'doors', 'doors', 'both'],
-              options: [['none', 'None'], ['doors', 'Doorways'], ['both', 'Doorways & windows']] },
-            { id: 'bottom', label: 'Bottom', type: 'select', value: 'void', random: ['void', 'void', 'floor', 'pool'], show: p => p.look !== 'up',
-              options: [['void', 'Dark void'], ['floor', 'Compass floor'], ['pool', 'Still pool']] },
-            { type: 'section', label: 'Stairs' },
-            { id: 'stairs', label: 'Stairs', type: 'select', value: 'single', random: ['single', 'single', 'single', 'double'],
-              options: [['single', 'Single spiral'], ['double', 'Double helix'], ['none', 'Empty shaft']] },
-            { id: 'width', label: 'Stair width', type: 'range', min: 2, max: 6, step: 1, value: 3, random: [2, 4], show: p => p.stairs !== 'none' },
-            { id: 'run', label: 'Step length', type: 'range', min: 1, max: 3, step: 1, value: 1, random: [1, 2], show: p => p.stairs !== 'none' },
-            { id: 'steps', label: 'Step thickness', type: 'range', min: 1, max: 6, step: 1, value: 2, random: [1, 3], show: p => p.stairs !== 'none' },
-            { id: 'rails', label: 'Handrails', type: 'checkbox', value: true, random: 0.7, show: p => p.stairs !== 'none' },
-            { id: 'shade', label: 'Shade the stairs', type: 'checkbox', value: true, random: 0.85, show: p => p.stairs !== 'none' },
+            { type: 'section', label: 'Stair' },
+            { id: 'section', label: 'Well', type: 'select', value: 'round', random: ['round', 'round', 'square', 'octagon'],
+              options: [['round', 'Round'], ['square', 'Square with landings'], ['octagon', 'Octagonal'], ['hexagon', 'Hexagonal']] },
+            { id: 'steps', label: 'Steps per turn', type: 'range', min: 3, max: 40, step: 1, value: 22, random: [16, 28] },
+            { id: 'eye', label: 'Open well', type: 'range', min: 0.2, max: 0.75, step: 0.01, value: 0.5, random: [0.38, 0.6] },
+            { id: 'pitch', label: 'Turn height', type: 'range', min: 0.6, max: 2.4, step: 0.05, value: 1.1, random: [0.9, 1.5] },
+            { id: 'turns', label: 'Turns deep', type: 'range', min: 1, max: 16, step: 1, value: 6, random: [4, 9] },
+            { id: 'stairs', label: 'Steps', type: 'select', value: 'solid', random: true, options: [['solid', 'Solid stone'], ['open', 'Floating treads']] },
+            { id: 'rail', label: 'Balustrade', type: 'select', value: 'balusters', random: ['balusters', 'balusters', 'rail'],
+              options: [['balusters', 'Balusters'], ['rail', 'Handrail only'], ['none', 'None']] },
+            { id: 'posts', label: 'Balusters per step', type: 'range', min: 1, max: 4, step: 1, value: 2, random: [1, 3], show: p => p.rail === 'balusters' },
+            { id: 'shade', label: 'Shading', type: 'checkbox', value: true, random: 0.85 },
+            { id: 'courses', label: 'Stone walls', type: 'checkbox', value: true, random: 0.7 },
             { type: 'section', label: 'View' },
-            { id: 'look', label: 'Looking', type: 'select', value: 'down', random: ['down', 'down', 'down', 'up'],
-              options: [['down', 'Down the shaft'], ['up', 'Up at the sky']] },
-            { id: 'fov', label: 'Field of view (°)', type: 'range', min: 40, max: 110, step: 1, value: 75, random: [60, 82] },
-            { id: 'cx', label: 'Vanishing point X (%)', type: 'range', min: 30, max: 70, step: 1, value: 50, random: [42, 58] },
-            { id: 'cy', label: 'Vanishing point Y (%)', type: 'range', min: 30, max: 70, step: 1, value: 50, random: [42, 58] },
+            { id: 'look', label: 'Looking', type: 'select', value: 'down', random: ['down', 'down', 'up'], options: [['down', 'Down the well'], ['up', 'Up from the floor']] },
+            { id: 'bottom', label: 'Far end', type: 'select', value: 'compass', random: ['compass', 'checker', 'compass', 'void'],
+              options: [['compass', 'Compass floor / lantern'], ['checker', 'Checkered floor / lantern'], ['void', 'Open']] },
+            { id: 'fov', label: 'Field of view (°)', type: 'range', min: 40, max: 120, step: 1, value: 80, random: [70, 95] },
+            { id: 'shift', label: 'Camera off centre (%)', type: 'range', min: 0, max: 100, step: 1, value: 30, random: [0, 60] },
+            { id: 'cx', label: 'Vanishing point X (%)', type: 'range', min: 30, max: 70, step: 1, value: 50, random: [44, 56] },
+            { id: 'cy', label: 'Vanishing point Y (%)', type: 'range', min: 30, max: 70, step: 1, value: 50, random: [44, 56] },
             { type: 'section', label: 'Pens' }, { id: 'pens' },
         ],
-        // Stairs in proportion to the shaft, and a depth that leaves the bottom
-        // a sensible size: a small dark hole, or a floor or pool big enough to see.
-        randomize(rng, p) {
-            const h = p.tiles / (2 * Math.tan(geo.rad(p.fov) / 2)), out = {};
-            out.width = geo.clamp(Math.round(p.tiles / rng.range(5, 7.5)), 2, p.stairs === 'double' ? 3 : 5);
-            if (p.stairs === 'double') out.steps = Math.min(p.steps, 2);
-            const deep = p.look === 'up' ? rng.range(5, 9) : p.bottom === 'void' ? rng.range(6, 10) : rng.range(2.2, 3.6);
-            out.levels = geo.clamp(Math.round(h * deep), 30, 240);
-            return out;
-        },
         generate(p, ctx) {
-            const { width: W, height: H } = ctx;
-            const rng = new PG.RNG(hash(ctx.seed | 0, 41));
-            const layers = PG.pens.layers(p.pens), pens = layers.length;
-            const well = makeWell(p, W, H), { V, wrap } = well;
-            const up = p.look === 'up', Dm = Math.round(p.levels), floorSolid = !up && p.bottom === 'floor';
-            // A pool mirrors the whole shaft below the water line, so the model
-            // just carries on upside down to a second rim.
-            const pool = !up && p.bottom === 'pool', Dt = pool ? 2 * Dm : Dm;
-
-            // camera
-            const vx = W * p.cx / 100, vy = H * p.cy / 100;
-            let o;
-            if (well.camera) o = well.camera(p.cx / 100, p.cy / 100);
-            else {
-                const k0 = fitRim(well.outline, [0, 0], W, H, W / 2, H / 2).k;
-                o = [(vx - W / 2) / k0, (vy - H / 2) / k0];
-            }
-            const rim = fitRim(well.outline, o, W, H, vx, vy);
-            const h = well.size / (2 * Math.tan(geo.rad(p.fov) / 2)), f = rim.k * 1.02 * h;
-            const eye = [o[0], o[1], up ? -Dm - h : h];
-            const dist = k => up ? h + Dm - k : h + k;
-            const cam = makeCamera(eye, f, vx, vy, up, 0.2 * (h + Dt) ** 2);
-            const S = new Scene(cam, W, H);
-
-            // stairs
-            const blocks = new Map(), blockCells = [], carved = new Set(), carvedCells = [], rails = [], doors = [], windows = [];
-            const w = geo.clamp(Math.round(p.width), 1, Math.max(1, well.maxWidth));
-            const T = Math.round(p.steps), dw = w >= 3 ? 2 : 1;
-            const setBlock = (i, j, k, type) => {
-                const c = key(wrap(i), j, k);
-                if (!blocks.has(c)) blockCells.push([wrap(i), j, k]);
-                blocks.set(c, type);
-            };
-            if (p.stairs !== 'none' && well.maxWidth >= 1) {
-                const U = stairPlan(well, w, Math.round(p.run), dw);
-                if (rng.chance(0.5)) { U.reverse(); for (const u of U) u.rail.reverse(); }
-                const lands = [];
-                U.forEach((u, i) => { if (u.land) lands.push(i); });
-                const first = rng.int(0, lands.length - 1), starts = [lands[first]];
-                if (p.stairs === 'double') starts.push(lands[(first + 2) % lands.length]);
-                const pitch = U.length / starts.length;
-                for (const s0 of starts) {
-                    let rail = [];
-                    for (let u = 0, k = 1; k < Dm; u++, k++) {
-                        const unit = U[(s0 + u) % U.length];
-                        if (f / dist(k) < MIN_STEP) {
-                            if (rail.length) rails.push(rail);
-                            rail = [];
-                            continue;
-                        }
-                        for (const [i, j] of unit.cells) for (let t = 0; t < T && k + t < Dm; t++) setBlock(i, j, k + t, unit.land ? T_LAND : T_STAIR);
-                        for (const q of unit.rail) rail.push([q, k]);
-                        if (unit.land && p.openings !== 'none') doors.push({ ...unit.door, k });
-                        if (unit.window && p.openings === 'both') windows.push({ ...unit.window, k: k - Math.round(pitch / 2) });
-                    }
-                    if (rail.length) rails.push(rail);
-                }
-            }
-
-            // doorways cut into the wall behind each landing, as tall as the flight above allows
-            const holes = [];
-            const cut = (wall, a0, width, k0, k1, depth) => {
-                for (let a = a0; a < a0 + width; a++) {
-                    const c = wall.at(a + 0.5, 0.5), e = wall.at(a + 0.5, -0.5);
-                    const ci = Math.floor(c[0]), cj = Math.floor(c[1]), ei = Math.floor(e[0]) - ci, ej = Math.floor(e[1]) - cj;
-                    for (let r = 1; r <= depth; r++) for (let k = k0; k < k1; k++) {
-                        const cc = [wrap(ci + ei * r), cj + ej * r, k], ck = key(cc[0], cc[1], k);
-                        if (!carved.has(ck)) { carved.add(ck); carvedCells.push(cc); }
-                    }
-                }
-                holes.push({ wall, a0, width, k0, k1, depth });
-            };
-            const free = (wall, a0, width, k) => {
-                if (k < 1 || k >= Dm) return false;
-                for (let a = a0 - 1; a <= a0 + width; a++) {
-                    const c = wall.at(a + 0.5, 0.5), ci = Math.floor(c[0]), cj = Math.floor(c[1]);
-                    if (well.inside(ci, cj) && blocks.has(key(wrap(ci), cj, k))) return false;
-                    const e = wall.at(a + 0.5, -0.5);
-                    if (carved.has(key(wrap(Math.floor(e[0])), Math.floor(e[1]), k))) return false;
-                }
-                return true;
-            };
-            // right under the camera a doorway is mostly a big dark blot
-            const far = k => Math.min(dist(k), dist(k - 5)) > 1.8 * h;
-            for (const d of doors) {
-                if (!far(d.k)) continue;
-                let dh = 0;
-                while (dh < 5 && free(d.wall, d.a0 + 1, dw - 2, d.k - dh - 1)) dh++;
-                if (dh >= 3) cut(d.wall, d.a0, dw, d.k - dh, d.k, 3);
-            }
-            // windows halfway between flights
-            for (const s of windows) {
-                let ok = far(s.k + 3);
-                for (let k = s.k - 2; k <= s.k + 3 && ok; k++) ok = free(s.wall, s.a0, dw, k);
-                if (ok) cut(s.wall, s.a0, dw, s.k, s.k + 3, 2);
-            }
-
-            if (pool) {
-                for (const [i, j, k] of blockCells.slice()) setBlock(i, j, 2 * Dm - 1 - k, blocks.get(key(i, j, k)));
-                for (const [i, j, k] of carvedCells.slice()) {
-                    const cc = [i, j, 2 * Dm - 1 - k];
-                    carved.add(key(i, j, cc[2]));
-                    carvedCells.push(cc);
-                }
-                for (const hl of holes.slice()) holes.push({ ...hl, k0: 2 * Dm - hl.k1, k1: 2 * Dm - hl.k0 });
-                for (const rail of rails.slice()) rails.push(rail.map(([q, k]) => [q, k, true]));
-            }
-            const wet = (k, ax) => pool && (ax === 2 ? k >= Dm : k > Dm);
-
-            const isSolid = (i, j, k) => {
-                if (k < 0) return false;
-                if (k >= Dt) return floorSolid;
-                const c = key(wrap(i), j, k);
-                if (carved.has(c)) return false;
-                return blocks.has(c) || !well.inside(i, j);
-            };
-
-            // every cell that could border something solid
-            const cand = new Map();
-            const add = (i, j, k) => {
-                if (k < 0 || k >= Dt) return;
-                i = wrap(i);
-                const c = key(i, j, k);
-                if (!cand.has(c)) cand.set(c, [i, j, k]);
-            };
-            for (let k = 0; k < Dt; k++) for (const [i, j] of well.rim) add(i, j, k);
-            for (const [i, j, k] of blockCells) for (const d of NB) add(i + d[0], j + d[1], k + d[2]);
-            for (const [i, j, k] of carvedCells) add(i, j, k);
-            if (floorSolid) {
-                if (well.M) for (let i = 0; i < well.M; i++) for (let b = 0; b <= w; b++) add(i, b, Dm - 1);
-                else for (const [i, j] of well.floor) add(i, j, Dm - 1);
-            }
-
-            // camera-facing faces, and the lattice edges they share
-            const faces = [], edges = new Map();
-            for (const [c, [i, j, k]] of cand) {
-                if (isSolid(i, j, k)) continue;
-                const hole = carved.has(c);
-                for (let d = 0; d < 6; d++) {
-                    const ni = i + NB[d][0], nj = j + NB[d][1], nk = k + NB[d][2];
-                    if (!isSolid(ni, nj, nk)) continue;
-                    const lat = quad(i, j, k, d), pts = lat.map(q => V(q[0], q[1], q[2]));
-                    let n = norm(cross(sub(pts[1], pts[0]), sub(pts[3], pts[0])));
-                    if (dot(n, sub(V(i + 0.5, j + 0.5, k + 0.5), pts[0])) < 0) n = [-n[0], -n[1], -n[2]];
-                    // edge-on faces (the camera sits right on a grid plane when centred) count as hidden
-                    const toEye = sub(eye, pts[0]);
-                    if (dot(n, toEye) <= 1e-6 * Math.hypot(toEye[0], toEye[1], toEye[2])) continue;
-                    const type = hole ? T_DOOR : nk >= Dt ? T_FLOOR : blocks.get(key(wrap(ni), nj, nk)) || T_WALL;
-                    // A block face seen almost edge-on would only add a second line a hair
-                    // from the first, so treat it as hidden. Walls keep theirs, the grid
-                    // lines on them thin out separately.
-                    if (type === T_STAIR || type === T_LAND) {
-                        const q = pts.map(P => cam.project(P[0], P[1], P[2]));
-                        let long = 0;
-                        for (let e = 0; e < 4; e++) long = Math.max(long, geo.dist(q[e], q[(e + 1) % 4]));
-                        if (Math.abs(geo.polygonArea(q)) < 0.3 * long) continue;
-                    }
-                    const face = { pts, n, type, d, wet: pool && k >= Dm };
-                    faces.push(face);
-                    for (let e = 0; e < 4; e++) {
-                        const a = lat[e], b = lat[(e + 1) % 4];
-                        const ax = a[0] !== b[0] ? 0 : a[1] !== b[1] ? 1 : 2, s = a[ax] < b[ax] ? a : b;
-                        const ek = key(wrap(s[0]), s[1], s[2]) * 3 + ax, rec = edges.get(ek);
-                        if (rec) rec.f.push(face);
-                        else edges.set(ek, { p: [wrap(s[0]), s[1], s[2]], ax, f: [face] });
-                    }
-                }
-            }
-
-            // Which grid lines to keep. Creases always stay. Flat grid lines follow
-            // the tile pattern and thin out once they crowd together on paper, a
-            // bit sooner in a pool's reflection so it reads paler.
-            const lod = (s, k) => {
-                const gap = k > Dm && pool ? 1.7 * GAP : GAP;
-                return s >= gap ? 1 : 1 << Math.min(12, Math.ceil(Math.log2(gap / s)));
-            };
-            const ringStep = k => lod(f * rim.clear * Math.abs(1 / dist(k) - 1 / dist(k + 1)), k);
-            const colStep = k => lod(f / dist(k + 0.5), k + 0.5);
-            const tileStep = k => lod(f / dist(k), k);
-            const joint = (u, k) => p.pattern === 'brick' ? mod(u + k, 2) === 0 : p.pattern === 'ashlar' ? mod(u - 2 * Math.floor(k / 2), 4) === 0 : true;
-            const course = k => p.pattern !== 'ashlar' || mod(k, 2) === 0;
-            const dNear = dist(up ? Dm : 0), dFar = dist(up ? 0 : Dm);
-            const band = k => Math.floor(5 * Math.log(dist(k) / dNear) / Math.log(dFar / dNear)) % 2 === 1;
-            const medal = floorSolid ? (well.M ? well.Ra - w - 1 : well.size / 2 - w - 1.5) : 0;
-            const kept = new Map(), loose = [];
-            for (const [ek, e] of edges) {
-                const fs = e.f, [i, j, k] = e.p;
-                let type = 0;
-                for (const x of fs) type = Math.max(type, x.type);
-                const waterline = pool && k === Dm && e.ax !== 2;
-                if (fs.length === 2 && dot(fs[0].n, fs[1].n) > 0.85 && !waterline) {
-                    if (Math.abs(fs[0].n[2]) > 0.5) {
-                        if (mod(e.ax === 0 ? j : i, tileStep(k)) !== 0) continue;
-                    } else if (e.ax === 2) {
-                        const u = fs[0].d < 2 ? j : i;
-                        if (!joint(u, k) || mod(u, colStep(k)) !== 0) continue;
-                    } else if (!course(k) || mod(up ? Dm - k : k, ringStep(k)) !== 0) continue;
-                }
-                let g = GROUP[type];
-                if (g === WALL && band(e.ax === 2 ? k + 0.5 : k)) g = DEEP;
-                if (waterline) g = FLOOR;
-                else if (wet(k, e.ax)) g = REFLECT;
-                // tiles stop at the edge of the compass rose
-                if (type === T_FLOOR && medal > 2.5 && e.ax !== 2 && !well.M) {
-                    const A = V(i, j, k), B = V(i + STEP[e.ax][0], j + STEP[e.ax][1], k), a = Math.hypot(A[0], A[1]) < medal, b = Math.hypot(B[0], B[1]) < medal;
-                    if (a && b) continue;
-                    if (a || b) {
-                        const [P, Q] = a ? [B, A] : [A, B], dx = Q[0] - P[0], dy = Q[1] - P[1];
-                        const qa = dx * dx + dy * dy, qb = P[0] * dx + P[1] * dy, qc = P[0] * P[0] + P[1] * P[1] - medal * medal;
-                        const t = geo.clamp((-qb - Math.sqrt(Math.max(0, qb * qb - qa * qc))) / qa, 0, 1);
-                        if (t > 1e-6) loose.push([g, [P, [P[0] + dx * t, P[1] + dy * t, P[2]]]]);
-                        continue;
-                    }
-                }
-                kept.set(ek, g);
-            }
-            for (const [g, pts] of loose) { S.kind = g; S.line(pts); }
-
-            // join runs of kept edges into long lines
-            const done = new Set();
-            for (const [ek, g] of kept) {
-                if (done.has(ek)) continue;
-                const { ax } = edges.get(ek), [di, dj, dk] = STEP[ax];
-                let [i, j, k] = edges.get(ek).p;
-                for (let n = 0; n < 4096; n++) {
-                    const b = key(wrap(i - di), j - dj, k - dk) * 3 + ax;
-                    if (b === ek || kept.get(b) !== g || done.has(b)) break;
-                    i -= di; j -= dj; k -= dk;
-                }
-                const pts = [V(i, j, k)];
-                for (;;) {
-                    const c = key(wrap(i), j, k) * 3 + ax;
-                    if (kept.get(c) !== g || done.has(c)) break;
-                    done.add(c);
-                    i += di; j += dj; k += dk;
-                    pts.push(V(i, j, k));
-                }
-                S.kind = g;
-                S.line(pts);
-            }
-
-            // steps, landings and doorway insides hide what's behind them
-            for (const fc of faces) if (fc.type >= T_STAIR) S.face(fc.pts, false);
-            // and the wall around a doorway hides the parts of its inside you can't see
-            for (const hl of holes) {
-                const { wall } = hl;
-                const c = wall.at(hl.a0 + hl.width / 2, 0), P = V(c[0], c[1], hl.k1);
-                const e = wall.at(hl.a0 + hl.width / 2, -1), Q = V(e[0], e[1], hl.k1), inward = norm(sub(P, Q));
-                const g = wall.at(hl.a0 + hl.width / 2 + 1, 0), along = norm(sub(V(g[0], g[1], hl.k1), P));
-                const lat = Math.max(0.5, dot(sub(eye, P), inward)), side = Math.abs(dot(sub(eye, P), along)) + hl.width;
-                const reach = Math.ceil(dist(up ? hl.k0 : hl.k1) * hl.depth / (lat + hl.depth)) + 1;
-                const mo = Math.ceil(side * hl.depth / (lat + hl.depth)) + 1;
-                const kA = up ? hl.k0 : Math.max(0, hl.k0 - reach), kB = up ? Math.min(Dt, hl.k1 + reach) : hl.k1;
-                for (let a = hl.a0 - mo; a < hl.a0 + hl.width + mo; a++) {
-                    const q = wall.at(a + 0.5, 0.5), ci = Math.floor(q[0]), cj = Math.floor(q[1]);
-                    if (!well.inside(ci, cj)) continue;
-                    const ws = wall.at(a + 0.5, -0.5), d = NB.findIndex(v => v[0] === Math.floor(ws[0]) - ci && v[1] === Math.floor(ws[1]) - cj);
-                    const spans = a >= hl.a0 && a < hl.a0 + hl.width ? [[kA, hl.k0], [hl.k1, kB]] : [[kA, kB]];
-                    for (const [k0, k1] of spans) {
-                        if (k1 <= k0) continue;
-                        // Overlap neighbouring strips a little. A reveal lying edge-on to the
-                        // camera projects exactly onto their shared edge and would show through.
-                        const lt = quad(ci, cj, k0, d), A = V(lt[0][0], lt[0][1], 0), B = V(lt[1][0], lt[1][1], 0);
-                        const ex = (B[0] - A[0]) * 0.02, ey = (B[1] - A[1]) * 0.02;
-                        S.face([[A[0] - ex, A[1] - ey, -k0], [B[0] + ex, B[1] + ey, -k0], [B[0] + ex, B[1] + ey, -k1], [A[0] - ex, A[1] - ey, -k1]], false);
-                    }
-                }
-            }
-
-            // hatching drawn evenly on paper, then lifted back onto its face
-            const hatchFace = (fc, gap, ang) => {
-                const q = fc.pts.map(P => cam.project(P[0], P[1], P[2]));
-                if (Math.abs(geo.polygonArea(q)) < 0.05) return;
-                for (const [a, b] of geo.hatch([q], gap, ang)) S.line([cam.lift(a[0], a[1], fc.n, fc.pts[0]), cam.lift(b[0], b[1], fc.n, fc.pts[0])]);
-            };
-            if (p.shade) {
-                S.kind = SHADE;
-                for (const fc of faces) {
-                    if (fc.wet || (fc.type !== T_STAIR && fc.type !== T_LAND) || dot(fc.n, LIGHT) >= -0.1) continue;
-                    hatchFace(fc, fc.n[2] < -0.5 ? 1.8 * HATCH : HATCH, geo.rad(45));
-                }
-            }
-            S.kind = DOOR;
-            for (const fc of faces) if (fc.type === T_DOOR && !fc.wet) { hatchFace(fc, HATCH, geo.rad(45)); hatchFace(fc, HATCH, geo.rad(-45)); }
-
-            // handrails with a baluster on every step
-            for (const rail of rails) {
-                // right under the camera a rail would just be a few long lines across the page
-                const pts = rail.filter(([, k]) => dist(k) - RAIL_H > 2.2 * h).map(([q, k, flip]) => {
-                    const P = V(q[0], q[1], k);
-                    return flip ? [P[0], P[1], -2 * Dm - P[2] - RAIL_H] : [P[0], P[1], P[2] + RAIL_H];
-                });
-                S.kind = rail[0][2] ? REFLECT : RAIL;
-                if (pts.length > 1) S.line(pts);
-                const drop = rail[0][2] ? RAIL_H : -RAIL_H;
-                for (const P of pts) S.line([[P[0], P[1], P[2] + drop], P]);
-            }
-
-            // the bottom
-            if (!up && p.bottom === 'void') {
-                const sp = GAP * dist(Dm) / f;
-                S.kind = FLOOR;
-                if (p.section === 'round') {
-                    // a smooth spiral, the polygon one leaves a radial seam of tiny steps
-                    const R0 = well.Ra - sp, turns = Math.floor(R0 / sp), pts = [];
-                    for (let t = 0; t <= turns * 96; t++) {
-                        const a = TAU * t / 96, r = R0 - sp * t / 96;
-                        pts.push([r * Math.cos(a), r * Math.sin(a), -Dm]);
-                    }
-                    if (pts.length > 1) S.line(pts);
-                } else {
-                    const poly = geo.insetConvex(well.outline, sp);
-                    if (poly.length) S.line(geo.insetSpiral(poly, sp).map(q => [q[0], q[1], -Dm]));
-                }
-            }
-            S.kind = FLOOR;
-            if (medal > 2.5) compass(S, medal, -Dm, HATCH * dist(Dm) / f, !well.M);
-            if (pool) {
-                // rings spreading from a drop somewhere in the open water
-                const open = Math.max(1, well.size / 2 - w - 1), a = rng.range(0, TAU), r = rng.range(0, 0.5) * open;
-                const cx = r * Math.cos(a), cy = r * Math.sin(a), inside = geo.insetConvex(well.outline, 0.05);
-                for (let rr = 0.7; rr < 1.5 * well.size; rr *= 1.5) {
-                    const n = Math.max(24, Math.ceil(rr * 12)), run = [];
-                    for (let t = 0; t <= n; t++) {
-                        const q = [cx + rr * Math.cos(TAU * t / n), cy + rr * Math.sin(TAU * t / n)];
-                        if (geo.pointInPolygon(q[0], q[1], inside)) run.push([q[0], q[1], -Dm]);
-                        else { if (run.length > 1) S.line(run); run.length = 0; }
-                    }
-                    if (run.length > 1) S.line(run);
-                }
-            }
-
-            const out = PG.iso.render(S), map = MAPS[pens - 1];
-            // the reflection breaks up like light on moving water
-            if (out[REFLECT]) out[FLOOR] = (out[FLOOR] || []).concat(dashes(out[REFLECT]));
-            for (let g = 0; g < 8; g++) for (const path of out[g] || []) layers[map[g]].push(path);
+            const { width: W, height: H, rng } = ctx;
+            const S = build(p, W, H, rng), layers = PG.pens.layers(p.pens), map = MAPS[layers.length - 1];
+            PG.iso.render(S).forEach((paths, kind) => { if (paths) for (const q of paths) layers[map[kind]].push(q); });
             return { layers };
         },
     });
