@@ -17,7 +17,7 @@
         // Packing
         'circlepack', 'apollonian', 'subdivide', 'voronoi',
         // Scenes
-        'town', 'harbour', 'fairground', 'alpine', 'skyline', 'stairwell', 'cosmic',
+        'town', 'harbour', 'fairground', 'trainyard', 'alpine', 'skyline', 'stairwell', 'cosmic',
         // Image
         'image',
     ];

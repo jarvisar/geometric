@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const src = path.resolve(__dirname, '../src');
 const load = file => vm.runInThisContext(fs.readFileSync(path.join(src, file), 'utf8'), { filename: file });
 ['core', 'pens', 'noise', 'contours', 'iso', 'isokit', 'optimize', 'pipeline', 'export'].forEach(n => load(`lib/${n}.js`));
-const ids = ['ribbons', 'stairwell', 'tidal', 'cosmic', 'skyline'];
+const ids = ['ribbons', 'stairwell', 'tidal', 'cosmic', 'skyline', 'trainyard'];
 let label;
 const finite = points => {
     for (const point of points) assert.ok(point.every(Number.isFinite), `${label}: invalid coordinate ${point}`);

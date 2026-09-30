@@ -57,6 +57,7 @@
         town: profile(4, 'Default palette: dark buildings, brown streets and fences, green plants, blue water. More pens separate cars, people and details.'),
         harbour: profile(4, 'Roofs, shadows and awnings use separate inks. More pens separate plants, figures, water and wood.'),
         fairground: profile(4, 'Rides, tents and shadows use separate inks. More pens separate plants, people, water and paths.'),
+        trainyard: profile(5, 'Black trains and buildings, red roofs and paint, blue shadows, gold trim and brown track. More pens separate plants, people and steam.'),
         alpine: profile(4, 'Dark architecture, red roofs, blue shade and gold details. More pens separate fir woods, people, water and timber.'),
         image: profile(3, 'Colors follow image darkness in every drawing mode.', [BLUE, PURPLE, INK, RED, BROWN, GREEN, CYAN, GOLD]),
     };
@@ -95,6 +96,17 @@
         ], [0, 1, 2, 3, 3, 3, 1, 3], ['Buildings', 'Streets', 'Plants', 'Details', 'Vehicles', 'People', 'Water', 'Fences & benches']),
         harbour: scene(illustrated, [0, 1, 2, 3, 0, 0, 2, 0], ['Structure', 'Roofs', 'Shadows', 'Awnings', 'Plants', 'Figures', 'Water', 'Wood']),
         fairground: scene(illustrated, [0, 1, 2, 3, 0, 0, 2, 0], ['Structure', 'Tents', 'Shadows', 'Rides & flags', 'Plants', 'People', 'Water', 'Paths']),
+        // Track is most of the drawing, so it gets its own pen before plants and people do
+        trainyard: scene([
+            [INK, INK, INK, INK, INK, INK, INK, INK],
+            [INK, RED, INK, RED, INK, INK, INK, INK],
+            [INK, RED, BLUE, RED, INK, INK, BLUE, INK],
+            [INK, RED, BLUE, GOLD, INK, INK, BLUE, INK],
+            [INK, RED, BLUE, GOLD, INK, INK, BLUE, BROWN],
+            [INK, RED, BLUE, GOLD, GREEN, INK, BLUE, BROWN],
+            [INK, RED, BLUE, GOLD, GREEN, PURPLE, BLUE, BROWN],
+            [INK, RED, BLUE, GOLD, GREEN, PURPLE, CYAN, BROWN],
+        ], [0, 1, 2, 3, 4, 5, 6, 7], ['Structure & trains', 'Roofs & paint', 'Shadows', 'Signals & trim', 'Plants', 'People', 'Steam & water', 'Track']),
         alpine: scene(illustrated, [0, 1, 2, 3, 0, 0, 2, 0], ['Architecture & rock', 'Roofs & trains', 'Shade & snow', 'Shutters & balconies', 'Fir woods', 'People & fliers', 'Water', 'Timber & paths']),
     };
 
