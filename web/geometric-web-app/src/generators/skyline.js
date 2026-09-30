@@ -153,13 +153,8 @@
         const floorLines = () => { for (let f = 1; f < floors; f++) S.line([W.at(0, z0 + f * fh), W.at(L, z0 + f * fh)]); };
         const bays = step => Math.max(1, Math.round(L / Math.max(step, 0.9 / px)));
         S.kind = ARCH;
-        // shaded walls just get their floors, the hatching does the rest
+        // shaded walls are left to the hatching. Floor lines on top turned them into crosshatch.
         if (T.shade && W.dark && style !== 'dark' && style !== 'bands') {
-            if (style === 'glass') S.kind = GLASS;
-            if (style === 'piers') {
-                const n = Math.max(2, Math.round(L / 3));
-                for (let i = 1; i < n; i++) S.line([W.at(L * i / n, z0), W.at(L * i / n, z1)]);
-            } else floorLines();
             S.kind = keep;
             return;
         }
@@ -516,7 +511,7 @@
                 const w = Math.min(W.len - 2, rng.range(6, 12)), s = rng.range(1, W.len - 1 - w), zb = z0 + rng.range(6, Math.max(7, z1 - z0 - 10));
                 panel(T, W, s, s + w, zb, zb + rng.range(3, 5), rng);
             }
-            if (rng.chance(p.signs * 0.5)) pipe(T, W, rng.range(1, W.len - 1), z0, Math.min(z1, z0 + rng.range(10, 40)), rng);
+            if (rng.chance(p.signs * 0.2)) pipe(T, W, rng.range(1, W.len - 1), z0, Math.min(z1, z0 + rng.range(10, 40)), rng);
         }
     }
 
@@ -1027,7 +1022,7 @@
             shopfront(T, W, 0, rng);
             facade(T, W, FL + 0.3, h, 'grid', rng);
             shadeWall(T, W, 0, W.len, 0, h);
-            if (rng.chance(T.p.signs * 0.5)) pipe(T, W, rng.range(0.8, W.len - 0.8), 0, h + 0.2, rng);
+            if (rng.chance(T.p.signs * 0.25)) pipe(T, W, rng.range(0.8, W.len - 0.8), 0, h + 0.2, rng);
             if (h > 11 && rng.chance(T.p.clutter * 0.6)) quiet(S, () => barnacles(T, W, FL + 0.5, h - 1, rng, T.p.clutter * 0.8, L));
             if (W.len > 3 && rng.chance(0.7)) T.anchor(W.at(rng.range(0.5, W.len - 0.5), h - 0.8, 0.03), W.n, L.id);
         }
@@ -1673,12 +1668,12 @@
             { id: 'airship', label: 'Airship', type: 'checkbox', value: true, random: 0.6 },
             { type: 'section', label: 'Streets' },
             { id: 'transit', label: 'Elevated transit', type: 'select', value: 'both', options: [['none', 'None'], ['highway', 'Highway'], ['monorail', 'Monorail'], ['both', 'Highway & monorail']], random: ['both', 'both', 'highway', 'monorail'] },
-            { id: 'cables', label: 'Overhead cables', type: 'range', min: 0, max: 1, step: 0.05, value: 0.55, random: [0.3, 0.85] },
+            { id: 'cables', label: 'Overhead cables', type: 'range', min: 0, max: 1, step: 0.05, value: 0.4, random: [0.2, 0.7] },
             { id: 'bridges', label: 'Skybridges', type: 'range', min: 0, max: 1, step: 0.05, value: 0.35, random: [0.1, 0.7] },
             { id: 'traffic', label: 'Traffic & people', type: 'range', min: 0, max: 1, step: 0.05, value: 0.6, random: [0.3, 0.9] },
             { type: 'section', label: 'Buildings' },
-            { id: 'clutter', label: 'Kowloon clutter', type: 'range', min: 0, max: 1, step: 0.05, value: 0.6, random: [0.3, 0.9] },
-            { id: 'signs', label: 'Signs & pipes', type: 'range', min: 0, max: 1, step: 0.05, value: 0.6, random: [0.3, 0.9] },
+            { id: 'clutter', label: 'Kowloon clutter', type: 'range', min: 0, max: 1, step: 0.05, value: 0.45, random: [0.2, 0.75] },
+            { id: 'signs', label: 'Signs & pipes', type: 'range', min: 0, max: 1, step: 0.05, value: 0.45, random: [0.2, 0.75] },
             { id: 'cranes', label: 'Construction cranes', type: 'checkbox', value: true, random: 0.75 },
             { id: 'detail', label: 'Windows & small details', type: 'checkbox', value: true },
             { type: 'section', label: 'Light' },
@@ -1810,7 +1805,8 @@
                 airship(T, q[0], q[1], z, len, Math.atan2(cam.ry, cam.rx) + arng.range(-0.4, 0.4) + (arng.chance(0.5) ? Math.PI : 0), arng);
             }
             cables(T, rng, paths);
-            if (p.shadows) { S.kind = SHADE; S.hatchShadows(Math.max(0.8, p.gap * 1.9)); }
+            // street shadows sparser than the walls, or the whole ground goes grey
+            if (p.shadows) { S.kind = SHADE; S.hatchShadows(Math.max(1.2, p.gap * 2.8)); }
             return PG.pens.renderScene('skyline', S, p);
         },
     });
