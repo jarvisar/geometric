@@ -8,7 +8,10 @@
  * stick out into the water. All of those are rectangles, so the quay walls
  * are worked out from them in one go (see Shore). Out on the water there are
  * piers of a few shapes, moored boats, boats under way, buoys and the
- * lighthouse, on the breakwater or on an island of its own.
+ * lighthouse, on the breakwater or on an island of its own. Further out
+ * there are fields of boats on moorings, all swung round to the same tide,
+ * maybe a ship at anchor, channel buoys, rocks with a beacon, pot floats and
+ * people rowing.
  *
  * The colour work is in the style of an illustrated map. Lit roof slopes are
  * hatched in red and shaded ones in black, a low sun casts blue hatched
@@ -426,6 +429,154 @@
         S.lathe(x, y, [[0.55, 0], [0.75, 0.25], [0.6, 0.5], [0.2, 0.62]], 16);
         S.frustum(x, y, 0.62, 1.6, 0.22, 0.08, 10);
         S.lathe(x, y, [[0, 1.55], [0.3, 1.85], [0, 2.2]], 10);
+    }
+
+    // Corners of a boat's patch of water, for the water marks to keep out of
+    const patch = (F, a0, a1, hw) => [F.P(a0, -hw, 0), F.P(a1, -hw, 0), F.P(a1, hw, 0), F.P(a0, hw, 0)].map(q => [q[0], q[1]]);
+
+    // Boat lying to a mooring out in the bay, its bow to the tide and its
+    // mooring float a little way ahead. Returns its patch of water.
+    function moored(T, x, y, ang, kind, rng) {
+        const S = T.S, F = turned(x, y, 0, ang);
+        S.kind = WOOD;
+        const L = PG.isokit.boat(T, F, kind, rng), f = F.P(L / 2 + 2, 0, 0);
+        S.kind = T.tones ? RED : INK;
+        S.lathe(f[0], f[1], [[0.3, 0], [0.38, 0.16], [0.28, 0.34], [0, 0.42]], 10);
+        S.kind = INK;
+        if (T.detail) S.line([F.P(L / 2 - 0.2, 0, kind === 'row' ? 0.5 : 1.2), [f[0], f[1], 0.3]]);
+        return patch(F, -L / 2 - 0.5, L / 2 + 2.6, kit.BEAM[kind] / 2 + 0.4);
+    }
+
+    // Small cargo ship at anchor: the bridge and funnel aft, hatches and
+    // derricks on the foredeck, and the anchor chain out of the bow. Returns
+    // its patch of water.
+    function ship(T, x, y, ang, rng) {
+        const S = T.S, L = rng.range(24, 30), B = rng.range(6, 7), F = turned(x, y, 0, ang);
+        S.kind = INK;
+        const Hl = hullSolid(T, F, L, B, 2.4, 1.2, false);
+        // a red line down each side under the deck edge
+        if (T.tones) {
+            S.kind = RED;
+            for (const side of [-1, 1]) S.line(Array.from({ length: 25 }, (_, i) => { const u = -L / 2 + 0.3 + ((L - 0.6) * i) / 24; return F.P(u, side * Hl.half(u) * 0.99, Hl.z(u) - 0.45); }));
+            S.kind = INK;
+        }
+        // the house aft: cabins, then the bridge on top with wings out each side
+        const u0 = -L / 2 + 1.6, u1 = u0 + 6, w = B * 0.36, zb = Hl.z(u0) - 0.1, fp = [u0, -w, u1, w];
+        S.box(F, u0, -w, zb, u1, w, zb + 2.6);
+        S.box(F, u0 + 2.4, -w - 0.4, zb + 2.6, u1, w + 0.4, zb + 4.6);
+        S.box(F, u0 + 2.2, -w - 0.55, zb + 4.6, u1 + 0.2, w + 0.55, zb + 4.8);
+        for (let side = 0; side < 4; side++) {
+            const Wl = wall(F, side, fp);
+            if (!T.sees(Wl.n)) continue;
+            const n = Math.max(1, Math.floor(Wl.len / 1.3));
+            for (let i = 0; i < n; i++) rect(T, Wl.at, ((i + 0.5) * Wl.len) / n - 0.3, zb + 1.2, 0.6, 0.6);
+        }
+        const front = wall(F, 1, [u0 + 2.4, -w - 0.4, u1, w + 0.4]);
+        if (T.sees(front.n)) {
+            const win = [front.at(0.3, zb + 3.6), front.at(front.len - 0.3, zb + 3.6), front.at(front.len - 0.3, zb + 4.3), front.at(0.3, zb + 4.3)];
+            S.loop(win);
+            S.hatch(win, [0, 0, 1], T.hDark * 0.8);
+        }
+        const fn = F.P(u0 + 1.1, 0, 0);
+        S.frustum(fn[0], fn[1], zb + 2.6, zb + 6.4, 0.85, 0.7, 16);
+        if (T.tones) {
+            S.kind = RED;
+            for (let z = zb + 5.2; z < zb + 6; z += 0.12) S.loop(ring(16, (c, s) => [fn[0] + 0.76 * c, fn[1] + 0.76 * s, z]));
+            S.kind = INK;
+        }
+        // hatches down the foredeck, a mast between them with a derrick to each
+        const a = u1 + 1.6, b = L / 2 - 3.2, m = (a + b) / 2;
+        for (const [h0, h1] of [[a, m - 0.8], [m + 0.8, b]]) {
+            const z0 = Hl.z(h0) - 0.2;
+            S.box(F, h0, -B * 0.3, z0, h1, B * 0.3, Hl.z(h1) + 0.6);
+            if (T.detail) for (let u = h0 + 1; u < h1 - 0.5; u += 1) S.line([F.P(u, -B * 0.3, Hl.z(h1) + 0.6), F.P(u, B * 0.3, Hl.z(h1) + 0.6)]);
+        }
+        const mz = Hl.z(m);
+        S.line([F.P(m, 0, mz), F.P(m, 0, mz + 7.5)]);
+        S.line([F.P(m, -0.9, mz + 6.6), F.P(m, 0.9, mz + 6.6)]);
+        for (const e of [-1, 1]) S.line([F.P(m + e * 0.3, 0, mz + 0.8), F.P(m + e * 4.2, 0, mz + 4.2), F.P(m, 0, mz + 7.2)]);
+        S.line([F.P(u1 - 1, 0, zb + 4.8), F.P(u1 - 1, 0, zb + 7.4)]);
+        const bow = F.P(L / 2 - 1, B * 0.25, Hl.z(L / 2 - 1));
+        S.line([bow, F.P(L / 2 + 2.5, B * 0.3, Hl.z(L / 2) * 0.4), F.P(L / 2 + 4.5, B * 0.3, 0)]);
+        return patch(F, -L / 2 - 1, L / 2 + 5, B / 2 + 0.8);
+    }
+
+    // Channel buoy: a float with a spar and a topmark, red cans to port and
+    // green cones to starboard
+    function marker(T, x, y, port) {
+        const S = T.S;
+        S.kind = port ? RED : GREEN;
+        S.lathe(x, y, [[0.6, 0], [0.75, 0.3], [0.5, 0.55], [0.2, 0.62]], 16);
+        S.frustum(x, y, 0.62, 2.2, 0.24, 0.12, 10);
+        if (port) S.frustum(x, y, 2.25, 2.75, 0.24, 0.24, 10);
+        else S.lathe(x, y, [[0.3, 2.25], [0, 2.8]], 10);
+        S.kind = INK;
+    }
+
+    // Rocks breaking the surface out in the bay, with a beacon on a little
+    // concrete base among them
+    function skerry(T, x, y, rng) {
+        const S = T.S;
+        S.kind = INK;
+        S.frustum(x, y, 0, 1.3, 0.9, 0.7, 12);
+        S.frustum(x, y, 1.3, 5.2, 0.12, 0.1, 8);
+        for (const z of [5.5, 6.2]) S.lathe(x, y, [[0, z - 0.3], [0.3, z], [0, z + 0.3]], 10);
+        if (T.tones) {
+            S.kind = RED;
+            for (let z = 2.4; z < 3.4; z += 0.1) S.loop(ring(8, (c, s) => [x + 0.13 * c, y + 0.13 * s, z]));
+            S.kind = INK;
+        }
+        const a0 = rng.range(0, TAU);
+        for (let i = rng.int(4, 7); i > 0; i--) {
+            const a = a0 + rng.range(-1.6, 1.6), d = rng.range(1.6, 4.8);
+            rock(T, x + d * Math.cos(a), y + d * Math.sin(a), rng.range(0.9, 2.2), rng);
+        }
+    }
+
+    // A line of lobster pot floats, each with a little flag on a stick
+    function pots(T, x, y, ang, n, rng) {
+        const S = T.S, c = T.cam;
+        for (let i = 0; i < n; i++) {
+            const px = x + Math.cos(ang) * i * 3 + rng.range(-0.6, 0.6), py = y + Math.sin(ang) * i * 3 + rng.range(-0.6, 0.6);
+            S.kind = INK;
+            S.lathe(px, py, [[0.24, 0], [0.28, 0.12], [0, 0.32]], 8);
+            S.line([[px, py, 0.32], [px, py, 1.4]]);
+            const f = [[px, py, 1.4], [px + c.rx * 0.55, py + c.ry * 0.55, 1.22], [px, py, 1.05]];
+            S.face(f, false);
+            S.kind = T.tones ? YELLOW : INK;
+            S.loop(f);
+        }
+        S.kind = INK;
+    }
+
+    // Someone rowing a dinghy, oars out and rings in the water where the
+    // blades go in. Returns its patch of water.
+    function rowing(T, x, y, ang, rng) {
+        const S = T.S, F = turned(x, y, 0, ang);
+        S.kind = WOOD;
+        PG.isokit.boat(T, F, 'row', rng);
+        // head and shoulders, facing the stern
+        S.kind = FIGURE;
+        const P = card(T, ...F.P(-0.15, 0, 0.45), 0.05), ce = T.cam.ce, hr = 0.13;
+        const body = [P(-0.2, 0), P(0.2, 0), P(0.2, 0.45), P(0.12, 0.52), P(-0.12, 0.52), P(-0.2, 0.45)];
+        S.face(body);
+        S.loop(body);
+        const head = ring(T.segs(hr), (c, s) => P(hr * c, 0.52 + hr / ce + (hr * s) / ce));
+        S.face(head);
+        S.loop(head);
+        S.kind = WOOD;
+        const sweep = rng.range(-0.6, 0.6);
+        for (const side of [-1, 1]) {
+            const tip = F.P(-0.1 + sweep, side * 2.4, 0.02);
+            S.line([F.P(0.05, side * 0.62, 0.6), tip]);
+            S.kind = WATER;
+            S.loop(ring(10, (c, s) => [tip[0] + 0.45 * c, tip[1] + 0.45 * s, 0]));
+            S.kind = WOOD;
+        }
+        S.kind = WATER;
+        for (let t = 2.6; t < 7; t += rng.range(1.2, 1.8)) S.line([F.P(-t, rng.range(-0.3, 0.3), 0), F.P(-t - 0.8, rng.range(-0.3, 0.3), 0)]);
+        S.kind = INK;
+        return patch(F, -7.5, 2.4, 2.9);
     }
 
     // ------------------------------------------------------------------
@@ -1407,7 +1558,105 @@
             if (W.piers.some(pr => y + 14 > pr.e0 && y - 14 < pr.e1 && x > xq - pr.len - 18)) continue;
             W.boats.push([x, y, ang]);
         }
+        planBay(T, W, shore, xq, ya, yb, seed);
         return W;
+    }
+
+    // The rest of the open water: boats on moorings, maybe a ship at anchor,
+    // channel buoys, rocks with a beacon, pot floats and people rowing. Its
+    // own random numbers, so the piers and wharves come out the same as before.
+    function planBay(T, W, shore, xq, ya, yb, seed) {
+        const { p, S, cam } = T, rng = new PG.RNG(hash(seed, 53));
+        Object.assign(W, { moorings: [], ship: null, markers: [], skerries: [], pots: [], rowers: [] });
+        // everything at anchor swings to face the same way
+        const tide = W.tide = rng.range(0, TAU);
+        const taken = [];
+        const nearPier = (x, y, m) => W.piers.some(pr => y + m > pr.e0 && y - m < pr.e1 && x > xq - pr.len - (pr.hd || 0) - m);
+        const inWake = (x, y, m) => W.boats.some(([bx, by, a]) => {
+            const t = -((x - bx) * Math.cos(a) + (y - by) * Math.sin(a)), d = Math.abs(-(x - bx) * Math.sin(a) + (y - by) * Math.cos(a));
+            // the wake spreads at 19.5 degrees and runs back up to about 35 m
+            return t > -6 - m && t < 36 && d < 3 + Math.max(0, t) * 0.36 + m;
+        });
+        const ok = (x, y, r) => T.onPage(x, y, 0, -4) && x < xq - 8 && shore.open(x, y, r)
+            && (!W.island || Math.hypot(x - W.island.x, y - W.island.y) > W.island.r + r + 4) && !nearPier(x, y, r + 2) && !inWake(x, y, r)
+            && !W.buoys.some(b => Math.hypot(b[0] - x, b[1] - y) < r + 3) && !taken.some(([a, b, q]) => Math.hypot(a - x, b - y) < q + r);
+        const take = (x, y, r) => taken.push([x, y, r]);
+        // a random spot on the water we can see, between x0 and x1 out from the quay
+        const spot = (x0, x1) => {
+            for (let i = 0; i < 40; i++) {
+                const [x, y] = cam.ground(rng.range(0, S.W), rng.range(0, S.H), 0);
+                if (xq - x > x0 && xq - x < x1) return [x, y];
+            }
+            return [Infinity, 0];
+        };
+        if (p.ship) {
+            for (let tries = 0; tries < 30 && !W.ship; tries++) {
+                const [x, y] = spot(40, 150), ends = [-1, 1].map(e => [x + Math.cos(tide) * e * 16, y + Math.sin(tide) * e * 16]);
+                // the whole ship on the page, not just its middle
+                if (!ok(x, y, 17) || !ends.every(([u, v]) => T.onPage(u, v, 0, -3))) continue;
+                W.ship = [x, y, tide + rng.range(-0.1, 0.1)];
+                take(x, y, 20);
+            }
+        }
+        // mooring fields: rows across the tide, a boat's swing apart
+        const fields = Math.round(p.moorings * 5 + rng.range(-0.4, 0.4));
+        const ct = Math.cos(tide), st = Math.sin(tide), kinds = [[3, 'sail'], [2, 'launch'], [1.2, 'fishing'], [1, 'row']];
+        for (let f = 0, tries = 0; f < fields && tries < 30; tries++) {
+            const [cx, cy] = spot(20, 90);
+            if (!ok(cx, cy, 6)) continue;
+            const rows = rng.int(2, 4), cols = rng.int(3, 7), got = [];
+            for (let i = 0; i < rows; i++) {
+                for (let j = 0; j < cols; j++) {
+                    if (!rng.chance(0.45 + 0.5 * p.moorings)) continue;
+                    const a = (i - (rows - 1) / 2) * 14 + rng.range(-1.5, 1.5), b = (j - (cols - 1) / 2) * 8.5 + rng.range(-1.5, 1.5);
+                    const x = cx + ct * a - st * b, y = cy + st * a + ct * b;
+                    if (!ok(x, y, 5.5)) continue;
+                    got.push([x, y, tide + rng.range(-0.12, 0.12), rng.weighted(kinds)]);
+                }
+            }
+            if (got.length < 2) continue;
+            for (const [x, y] of got) take(x, y, 6.5);
+            W.moorings.push(...got);
+            f++;
+        }
+        // a channel in towards the quay, buoyed in pairs
+        if (rng.chance(0.4 + 0.5 * p.moorings)) {
+            for (let tries = 0; tries < 20 && !W.markers.length; tries++) {
+                const y = geo.lerp(ya, yb, rng.range(0.15, 0.85)), got = [];
+                for (let i = 0; i < 3; i++) {
+                    const x = xq - 26 - i * 17;
+                    for (const s of [-1, 1]) if (ok(x, y + s * 9, 2)) got.push([x, y + s * 9, s < 0]);
+                }
+                if (got.length < 4) continue;
+                for (const [x, y] of got) take(x, y, 3);
+                W.markers = got;
+            }
+        }
+        for (let i = rng.int(0, 2), tries = 0; i > 0 && tries < 20; tries++) {
+            const [x, y] = spot(40, 110);
+            if (!ok(x, y, 7)) continue;
+            W.skerries.push([x, y]);
+            take(x, y, 7);
+            i--;
+        }
+        // pots strung out near the rocks, or anywhere off the quay
+        for (let i = rng.int(1, 3), tries = 0; i > 0 && tries < 20; tries++) {
+            const near = W.skerries.length && rng.chance(0.6) ? rng.pick(W.skerries) : null;
+            const [x, y] = near ? [near[0] + rng.range(-12, 12), near[1] + rng.range(-12, 12)] : spot(15, 70);
+            const ang = rng.range(0, TAU), n = rng.int(3, 5), L = n * 3;
+            const mx = x + Math.cos(ang) * L / 2, my = y + Math.sin(ang) * L / 2;
+            if (!ok(mx, my, L / 2 + 1)) continue;
+            W.pots.push([x, y, ang, n]);
+            take(mx, my, L / 2 + 1);
+            i--;
+        }
+        for (let i = Math.round(rng.range(0.5, 3) * p.boats), tries = 0; i > 0 && tries < 20; tries++) {
+            const [x, y] = spot(12, 60);
+            if (!ok(x, y, 5)) continue;
+            W.rowers.push([x, y, rng.range(0, TAU)]);
+            take(x, y, 6);
+            i--;
+        }
     }
 
     // Stone wharf out in the harbour: a crane on the front, a harbour office
@@ -1467,6 +1716,13 @@
         for (const [x, y] of W.buoys) buoy(T, x, y);
         S.shadow = water;
         const wakes = W.boats.map(([x, y, ang]) => underway(T, x, y, ang, rng));
+        const bay = new PG.RNG(hash(seed, 54));
+        if (W.ship) wakes.push(ship(T, ...W.ship, bay));
+        for (const [x, y, ang, kind] of W.moorings) wakes.push(moored(T, x, y, ang, kind, bay));
+        for (const [x, y, port] of W.markers) marker(T, x, y, port);
+        for (const [x, y] of W.skerries) skerry(T, x, y, bay);
+        for (const [x, y, ang, n] of W.pots) pots(T, x, y, ang, n, bay);
+        for (const [x, y, ang] of W.rowers) wakes.push(rowing(T, x, y, ang, bay));
         for (const r of W.wharves) wharf(T, r, rng, water);
         if (W.island) islet(T, W.island, rng, water);
         if (W.bw) {
@@ -1771,6 +2027,9 @@
                 hint: 'How far down the edge of the page the quay starts' },
             { id: 'piers', label: 'Piers', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.3, 0.9] },
             { id: 'boats', label: 'Boats', type: 'range', min: 0, max: 1, step: 0.01, value: 0.7, random: [0.4, 1] },
+            { id: 'moorings', label: 'Moorings', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.2, 1],
+                hint: 'Boats on moorings out in the bay, and buoys marking a channel in' },
+            { id: 'ship', label: 'Ship at anchor', type: 'checkbox', value: true, random: 0.6 },
             { id: 'lighthouse', label: 'Lighthouse', type: 'checkbox', value: true },
             { id: 'breakwater', label: 'Lighthouse on', type: 'select', value: 'any', random: false, show: p => p.lighthouse,
                 options: [['any', 'Any'], ['straight', 'Straight breakwater'], ['bent', 'Bent breakwater'], ['island', 'Island']] },

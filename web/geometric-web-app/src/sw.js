@@ -16,7 +16,7 @@ const SHELL = [
     'lib/pipeline.js', 'lib/settings.js', 'lib/images.js', 'lib/generation.js', 'lib/worker-source.js',
     'lib/render.js', 'lib/export.js', 'lib/loader.js',
     'icons/favicon.svg', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
-    'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png',
+    'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png', 'images/svgmap-square.webp',
     ...PG.GENERATOR_FILES.map(name => `generators/${name}.js`),
 ];
 

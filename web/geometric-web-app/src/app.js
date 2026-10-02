@@ -1134,6 +1134,13 @@
             section.append(cards);
             body.append(section);
         }
+        // Links out to my other plotter tools, not designs. Kept as plain links so they never go through selectGenerator
+        const tool = el('a', { class: 'card', href: 'https://svgmap.jarvisar.com/', target: '_blank', rel: 'noopener',
+            'data-search': 'svgmap svg map city street maps openstreetmap more tools' },
+        el('img', { class: 'thumb', src: 'images/svgmap-square.webp', alt: '', loading: 'lazy' }),
+        el('div', { class: 'card-text' }, el('div', { class: 'card-name' }, 'SVGmap ', icon('external')),
+            el('div', { class: 'card-desc', text: 'Street maps of any city, for plotting or laser engraving' })));
+        body.append(el('section', { 'data-cat': 'More Tools' }, el('h3', { class: 'gallery-cat', text: 'More Tools' }), el('div', { class: 'cards' }, tool)));
         pumpThumbs();
     }
 

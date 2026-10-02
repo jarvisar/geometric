@@ -122,6 +122,10 @@ ${designs.filter(d => d.category === cat).map(d => `            <a class="card" 
         <h1>Designs</h1>
         <p class="lead">Generative line art for pen plotters. Every design runs in the browser and exports a layered SVG. Previews use the default settings on A4.</p>
 ${sections}
+        <h2 id="more-tools">More Tools</h2>
+        <div class="cards">
+            <a class="card" href="https://svgmap.jarvisar.com/"><img src="../images/svgmap.webp" width="360" height="509" alt="" loading="lazy"><span><b>SVGmap</b>Street maps of any city from OpenStreetMap, for pen plotters, laser engraving or print.</span></a>
+        </div>
     </main>`;
     return page({
         title: 'Generative Line Art Designs for Pen Plotters · Plotter Geometry',
