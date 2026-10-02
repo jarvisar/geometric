@@ -10,14 +10,17 @@
  * piers of a few shapes, moored boats, boats under way, buoys and the
  * lighthouse, on the breakwater or on an island of its own. Further out
  * there are fields of boats on moorings, all swung round to the same tide,
- * maybe a ship at anchor, channel buoys, rocks with a beacon, pot floats and
- * people rowing.
+ * maybe a cargo ship at anchor or a schooner under sail, channel buoys, rocks
+ * with a beacon, pot floats, people rowing and gulls.
  *
  * The colour work is in the style of an illustrated map. Lit roof slopes are
  * hatched in red and shaded ones in black, a low sun casts blue hatched
- * shadows onto the ground and the water, the water gets rows of short blue
- * dashes, and cart canopies and boat cabin roofs are yellow. Shadows are cut
- * off at the edge of the lot they fall in, which keeps the streets clean.
+ * shadows onto the ground and the water, and cart canopies and boat cabin
+ * roofs are yellow. The water gets ripple lines following the shore, from
+ * the distance field of everything solid in it, and rows of short blue dashes
+ * further out. Boats get a coloured stripe and their side out of the sun
+ * hatched. Shadows are cut off at the edge of the lot they fall in, which
+ * keeps the streets clean.
  * With six pens trees and hedges go green and people and cars purple, and
  * with eight the water marks go light blue and the piers and boats brown.
  */
@@ -434,6 +437,26 @@
     // Corners of a boat's patch of water, for the water marks to keep out of
     const patch = (F, a0, a1, hw) => [F.P(a0, -hw, 0), F.P(a1, -hw, 0), F.P(a1, hw, 0), F.P(a0, hw, 0)].map(q => [q[0], q[1]]);
 
+    // Two broken rings on the water round something bobbing in it, open at the
+    // front. Returns its patch of water.
+    function bob(T, x, y, r) {
+        const S = T.S, face = Math.atan2(-T.cam.fy, -T.cam.fx);
+        S.kind = WATER;
+        for (const [rr, span] of [[r, 1.3], [r * 1.65, 0.9]]) {
+            for (const side of [-1, 1]) {
+                const pts = [];
+                for (let i = 0; i <= 8; i++) {
+                    const a = face + side * (0.3 + (span * i) / 8);
+                    pts.push([x + rr * Math.cos(a), y + rr * Math.sin(a), 0]);
+                }
+                S.line(pts);
+            }
+        }
+        S.kind = INK;
+        const m = r * 1.8;
+        return [[x - m, y - m], [x + m, y - m], [x + m, y + m], [x - m, y + m]];
+    }
+
     // Boat lying to a mooring out in the bay, its bow to the tide and its
     // mooring float a little way ahead. Returns its patch of water.
     function moored(T, x, y, ang, kind, rng) {
@@ -454,11 +477,13 @@
         const S = T.S, L = rng.range(24, 30), B = rng.range(6, 7), F = turned(x, y, 0, ang);
         S.kind = INK;
         const Hl = hullSolid(T, F, L, B, 2.4, 1.2, false);
-        // a red line down each side under the deck edge
+        // a red line down each side under the deck edge, and the hull below it dark
         if (T.tones) {
             S.kind = RED;
             for (const side of [-1, 1]) S.line(Array.from({ length: 25 }, (_, i) => { const u = -L / 2 + 0.3 + ((L - 0.6) * i) / 24; return F.P(u, side * Hl.half(u) * 0.99, Hl.z(u) - 0.45); }));
             S.kind = INK;
+            const dt = T.hDark / (T.k * L);
+            for (const s of [-1, 1]) for (let t = 0.015; t < 0.95; t += dt) S.line([Hl.on(t, s, 0), Hl.on(t, s, 0.5)]);
         }
         // the house aft: cabins, then the bridge on top with wings out each side
         const u0 = -L / 2 + 1.6, u1 = u0 + 6, w = B * 0.36, zb = Hl.z(u0) - 0.1, fp = [u0, -w, u1, w];
@@ -499,6 +524,91 @@
         const bow = F.P(L / 2 - 1, B * 0.25, Hl.z(L / 2 - 1));
         S.line([bow, F.P(L / 2 + 2.5, B * 0.3, Hl.z(L / 2) * 0.4), F.P(L / 2 + 4.5, B * 0.3, 0)]);
         return patch(F, -L / 2 - 1, L / 2 + 5, B / 2 + 0.8);
+    }
+
+    // Two-masted schooner under full sail: gaff sails and topsails on both
+    // masts, three jibs out to the bowsprit, shrouds and stays, and a pennant
+    // at the main masthead. Sails out of the sun are hatched in the shadow
+    // blue. Returns its patches of water, the hull and the wake.
+    function schooner(T, x, y, ang, lee, rng) {
+        const S = T.S, L = rng.range(26, 31), B = rng.range(6, 6.8), F = turned(x, y, 0, ang);
+        S.kind = INK;
+        const Hl = hullSolid(T, F, L, B, 2, 1.1, false);
+        // black topsides, with a white band and a red stripe under the rail
+        if (T.tones) {
+            const dt = T.hDark / (T.k * L);
+            for (const s of [-1, 1]) {
+                for (let t = 0.015; t < 0.95; t += dt) S.line([Hl.on(t, s, 0), Hl.on(t, s, 0.62)]);
+                S.kind = RED;
+                S.line(Array.from({ length: 21 }, (_, i) => Hl.on(0.01 + (0.97 * i) / 20, s, 0.8)));
+                S.kind = INK;
+            }
+        }
+        const zAt = Hl.z, uf = L * 0.18, um = -L * 0.13, hf = rng.range(17, 20), hm = hf + rng.range(1, 2);
+        // deckhouse aft and a hatch between the masts
+        const ua = -L * 0.38;
+        S.box(F, ua, -1.4, zAt(ua) - 0.1, ua + 3.6, 1.4, zAt(ua + 3.6) + 1.3);
+        S.box(F, um + 2.2, -1, zAt(um + 2.2) - 0.1, um + 4.2, 1, zAt(um + 4.2) + 0.5);
+        const bs0 = F.P(L / 2 - 1.2, 0, zAt(L / 2) + 0.2), bs1 = F.P(L / 2 + 7, 0, zAt(L / 2) + 1.7);
+        S.line([bs0, bs1]);
+        // sails to leeward, booms swung out at b
+        const b = rng.range(0.28, 0.45), dx = -Math.cos(b), dy = lee * Math.sin(b);
+        const Q = (u, d, z) => F.P(u + dx * d, dy * d, z);
+        const sun = S.sun, toSun = sun && T.tones ? [-sun[0], -sun[1], 1] : null;
+        const sail = pts => {
+            S.face(pts);
+            S.loop(pts);
+            if (!toSun) return;
+            // hatch the side we see when the sun is on the other one
+            const n = PG.iso.newell(pts), s = T.sees(n) ? 1 : -1;
+            if (s * (n[0] * toSun[0] + n[1] * toSun[1] + n[2] * toSun[2]) >= 0) return;
+            S.kind = BLUE;
+            S.hatch(pts, [pts[1][0] - pts[0][0], pts[1][1] - pts[0][1], pts[1][2] - pts[0][2]], T.hLit * 1.5);
+            S.kind = INK;
+        };
+        const seams = (a, b, c, d, n) => {
+            if (!T.detail) return;
+            for (let i = 1; i < n; i++) S.line([lerp3(a, b, i / n), lerp3(d, c, i / n)]);
+        };
+        const tops = [];
+        for (const [u, h, boom] of [[uf, hf, (uf - um) * 0.82], [um, hm, um + L / 2 + 2]]) {
+            const z0 = zAt(u), top = [F.P(u, 0, z0), F.P(u, 0, z0 + h)];
+            S.line(top);
+            tops.push(top[1]);
+            const zt = z0 + 1.4, zg = z0 + h * 0.58, peak = boom * 0.9, zp = zg + 4.2;
+            const main = [Q(u, 0.1, zt), Q(u, 0.1, zg), Q(u, peak, zp), Q(u, boom, zt + 0.3)];
+            sail(main);
+            seams(main[0], main[3], main[2], main[1], 5);
+            S.line([Q(u, 0, zt - 0.1), Q(u, boom + 0.4, zt + 0.2)]);
+            S.line([Q(u, 0, zg), Q(u, peak + 0.4, zp + 0.2)]);
+            sail([Q(u, 0.1, zg + 0.5), Q(u, peak * 0.95, zp + 0.25), Q(u, 0.1, z0 + h * 0.96)]);
+            // shrouds down to the rail either side
+            if (T.detail) {
+                for (const s of [-1, 1]) {
+                    for (const o of [-1.1, 0, 1.1]) S.line([F.P(u, 0, z0 + h * 0.8), F.P(u + o, s * Hl.half(u + o) * 0.97, zAt(u + o) + 0.1)]);
+                }
+            }
+        }
+        // jibs from the foremast down to the bowsprit, clews pulled to leeward
+        for (let i = 0; i < 3; i++) {
+            const head = F.P(uf + 0.1, 0, zAt(uf) + hf * (0.93 - 0.13 * i)), tack = lerp3(bs1, bs0, i * 0.3);
+            const clew = F.P(uf + 2.6 + i * 1.4, lee * (1.4 + i * 0.5), zAt(uf) + 1.6 + i * 0.4);
+            sail([head, tack, clew]);
+        }
+        S.line([tops[0], bs1]);
+        S.line([tops[0], tops[1]]);
+        S.line([tops[1], F.P(-L / 2 + 0.6, 0, zAt(-L / 2) + 0.3)]);
+        // pennant streaming off to leeward
+        const pen = [tops[1], F.P(um + dx * 2.6, dy * 2.6, tops[1][2] - 0.25), F.P(um, 0, tops[1][2] - 0.55)];
+        S.face(pen);
+        S.loop(pen);
+        if (T.tones) {
+            S.kind = RED;
+            S.hatch(pen, [0, 0, 1], T.hLit * 0.6);
+            S.kind = INK;
+        }
+        const w = kit.wake(T, x, y, ang, L, rng, 0, rng.range(1.1, 1.5));
+        return [patch(F, -L / 2 - 1, L / 2 + 8, B / 2 + 1), w];
     }
 
     // Channel buoy: a float with a spar and a topmark, red cans to port and
@@ -577,6 +687,38 @@
         for (let t = 2.6; t < 7; t += rng.range(1.2, 1.8)) S.line([F.P(-t, rng.range(-0.3, 0.3), 0), F.P(-t - 0.8, rng.range(-0.3, 0.3), 0)]);
         S.kind = INK;
         return patch(F, -7.5, 2.4, 2.9);
+    }
+
+    // Gulls following the boats in, and a few more out over the bay. Each is
+    // a pair of curved wings facing us, gliding or mid flap. Only drawn where
+    // there's open water behind them on the page, so they don't land on a roof.
+    function gulls(T, W, shore, clear, rng) {
+        const { S, cam, p } = T;
+        const want = Math.round(p.gulls * 14), spots = [];
+        const followed = W.boats.concat(W.ship && W.ship[3] === 'schooner' ? [W.ship] : []);
+        for (const [x, y] of followed) {
+            for (let i = rng.int(2, 4); i > 0; i--) spots.push([x + rng.range(-9, 9), y + rng.range(-9, 9), rng.range(7, 14)]);
+        }
+        for (let i = 0; i < want * 3; i++) {
+            const [x, y] = cam.ground(rng.range(0, S.W), rng.range(0, S.H), 0);
+            spots.push([x, y, rng.range(10, 24)]);
+        }
+        const shapes = [[0.12, 0.38], [0.6, 0.5], [-0.28, 0.3]];
+        const placed = [];
+        for (const [x, y, z] of spots) {
+            if (placed.length >= want) break;
+            const q = cam.project(x, y, z), g = cam.ground(q[0], q[1], 0);
+            if (!shore.water(g[0], g[1], 4) || !clear(g[0], g[1]) || !shore.water(x, y, 2)) continue;
+            if (placed.some(o => Math.hypot(o[0] - q[0], o[1] - q[1]) < 5)) continue;
+            placed.push(q);
+            const P = card(T, x, y, z), s = rng.range(1, 1.35), [tip, mid] = rng.pick(shapes);
+            const wing = side => Array.from({ length: 6 }, (_, i) => {
+                const t = i / 5, u = side * (1 - t), w = (1 - t) * (1 - t) * tip + 2 * t * (1 - t) * mid;
+                return P(u * s * 1.1, w * s);
+            });
+            S.kind = INK;
+            S.line(wing(-1).concat(wing(1).reverse().slice(1)), true);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -862,12 +1004,38 @@
                 S.line([[x + 0.82 * Math.cos(a), y + 0.82 * Math.sin(a), zl], [x + 0.82 * Math.cos(a), y + 0.82 * Math.sin(a), zl + 1.5]]);
             }
         }
+        const rAt = c => geo.lerp(r0, r1, (c - zt) / h) + 0.03;
+        // point on the front of the tower at f of the way across it as we see it
+        const across = (r, f, c) => {
+            const s = r * f, d = Math.sqrt(r * r - s * s);
+            return [x + cam.rx * s - cam.fx * d, y + cam.ry * s - cam.fy * d, c];
+        };
         const onTower = (s, c) => {
-            const r = geo.lerp(r0, r1, (c - zt) / h) + 0.03, a = face + s / r;
+            const r = rAt(c), a = face + s / r;
             return [x + r * Math.cos(a), y + r * Math.sin(a), c];
         };
-        for (const f of [0.3, 0.62, 0.85]) rect(T, onTower, -0.22, zt + h * f, 0.44, 0.7);
+        // Red bands, hatched upright so the lines don't pile up at the sides the
+        // way rings would. The windows go in the white bands between them.
+        const base = Math.max(h * 0.2, 2.4), band = (h - base) / 5;
+        if (T.tones && T.p.bands) {
+            for (const i of [0, 2, 4]) {
+                const b0 = zt + base + i * band, b1 = b0 + band;
+                for (const c of [b0, b1]) S.loop(ring(32, (u, v) => [x + rAt(c) * u, y + rAt(c) * v, c]));
+                S.kind = RED;
+                for (let f = -0.96; f < 0.97; f += T.hLit / (T.k * r1)) S.line([across(rAt(b0), f, b0), across(rAt(b1), f, b1)]);
+                S.kind = INK;
+            }
+            for (const i of [1, 3]) rect(T, onTower, -0.22, zt + base + (i + 0.5) * band - 0.35, 0.44, 0.7);
+        } else {
+            for (const f of [0.3, 0.62, 0.85]) rect(T, onTower, -0.22, zt + h * f, 0.44, 0.7);
+        }
         rect(T, onTower, -0.45, zt, 0.9, 1.9);
+        // the light, in the canopy yellow
+        if (T.tones) {
+            S.kind = T.tones.canopy;
+            for (let f = -0.9; f < 0.91; f += (T.hLit * 0.7) / (T.k * 0.8)) S.line([across(0.81, f, zl + 0.15), across(0.81, f, zl + 1.35)]);
+            S.kind = INK;
+        }
         const pts = [];
         for (const [r, c] of [[2.3, z], [r0, zt], [r1 + 0.55, zg + 0.25], [1, zl + 2.05]]) {
             pts.push(...ring(12, (u, v) => [x + r * u, y + r * v, c]));
@@ -896,6 +1064,8 @@
         const f = [v.slice(0, n).map((_, i) => i)];
         for (let i = 0; i < n; i++) f.push([i, (i + 1) % n, n]);
         T.S.solid(v, f);
+        // kept for the ripple lines round the shore
+        T.rocks.push([x, y, s]);
     }
 
     // Lighthouse on its own round stone islet, with rocks round the foot
@@ -1589,12 +1759,29 @@
             }
             return [Infinity, 0];
         };
-        if (p.ship) {
-            for (let tries = 0; tries < 30 && !W.ship; tries++) {
-                const [x, y] = spot(40, 150), ends = [-1, 1].map(e => [x + Math.cos(tide) * e * 16, y + Math.sin(tide) * e * 16]);
+        // A schooner sails across the page so we see her sails side on, and
+        // wants open water behind her mastheads so they don't end up in the town
+        const sailing = p.ship && (p.shipType === 'schooner' || (p.shipType === 'any' && rng.chance(0.5)));
+        if (sailing) {
+            const lee = rng.sign(), head = Math.atan2(cam.fx, -cam.fy) + rng.range(-0.45, 0.45) + (rng.chance(0.5) ? Math.PI : 0);
+            const c = Math.cos(head), s = Math.sin(head);
+            for (let tries = 0; tries < 100 && !W.ship; tries++) {
+                const [x, y] = spot(30, 130), ends = [-1, 1].map(e => [x + c * e * 16, y + s * e * 16]);
+                const q = cam.project(x, y, 21), g = cam.ground(q[0], q[1], 0);
+                if (!ok(x, y, 10) || !ends.every(([u, v]) => ok(u, v, 6) && T.onPage(u, v, 0, -3))) continue;
+                if (!T.onPage(x, y, 21, 2) || !shore.water(g[0], g[1], 6)) continue;
+                W.ship = [x, y, head, 'schooner', lee];
+                take(x, y, 20);
+                // and the wake behind her
+                for (const t of [22, 36]) take(x - c * t, y - s * t, 9);
+            }
+        }
+        if (p.ship && !W.ship && p.shipType !== 'schooner') {
+            for (let tries = 0; tries < 80 && !W.ship; tries++) {
+                const [x, y] = spot(40, 150), ends = [-1, 1].map(e => [x + Math.cos(tide) * e * 14, y + Math.sin(tide) * e * 14]);
                 // the whole ship on the page, not just its middle
-                if (!ok(x, y, 17) || !ends.every(([u, v]) => T.onPage(u, v, 0, -3))) continue;
-                W.ship = [x, y, tide + rng.range(-0.1, 0.1)];
+                if (!ok(x, y, 9) || !ends.every(([u, v]) => ok(u, v, 6) && T.onPage(u, v, 0, -3))) continue;
+                W.ship = [x, y, tide + rng.range(-0.1, 0.1), 'cargo'];
                 take(x, y, 20);
             }
         }
@@ -1716,10 +1903,15 @@
         for (const [x, y] of W.buoys) buoy(T, x, y);
         S.shadow = water;
         const wakes = W.boats.map(([x, y, ang]) => underway(T, x, y, ang, rng));
+        for (const [x, y] of W.buoys) wakes.push(bob(T, x, y, 1.1));
         const bay = new PG.RNG(hash(seed, 54));
-        if (W.ship) wakes.push(ship(T, ...W.ship, bay));
+        if (W.ship && W.ship[3] === 'schooner') wakes.push(...schooner(T, ...W.ship.slice(0, 3), W.ship[4], bay));
+        else if (W.ship) wakes.push(ship(T, ...W.ship.slice(0, 3), bay));
         for (const [x, y, ang, kind] of W.moorings) wakes.push(moored(T, x, y, ang, kind, bay));
-        for (const [x, y, port] of W.markers) marker(T, x, y, port);
+        for (const [x, y, port] of W.markers) {
+            marker(T, x, y, port);
+            wakes.push(bob(T, x, y, 1.15));
+        }
         for (const [x, y] of W.skerries) skerry(T, x, y, bay);
         for (const [x, y, ang, n] of W.pots) pots(T, x, y, ang, n, bay);
         for (const [x, y, ang] of W.rowers) wakes.push(rowing(T, x, y, ang, bay));
@@ -1802,12 +1994,10 @@
 
     // Rows of short dashes across the open water, in page space like a
     // printed map, left out where they'd touch anything
-    function waterMarks(T, shore, groups, wakes, seed) {
+    function waterMarks(T, shore, near, clear, seed) {
         const { S, cam } = T;
         const rng = new PG.RNG(hash(seed, 70));
         const rowGap = 5.2, colGap = 15, dash = 4;
-        const shaded = (x, y) => groups.some(g => (!g.clip || inRect(g.clip, x, y)) && g.polys.some(P => geo.pointInPolygon(x, y, P)));
-        const inWake = (x, y) => wakes.some(P => geo.pointInPolygon(x, y, P));
         S.kind = WATER;
         for (let row = 0, sy = rowGap * 0.6; sy < S.H; row++, sy += rowGap) {
             const off = (row % 2 ? colGap / 2 : 0) + rng.range(-2, 2);
@@ -1816,8 +2006,67 @@
                 const [x, y] = cam.ground(cx, sy, 0);
                 const a = cam.ground(cx - len / 2, sy, 0), b = cam.ground(cx + len / 2, sy, 0);
                 if (!shore.water(x, y, 1.2) || !shore.water(a[0], a[1], 0.6) || !shore.water(b[0], b[1], 0.6)) continue;
-                if (shaded(x, y) || inWake(x, y)) continue;
+                if (near(x, y) || near(a[0], a[1]) || near(b[0], b[1]) || !clear(x, y)) continue;
                 S.line([[a[0], a[1], 0], [b[0], b[1], 0]], true);
+            }
+        }
+        S.kind = INK;
+    }
+
+    // Distance (m) from a point on the open water to the nearest land: the
+    // quay, the moles, the lighthouse islet and the rocks. Across a canal
+    // mouth or the dock entrance it's the distance to the corners either side.
+    function shoreDistance(T, shore, W) {
+        const xq = shore.xq, mouths = shore.cuts.filter(r => r[0] <= xq + 0.01);
+        return (x, y) => {
+            let d = xq - x;
+            const m = mouths.find(r => y > r[1] && y < r[3]);
+            if (m) d = Math.min(Math.hypot(d, y - m[1]), Math.hypot(d, y - m[3]));
+            for (const r of shore.moles) d = Math.min(d, Math.hypot(Math.max(r[0] - x, 0, x - r[2]), Math.max(r[1] - y, 0, y - r[3])));
+            if (W.island) d = Math.min(d, Math.hypot(x - W.island.x, y - W.island.y) - W.island.r - 0.4);
+            for (const [rx, ry, s] of T.rocks) d = Math.min(d, Math.hypot(x - rx, y - ry) - s * 0.85);
+            return d;
+        };
+    }
+
+    // Water along the quay that's full of piers and boats, where ripple lines
+    // would just thread between the hulls
+    function keepOut(W, xq) {
+        const out = W.piers.map(pr => [xq - pr.len - (pr.hd || 0) - 5, pr.e0, xq, pr.e1]);
+        for (const [y] of W.dinghies) out.push([xq - 2.6, y - 2.6, xq, y + 2.6]);
+        if (W.slip) out.push([xq - 7.5, W.slip[0] - 0.5, xq, W.slip[1] + 0.5]);
+        for (const r of W.wharves) out.push([r[0] - 4.5, r[1] - 4.5, r[2], r[3]]);
+        return out;
+    }
+
+    // Ripple lines following the shore a few mm out on paper, like the lines
+    // round the coast on an old chart. The nearest is solid and the ones
+    // further out break up into dashes.
+    function shoreLines(T, dist, box, clear) {
+        const { S, k } = T, [x0, y0, x1, y1] = box;
+        if (x1 - x0 < 1 || y1 - y0 < 1) return;
+        // coarse is fine, the crossings are found exactly on the true distance
+        const cell = Math.max(0.8, Math.sqrt(((x1 - x0) * (y1 - y0)) / 50000));
+        const field = PG.sampleField(dist, x0, y0, x1 - x0, y1 - y0, cell);
+        const step = 0.3 / k;
+        S.kind = WATER;
+        for (const [mm, on, off] of [[2.2, Infinity, 0], [4.8, 10, 2.2], [7.8, 4, 3.2]]) {
+            const period = (on + off) / k;
+            for (const path of PG.isolines(field, mm / k, dist)) {
+                let run = [], t = (path.length * 1.7) % 3;
+                const flush = () => {
+                    if (run.length > 1) S.line(run.map(([x, y]) => [x, y, 0]));
+                    run = [];
+                };
+                for (let i = 0; i + 1 < path.length; i++) {
+                    const [ax, ay] = path[i], [bx, by] = path[i + 1], len = Math.hypot(bx - ax, by - ay);
+                    for (let s = 0; s < len; s += step, t += step) {
+                        const x = ax + ((bx - ax) * s) / len, y = ay + ((by - ay) * s) / len;
+                        if ((t % period) * k < on && clear(x, y)) run.push([x, y]);
+                        else flush();
+                    }
+                }
+                flush();
             }
         }
         S.kind = INK;
@@ -2004,7 +2253,21 @@
         quayRoad(T, road, busy, xq, ya, yb, seed);
         waterways(T, canals, basin, bridges, groupAt, xq, x0, seed);
         const wakes = drawWater(T, W, xq, water, seed);
-        if (p.water) waterMarks(T, shore, [water, ...cutGroups.map(c => c[1])].filter(Boolean), wakes, seed);
+        // polygons with their bounding boxes, as these get checked a lot
+        const boxed = P => { const b = geo.bbox([P]); return { P, b: [b.minX, b.minY, b.maxX, b.maxY] }; };
+        const inAny = (list, x, y) => list.some(({ P, b }) => inRect(b, x, y) && geo.pointInPolygon(x, y, P));
+        const groups = [water, ...cutGroups.map(c => c[1])].filter(Boolean).map(g => ({ clip: g.clip, polys: g.polys.map(boxed) }));
+        const shaded = (x, y) => groups.some(g => (!g.clip || inRect(g.clip, x, y)) && inAny(g.polys, x, y));
+        const wakeBoxes = wakes.map(boxed);
+        const open = (x, y) => !shaded(x, y) && !inAny(wakeBoxes, x, y);
+        const keep = keepOut(W, xq), clear = (x, y) => open(x, y) && !keep.some(r => inRect(r, x, y));
+        const dist = shoreDistance(T, shore, W);
+        if (p.water) {
+            const X0 = Math.min(...pts.map(q => q[0]));
+            shoreLines(T, dist, [Math.max(X0, xq - 400), Y0, xq, Y1], clear);
+            waterMarks(T, shore, (x, y) => x < xq && dist(x, y) < 10.5 / T.k, open, seed);
+        }
+        if (p.gulls > 0) gulls(T, W, shore, clear, new PG.RNG(hash(seed, 56)));
     }
 
     PG.register({
@@ -2029,10 +2292,15 @@
             { id: 'boats', label: 'Boats', type: 'range', min: 0, max: 1, step: 0.01, value: 0.7, random: [0.4, 1] },
             { id: 'moorings', label: 'Moorings', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.2, 1],
                 hint: 'Boats on moorings out in the bay, and buoys marking a channel in' },
-            { id: 'ship', label: 'Ship at anchor', type: 'checkbox', value: true, random: 0.6 },
+            { id: 'ship', label: 'Ship', type: 'checkbox', value: true, random: 0.7 },
+            { id: 'shipType', label: 'Kind of ship', type: 'select', value: 'any', random: false, show: p => p.ship,
+                options: [['any', 'Any'], ['cargo', 'Cargo ship at anchor'], ['schooner', 'Schooner under sail']],
+                hint: 'The schooner needs open water behind her masts, so she sometimes gives way to the cargo ship' },
+            { id: 'gulls', label: 'Gulls', type: 'range', min: 0, max: 1, step: 0.01, value: 0.5, random: [0.2, 0.9] },
             { id: 'lighthouse', label: 'Lighthouse', type: 'checkbox', value: true },
             { id: 'breakwater', label: 'Lighthouse on', type: 'select', value: 'any', random: false, show: p => p.lighthouse,
                 options: [['any', 'Any'], ['straight', 'Straight breakwater'], ['bent', 'Bent breakwater'], ['island', 'Island']] },
+            { id: 'bands', label: 'Red bands', type: 'checkbox', value: true, random: 0.6, show: p => p.lighthouse && p.roofHatch },
             { id: 'wharves', label: 'Wharves & cranes', type: 'range', min: 0, max: 1, step: 0.01, value: 0.4, random: [0, 0.8] },
             { id: 'basin', label: 'Dock basin', type: 'range', min: 0, max: 1, step: 0.01, value: 0.3, random: [0, 0.7],
                 hint: 'Chance of a dock cut into the front row of blocks' },
@@ -2080,7 +2348,8 @@
                 show: p => p.shadows, hint: 'Lower sun, longer shadows' },
             { id: 'shadowGap', label: 'Shadow hatch spacing (mm)', type: 'range', min: 0.3, max: 2, step: 0.05, value: 0.75, random: false,
                 show: p => p.shadows },
-            { id: 'water', label: 'Water marks', type: 'checkbox', value: true },
+            { id: 'water', label: 'Water marks', type: 'checkbox', value: true,
+                hint: 'Ripple lines round the shore and rows of dashes further out' },
             { type: 'section', label: 'Pens' },
             { id: 'pens' },
         ],
@@ -2106,6 +2375,9 @@
                 // roof hatching, in mm on paper, and the pens for it (see isokit's shade)
                 tones: p.roofHatch ? { lit: RED, dark: INK, canopy: YELLOW } : null,
                 waterKind: WATER,
+                // stripes under the deck edge of the boats, see isokit's paintHull
+                hulls: [[3, RED], [1.4, BLUE], [0.8, YELLOW], [1.6, null]],
+                rocks: [],
                 hLit: p.roofGap,
                 hDark: p.roofGap * 0.6,
                 // lit if the face gets at least 3/4 of the light a flat roof does

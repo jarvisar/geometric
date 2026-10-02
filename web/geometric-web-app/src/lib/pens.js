@@ -34,7 +34,7 @@
         stairwell: profile(3, 'Black steps and walls, a blue handrail and balusters, and light blue shading. More pens split out the floor or skylight, the balusters, the string, the walls and every other turn.', [INK, BLUE, CYAN, GOLD, PURPLE, RED, BROWN, GREEN]),
         tidal: profile(3, 'Blue water and black land. More pens add the cut block, lowland and hill bands, red survey marks and a lighter sea surface.', [BLUE, INK, BROWN, GREEN, RED, CYAN, GOLD, PURPLE]),
         cosmic: profile(3, 'Dark outlines, a warm sun and sunsets, and cool skies and water. More pens split off sand, distant ranges, plants, crystals and rock.', [INK, RED, BLUE, GOLD, PURPLE, GREEN, CYAN, BROWN]),
-        skyline: profile(3, 'Black architecture and shade, red signs and pipes, yellow pads, road markings and cranes. More pens separate glass, trees, traffic, cables and streets.'),
+        skyline: profile(5, 'Black architecture, red signs and roofs, blue shade, shadows and water, yellow pads, markings, taxis and cranes, green trees. More pens separate glass, traffic and streets.'),
         flowfield: profile(4, 'Color follows flow direction, position or patches of noise.', cool),
         ridgelines: profile(4, 'Colors separate near and distant ridges.', cool),
         topo: profile(4, 'Elevation bands share the colors. Index contours stay on the first pen.', [INK, GREEN, BROWN, BLUE, GOLD, RED, PURPLE, CYAN]),
@@ -74,16 +74,17 @@
     ];
     const scene = (maps, groups, roles) => ({ maps, groups, roles });
     P.scenes = {
+        // Water shares the shade pen like Harbour, and church roofs get the red of Town and Harbour's roofs
         skyline: scene([
-            [INK, INK, INK, INK, INK, INK, INK, INK, INK],
-            [INK, RED, INK, RED, INK, INK, INK, INK, INK],
-            [INK, RED, INK, GOLD, INK, INK, INK, INK, INK],
-            [INK, RED, INK, GOLD, BLUE, INK, INK, INK, INK],
-            [INK, RED, INK, GOLD, BLUE, INK, GREEN, INK, INK],
-            [INK, RED, INK, GOLD, BLUE, INK, GREEN, PURPLE, INK],
-            [INK, RED, INK, GOLD, BLUE, CYAN, GREEN, PURPLE, INK],
-            [INK, RED, INK, GOLD, BLUE, CYAN, GREEN, PURPLE, BROWN],
-        ], [0, 1, 2, 3, 4, 5, 6, 7, 8], ['Architecture', 'Signs & pipes', 'Shade & shadows', 'Pads, markings & cranes', 'Glass', 'Cables & masts', 'Trees', 'People & traffic', 'Streets & crossings']),
+            [INK, INK, INK, INK, INK, INK, INK, INK, INK, INK, INK],
+            [INK, RED, INK, RED, INK, INK, INK, INK, INK, INK, RED],
+            [INK, RED, BLUE, RED, INK, INK, INK, INK, INK, BLUE, RED],
+            [INK, RED, BLUE, GOLD, INK, INK, INK, INK, INK, BLUE, RED],
+            [INK, RED, BLUE, GOLD, INK, INK, GREEN, INK, INK, BLUE, RED],
+            [INK, RED, BLUE, GOLD, CYAN, INK, GREEN, INK, INK, BLUE, RED],
+            [INK, RED, BLUE, GOLD, CYAN, INK, GREEN, PURPLE, INK, BLUE, RED],
+            [INK, RED, BLUE, GOLD, CYAN, INK, GREEN, PURPLE, BROWN, BLUE, RED],
+        ], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], ['Architecture', 'Signs & pipes', 'Shade & shadows', 'Pads, markings, taxis & cranes', 'Glass', 'Cables & masts', 'Trees', 'People & traffic', 'Streets & crossings', 'Water', 'Roofs']),
         town: scene([
             [INK, INK, INK, INK, INK, INK, INK, INK],
             [INK, BROWN, INK, INK, INK, INK, INK, BROWN],

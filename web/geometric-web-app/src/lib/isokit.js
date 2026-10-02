@@ -1060,7 +1060,7 @@
     // faceted sides between them. An open boat gets a flat deck to draw the
     // inside on. Returns deck height and half breadth along the boat.
     function hullSolid(T, F, L, B, free, sheer, open) {
-        const n = 12, deckZ = t => free + sheer * t * t;
+        const n = 12, deckZ = t => free + sheer * t * t, topZ = open ? () => free : deckZ;
         const outline = (len, beam, zf, shift) => {
             const pts = [];
             for (let i = 0; i <= n; i++) {
@@ -1073,7 +1073,7 @@
             }
             return pts;
         };
-        const deck = outline(L, B, open ? () => free : deckZ, 0);
+        const deck = outline(L, B, topZ, 0);
         const water = outline(L * 0.88, B * 0.84, () => 0, -L * 0.03);
         const m = deck.length, v = deck.concat(water), f = [], g = [];
         f.push(water.map((_, i) => m + i));
@@ -1099,11 +1099,37 @@
             for (let i = 0; i < m; i++) { f.push([2 * m, i, (i + 1) % m]); g.push(2); }
         }
         T.S.solid(v, f, g);
+        // Point on side s (-1 or 1) at t from stern to bow, f of the way up from
+        // the waterline to the deck edge. Pushed out a little so the facets,
+        // which cut inside the curve, don't hide lines drawn on the hull.
+        const on = (t, s, f) => {
+            const b = breadth(t) * geo.lerp(B * 0.42, B / 2, f) * 1.04 + 0.02;
+            return F.P(geo.lerp(-L * 0.47 + t * L * 0.88, -L / 2 + t * L, f), s * b, topZ(t) * f);
+        };
         return {
-            deck,
-            z: u => (open ? free : deckZ(geo.clamp((u + L / 2) / L, 0, 1))),
+            deck, on, F,
+            z: u => topZ(geo.clamp((u + L / 2) / L, 0, 1)),
             half: u => (B / 2) * breadth(geo.clamp((u + L / 2) / L, 0, 1)),
         };
+    }
+
+    // Paint for Harbour's boats. T.hulls is a list of [weight, kind] for the
+    // stripe under the deck edge (null for none), and the side out of the sun
+    // gets hatched down to the water. Scenes without T.hulls keep plain boats.
+    function paintHull(T, Hl, L, rng) {
+        if (!T.hulls || !T.tones) return;
+        const S = T.S, kind = rng.weighted(T.hulls), sun = S.sun, F = Hl.F;
+        const along = (s, f) => Array.from({ length: 17 }, (_, i) => Hl.on(0.01 + (0.97 * i) / 16, s, f));
+        for (const s of [-1, 1]) {
+            if (kind !== null) inKind(S, kind, () => S.line(along(s, 0.74)));
+            if (!sun) continue;
+            const n = F.V(0, s, 0);
+            if (n[0] * sun[0] + n[1] * sun[1] <= 0) continue;
+            const dt = T.hDark / (T.k * L);
+            inKind(S, T.tones.dark, () => {
+                for (let t = 0.02; t < 0.93; t += dt) S.line([Hl.on(t, s, 0), Hl.on(t, s, kind === null ? 0.95 : 0.6)]);
+            });
+        }
     }
 
     // Box on deck, from the deck up to height h, with windows round it
@@ -1132,15 +1158,30 @@
     function fishingBoat(T, F, rng) {
         const S = T.S, L = rng.range(8, 11), B = rng.range(3, 3.6);
         const Hl = hullSolid(T, F, L, B, 1.1, 0.55, false);
+        paintHull(T, Hl, L, rng);
         const u0 = -L * 0.12, u1 = u0 + rng.range(2.2, 2.8);
         const top = deckhouse(T, F, Hl, u0, u1, B * 0.3, 2.1);
-        // mast with a cross spar, and a gantry over the stern
-        const mu = u1 + 0.8, mz = Hl.z(mu);
-        S.line([F.P(mu, 0, mz), F.P(mu, 0, top + 2.4)]);
+        // mast with a cross spar, and a gantry over the stern or outrigger
+        // booms raised up either side
+        const mu = u1 + 0.8, mz = Hl.z(mu), mt = top + 2.4;
+        S.line([F.P(mu, 0, mz), F.P(mu, 0, mt)]);
         S.line([F.P(mu, -0.8, top + 1.9), F.P(mu, 0.8, top + 1.9)]);
-        if (rng.chance(0.6)) {
-            const su = -L / 2 + 0.6, sz = Hl.z(su), hw = Hl.half(su) * 0.8;
+        const rig = T.hulls ? rng.weighted([[2, 'gantry'], [1.6, 'outriggers'], [1, 'none']]) : rng.chance(0.6) ? 'gantry' : 'none';
+        const su = -L / 2 + 0.6, sz = Hl.z(su);
+        if (rig === 'gantry') {
+            const hw = Hl.half(su) * 0.8;
             S.line([F.P(su, -hw, sz), F.P(su, -hw * 0.7, sz + 2.3), F.P(su, hw * 0.7, sz + 2.3), F.P(su, hw, sz)]);
+        } else if (rig === 'outriggers') {
+            for (const s of [-1, 1]) {
+                const tip = F.P(mu - 0.4, s * (B / 2 + 2.4), mz + 3.4);
+                S.line([F.P(mu, s * 0.25, mz + 0.5), tip, F.P(mu, 0, mt - 0.2)]);
+            }
+        }
+        // fish boxes stacked on the after deck
+        if (T.hulls && rng.chance(0.5)) {
+            for (const [a, b, c] of [[0, -0.7, 0], [0, 0.05, 0], [0.05, -0.35, 0.45]]) {
+                S.box(F, su + 0.3 + a, b, sz - 0.1 + c, su + 1.1 + a, b + 0.65, sz + 0.35 + c);
+            }
         }
         return L;
     }
@@ -1148,15 +1189,18 @@
     function launch(T, F, rng) {
         const L = rng.range(6, 7.5), B = rng.range(2.3, 2.7);
         const Hl = hullSolid(T, F, L, B, 0.85, 0.35, false);
+        paintHull(T, Hl, L, rng);
         const u0 = -L * 0.05;
         const top = deckhouse(T, F, Hl, u0, u0 + rng.range(1.6, 2.1), B * 0.32, 1.5);
         T.S.line([F.P(u0 + 0.5, 0, top), F.P(u0 + 0.5, 0, top + 1.1)]);
         return L;
     }
 
-    function sailboat(T, F, rng) {
+    // Gaff-rigged sailboat. Under way it also sets a jib on the forestay.
+    function sailboat(T, F, rng, jib = false) {
         const S = T.S, L = rng.range(6.5, 8), B = rng.range(2.3, 2.6);
         const Hl = hullSolid(T, F, L, B, 0.8, 0.3, false);
+        paintHull(T, Hl, L, rng);
         const cu = -L * 0.2;
         deckhouse(T, F, Hl, cu, cu + 1.8, B * 0.28, 0.7);
         const mu = L * 0.12, mz = Hl.z(mu);
@@ -1165,8 +1209,17 @@
         S.face(sail);
         S.loop(sail);
         S.line([F.P(mu, 0, mz + 0.9), F.P(mu - 3.8, 0, mz + 0.95)]);
-        if (T.detail) {
+        // tan sails, the old red-brown canvas fishing boats had
+        if (T.hulls && T.tones && rng.chance(0.3)) inKind(S, T.tones.lit, () => S.hatch(sail, F.V(1, 0, 0), T.hLit));
+        else if (T.detail) {
             for (const f of [0.35, 0.65]) S.line([lerp3(sail[0], sail[1], f), lerp3(sail[3], sail[2], f)]);
+        }
+        if (jib) {
+            const bow = F.P(L / 2 - 0.15, 0, Hl.z(L / 2) + 0.05);
+            const head = [F.P(mu + 0.05, 0, mz + 5.4), bow, F.P(mu + 0.5, 0, mz + 1.1)];
+            S.face(head);
+            S.loop(head);
+            S.line([F.P(mu, 0, mz + 6), bow]);
         }
         return L;
     }
@@ -1175,6 +1228,7 @@
     function rowboat(T, F, rng) {
         const S = T.S, L = rng.range(3.4, 4.2), B = rng.range(1.35, 1.55);
         const Hl = hullSolid(T, F, L, B, 0.5, 0, true);
+        paintHull(T, Hl, L, rng);
         const inner = inset3(Hl.deck, 0.1);
         if (inner.length < 3) return L;
         S.loop(inner);
@@ -1208,11 +1262,18 @@
     // Boat out on the water (at height z) with its wake behind it. Returns the
     // patch of water the wake covers, for water marks to keep out of.
     function underway(T, x, y, ang, rng, z = 0) {
-        const S = T.S, F = turned(x, y, z, ang);
+        const F = turned(x, y, z, ang);
         const kind = rng.weighted([[3, 'fishing'], [2, 'launch'], [2, 'sail']]);
-        const L = kind === 'sail' ? sailboat(T, F, rng) : kind === 'launch' ? launch(T, F, rng) : fishingBoat(T, F, rng);
+        const L = kind === 'sail' ? sailboat(T, F, rng, true) : kind === 'launch' ? launch(T, F, rng) : fishingBoat(T, F, rng);
+        return wake(T, x, y, ang, L, rng, z);
+    }
+
+    // Wake behind a boat of length L heading `ang` from (x, y). Returns the
+    // patch of water it covers. `reach` is how far back it runs, as a share of L.
+    function wake(T, x, y, ang, L, rng, z = 0, reach = null) {
+        const S = T.S;
         const c = Math.cos(ang), s = Math.sin(ang);
-        const bow = [x + (c * L) / 2, y + (s * L) / 2], len = L * rng.range(2, 3.2);
+        const bow = [x + (c * L) / 2, y + (s * L) / 2], len = L * (reach || rng.range(2, 3.2));
         const ends = [];
         inKind(S, T.waterKind, () => {
             // the two arms spread from the bow, in dashes that get shorter further back
@@ -1330,6 +1391,6 @@
         lerp3, unit, outward, inKind, withKind, shade, shadeGable, shadeRound, awning, vault, ribs, marketHall, clockTower,
         gableWall, stepGable, neckGable, hoist, terrace, arch, church, cart, bistro, crookLamp, railFence, roundTree, conifer,
         fountain, obelisk, bandstand,
-        hullSolid, boat, BEAM, LENGTH, turned, underway, moorRow, bridgeRamp, bridge,
+        hullSolid, paintHull, boat, BEAM, LENGTH, turned, underway, wake, moorRow, bridgeRamp, bridge,
     };
 })();

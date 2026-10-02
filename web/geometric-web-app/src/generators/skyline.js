@@ -1,9 +1,12 @@
 /*
  * Skyline District: a crowded city seen from above, after the dense ink
  * drawings of cyberpunk cities. Blocks are cut into lots and every lot gets
- * one of about a dozen building types, picked so that neighbours contrast.
- * Walls facing away from the sun are hatched to match the ground shadows, and
- * viaducts, skybridges and a mess of overhead cables tie the blocks together.
+ * one of about fifteen building types. Neighbouring blocks share a district
+ * (downtown glass, midtown deco, the old Kowloon quarter or a leafy one) so
+ * the page reads as parts of a city rather than a catalogue of towers.
+ * Walls facing away from the sun are hatched to match the ground shadows,
+ * a river with bridges and boats opens up the middle distance, and viaducts,
+ * skybridges and overhead cables tie the blocks together.
  */
 (function () {
     'use strict';
@@ -13,9 +16,11 @@
     const { lerp3, unit, inKind, turned } = kit;
 
     // line kinds, mapped to pens by P.scenes.skyline in pens.js
-    const ARCH = 0, SIGN = 1, SHADE = 2, PAD = 3, GLASS = 4, CABLE = 5, PARK = 6, LIFE = 7, ROAD = 8;
+    const ARCH = 0, SIGN = 1, SHADE = 2, PAD = 3, GLASS = 4, CABLE = 5, PARK = 6, LIFE = 7, ROAD = 8, WATER = 9, ROOF = 10;
     const FL = 3.6; // storey (m)
     const WALK = 2.6; // sidewalk (m)
+    const PROM = 6; // riverside promenade (m)
+    const ZW = -2.6; // river surface, below the streets so the quay walls show
     // Most ground the page may show (m²). Big paper zooms in instead of building thousands of towers.
     const AREA = 125000;
     const F0 = frame(0, 0, 0, 0);
@@ -82,7 +87,7 @@
     // Shading
     // ------------------------------------------------------------------
 
-    function shadeWall(T, W, s0, s1, z0, z1, gap = T.gap) {
+    function shadeWall(T, W, s0, s1, z0, z1, gap = T.gap * 1.15) {
         if (!T.shade || !W.seen || !W.dark || s1 - s0 < 0.05 || z1 - z0 < 0.05) return;
         inKind(T.S, SHADE, () => T.S.hatch([W.at(s0, z0), W.at(s1, z0), W.at(s1, z1), W.at(s0, z1)], [W.u[0], W.u[1], 1.1], gap));
     }
@@ -195,13 +200,14 @@
                 if (f % 3 === 1) {
                     S.line([W.at(0, z + 0.4), W.at(L, z + 0.4)]);
                     S.line([W.at(0, z + fh - 0.4), W.at(L, z + fh - 0.4)]);
-                    inKind(S, SHADE, () => S.hatch([W.at(0, z + 0.4), W.at(L, z + 0.4), W.at(L, z + fh - 0.4), W.at(0, z + fh - 0.4)], [0, 0, 1], 0.5));
+                    S.hatch([W.at(0, z + 0.4), W.at(L, z + 0.4), W.at(L, z + fh - 0.4), W.at(0, z + fh - 0.4)], [0, 0, 1], 0.62);
                 } else if (T.detail) S.line([W.at(0, z + fh - 0.9), W.at(L, z + fh - 0.9)]);
             }
         } else if (style === 'dark') {
-            // dark cladding with a slit every four floors
-            const gap = W.dark ? 0.5 : 0.68;
-            inKind(S, SHADE, () => {
+            // dark cladding with a slit every four floors. It's a material, not
+            // shade, so it stays in black ink while the shade goes blue.
+            const gap = W.dark ? 0.62 : 0.85;
+            inKind(S, ARCH, () => {
                 for (let z = z0; z < z1 - 0.5; z += 4 * fh) {
                     const zt = Math.min(z1, z + 4 * fh - 0.9);
                     S.hatch([W.at(0, z), W.at(L, z), W.at(L, zt), W.at(0, zt)], [0, 0, 1], gap);
@@ -212,14 +218,14 @@
         S.kind = keep;
     }
 
-    function shaft(T, L, poly, z0, z1, style, rng) {
+    function shaft(T, L, poly, z0, z1, style, rng, anchors = true) {
         const S = T.S;
         S.kind = ARCH;
         const ws = prism(T, poly, z0, z1);
         for (const W of ws) {
             facade(T, W, z0, z1, style, rng);
             if (style !== 'dark') shadeWall(T, W, 0, W.len, z0, z1);
-            if (W.len > 3 && z1 > 7) for (let k = W.len > 12 ? 2 : 1; k > 0; k--) T.anchor(W.at(rng.range(0.6, W.len - 0.6), rng.range(Math.max(4, z0 + 1), Math.max(z0 + 2, z1 - 1.5)), 0.03), W.n, L.id);
+            if (anchors && W.len > 3 && z1 > 7) for (let k = W.len > 12 ? 2 : 1; k > 0; k--) T.anchor(W.at(rng.range(0.6, W.len - 0.6), rng.range(Math.max(4, z0 + 1), Math.max(z0 + 2, z1 - 1.5)), 0.03), W.n, L.id);
         }
         T.block(poly, z1, L.id);
         return ws;
@@ -409,6 +415,7 @@
 
     function helipad(T, x, y, z, R) {
         const S = T.S;
+        T.pad(x, y, z + 0.5, R);
         S.kind = ARCH;
         S.lathe(x, y, [[R, z], [R, z + 0.5]], 8, false, Math.PI / 8);
         const zt = z + 0.51, r = R * 0.74, a = r * 0.34, b = r * 0.5;
@@ -450,6 +457,32 @@
         S.line([c, [c[0] + nrm[0] * sg * r, c[1] + nrm[1] * sg * r, c[2] + nrm[2] * sg * r]]);
     }
 
+    // Rooftop pool with a raised rim, water hatched across it and loungers along the -y side
+    function pool(T, x0, y0, x1, y1, z, rng) {
+        const S = T.S, q = lift(rect(x0, y0, x1, y1), z + 0.36);
+        S.kind = ARCH;
+        S.box(F0, x0 - 0.3, y0 - 0.3, z, x1 + 0.3, y1 + 0.3, z + 0.35);
+        S.loop(q);
+        inKind(S, WATER, () => S.hatch(q, [1, 0, 0], T.gap * 1.3));
+        for (let x = x0 + 0.3; x < x1 - 0.8; x += rng.range(1.3, 2)) S.box(F0, x, y0 - 1.6, z, x + 0.7, y0 - 0.5, z + 0.35);
+        if (rng.chance(0.6)) inKind(S, LIFE, () => kit.person(T, rng.range(x0, x1), y0 - 1, z, rng));
+    }
+
+    // Fenced ball court, markings in the pad ink
+    function court(T, x0, y0, x1, y1, z) {
+        const S = T.S, zc = z + 0.02, alongX = x1 - x0 > y1 - y0, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, r = Math.min(x1 - x0, y1 - y0) * 0.16;
+        inKind(S, PAD, () => {
+            S.loop(lift(rect(x0 + 0.6, y0 + 0.6, x1 - 0.6, y1 - 0.6), zc));
+            S.line(alongX ? [[cx, y0 + 0.6, zc], [cx, y1 - 0.6, zc]] : [[x0 + 0.6, cy, zc], [x1 - 0.6, cy, zc]]);
+            S.loop(ring(T.segs(r), (c, s) => [cx + r * c, cy + r * s, zc]));
+        });
+        inKind(S, CABLE, () => {
+            const h = 2.6, pts = lift(rect(x0, y0, x1, y1), z + h);
+            S.loop(pts);
+            for (const [x, y] of rect(x0, y0, x1, y1)) S.line([[x, y, z], [x, y, z + h]]);
+        });
+    }
+
     function rooftop(T, x0, y0, x1, y1, z, rng, o = {}) {
         const S = T.S, w = x1 - x0, d = y1 - y0;
         if (w < 2.5 || d < 2.5) return;
@@ -473,6 +506,20 @@
             } else if (rng.chance(0.8) && w > 5 && d > 5) {
                 const pw = geo.clamp(w * rng.range(0.3, 0.5), 2.5, 10), pd = geo.clamp(d * rng.range(0.3, 0.5), 2.5, 10), q = spot(pw, pd);
                 if (q) plantRoom(T, q[0], q[1], q[0] + pw, q[1] + pd, z, rng.range(2.4, 3.8));
+            }
+            if (rng.chance(o.pool || 0) && w > 9 && d > 7) {
+                const pw = Math.min(w - 3, rng.range(6, 10)), pd = Math.min(d - 4, rng.range(3, 4.5)), q = spot(pw + 1.2, pd + 2.4);
+                if (q) pool(T, q[0] + 0.6, q[1] + 1.8, q[0] + 0.6 + pw, q[1] + 1.8 + pd, z, rng);
+            }
+            if (rng.chance(o.court || 0) && w > 12 && d > 9) {
+                const q = spot(11, 7);
+                if (q) court(T, q[0], q[1], q[0] + 11, q[1] + 7, z);
+            }
+            if (rng.chance(o.garden || 0)) {
+                for (let i = rng.int(2, 5); i > 0; i--) {
+                    const q = spot(3.4, 3.4);
+                    if (q) tree(T, q[0] + 1.7, q[1] + 1.7, z, rng);
+                }
             }
             if (rng.chance(o.sign || 0)) {
                 const bw = Math.min(rng.range(6, 11), (Math.max(w, d) - 1) * 0.9), n = w > d ? [0, -1] : [-1, 0];
@@ -558,12 +605,12 @@
                 z = parapet(T, rp, L.h);
             }
             const b = geo.bbox([rp]);
-            rooftop(T, b.minX + 0.8, b.minY + 0.8, b.maxX - 0.8, b.maxY - 0.8, z, rng, { pad: L.h > 50 && rng.chance(0.4), mast: 0.15, tank: 0.2, sign: 0.1, poly: rp.length > 4 ? rp : null });
+            rooftop(T, b.minX + 0.8, b.minY + 0.8, b.maxX - 0.8, b.maxY - 0.8, z, rng, { pad: L.h > 50 && rng.chance(0.4), mast: 0.15, tank: 0.2, sign: 0.1, pool: 0.35, garden: 0.15, poly: rp.length > 4 ? rp : null });
         }
     }
 
     function officeTower(T, L) {
-        const { rng } = L, style = rng.weighted([[3, 'ribbon'], [3, 'grid'], [2, 'piers'], [1.5, 'bands']]);
+        const { rng } = L, style = L.facade && rng.chance(0.75) ? L.facade : rng.weighted([[3, 'ribbon'], [3, 'grid'], [2, 'piers'], [1.5, 'bands']]);
         let x0 = L.x0 + 0.4, y0 = L.y0 + 0.4, x1 = L.x1 - 0.4, y1 = L.y1 - 0.4, z = 0;
         const tiers = Math.min(x1 - x0, y1 - y0) > 13 ? rng.weighted([[3, 1], [3, 2], [1.5, 3]]) : 1;
         for (let t = 0; t < tiers; t++) {
@@ -590,7 +637,7 @@
                 x0 = nx0; y0 = ny0; x1 = nx1; y1 = ny1;
             }
         }
-        rooftop(T, x0 + 0.7, y0 + 0.7, x1 - 0.7, y1 - 0.7, z, rng, { pad: L.h > 55 && rng.chance(0.3), mast: 0.12, tank: 0.45, sign: 0.25 });
+        rooftop(T, x0 + 0.7, y0 + 0.7, x1 - 0.7, y1 - 0.7, z, rng, { pad: L.h > 55 && rng.chance(0.3), mast: 0.12, tank: 0.45, sign: 0.25, court: 0.2, pool: 0.12, garden: 0.2 });
     }
 
     function decoTower(T, L) {
@@ -778,12 +825,13 @@
         };
         S.face = function (pts, cast) { return keepFace.call(this, inside ? pts : pts.map(up), cast); };
         S.line = function (pts, whole) { return keepLine.call(this, inside ? pts : pts.map(up), whole); };
-        const keepAnchor = T.anchor, keepBlock = T.block;
+        const keepAnchor = T.anchor, keepBlock = T.block, keepPad = T.pad;
         T.anchor = (p, n, id) => keepAnchor([p[0], p[1], p[2] + z0], n, id);
         T.block = (poly, z, id) => keepBlock(poly, z + z0, id);
+        T.pad = (x, y, z, r) => keepPad(x, y, z + z0, r);
         try { fn(); } finally {
             S.solid = keepSolid; S.face = keepFace; S.line = keepLine;
-            T.anchor = keepAnchor; T.block = keepBlock;
+            T.anchor = keepAnchor; T.block = keepBlock; T.pad = keepPad;
         }
     }
 
@@ -864,7 +912,7 @@
             for (let i = 1; i < n; i++) S.line([W.at(W.len * i / n, crown + 0.3), W.at(W.len * i / n, crown + FL * 0.8 - 0.3)]);
         });
         const cap = prism(T, poly, crown + FL * 0.8, L.h);
-        for (const W of cap) if (W.seen) inKind(S, SHADE, () => S.hatch([W.at(0, crown + FL * 0.8), W.at(W.len, crown + FL * 0.8), W.at(W.len, L.h), W.at(0, L.h)], [0, 0, 1], W.dark ? 0.5 : 0.68));
+        for (const W of cap) if (W.seen) inKind(S, ARCH, () => S.hatch([W.at(0, crown + FL * 0.8), W.at(W.len, crown + FL * 0.8), W.at(W.len, L.h), W.at(0, L.h)], [0, 0, 1], W.dark ? 0.62 : 0.85));
         const z = parapet(T, poly, L.h, 0.5);
         if (rng.chance(0.3)) extras(T, L, ws, 0, crown, rng);
         quiet(S, () => { if (rng.chance(0.4)) mast(T, (x0 + x1) / 2, (y0 + y1) / 2, z, rng.range(10, 26), m * 0.35); });
@@ -1027,7 +1075,7 @@
             if (W.len > 3 && rng.chance(0.7)) T.anchor(W.at(rng.range(0.5, W.len - 0.5), h - 0.8, 0.03), W.n, L.id);
         }
         const z = parapet(T, poly, h, 0.6);
-        rooftop(T, L.x0 + 1, L.y0 + 1, L.x1 - 1, L.y1 - 1, z, rng, { tank: 0.5, sign: T.p.signs * 0.5, people: 0.3 });
+        rooftop(T, L.x0 + 1, L.y0 + 1, L.x1 - 1, L.y1 - 1, z, rng, { tank: 0.5, sign: T.p.signs * 0.5, people: 0.3, garden: 0.3, court: 0.2 });
         quiet(S, () => aerials(T, L.x0 + 1, L.y0 + 1, L.x1 - 1, L.y1 - 1, z, rng.int(0, 4), rng));
     }
 
@@ -1095,8 +1143,150 @@
         });
     }
 
+    // Gothic church left standing among the towers: two spired towers on the
+    // front, a tall nave under a steep roof, lower aisles with flying
+    // buttresses, and a round apse at the back
+    function cathedral(T, L) {
+        const { rng } = L, S = T.S, alongY = L.y1 - L.y0 >= L.x1 - L.x0;
+        const ox = L.x0 + 0.8, oy = alongY ? L.y0 + 0.8 : L.y1 - 0.8;
+        const A = (alongY ? L.x1 - L.x0 : L.y1 - L.y0) - 1.6, D = (alongY ? L.y1 - L.y0 : L.x1 - L.x0) - 1.6;
+        // a runs across the nave, b along it from the front. Turned so the front
+        // always faces the camera side (-y, or -x for a lot long in x).
+        const Q = (a, b) => (alongY ? [ox + a, oy + b] : [ox + b, oy - a]);
+        const F = alongY ? frame(ox, oy, 0, 0) : frame(ox, oy, 0, 3);
+        const lrect = (a0, b0, a1, b1) => [Q(a0, b0), Q(a1, b0), Q(a1, b1), Q(a0, b1)];
+        const P3 = (a, b, z) => [...Q(a, b), z];
+        const tw = geo.clamp(A * 0.27, 4, 7), n0 = tw - 0.5, n1 = A - tw + 0.5, ra = (n1 - n0) / 2, bEnd = D - ra - 0.3;
+        const ze = geo.clamp(A * 0.85, 12, 19), za = ze * 0.55, zt = ze + rng.range(7, 11), hs = rng.range(11, 16);
+        S.kind = ARCH;
+        T.block(lrect(0, 0, A, D), ze, L.id);
+        // steps up to the doors
+        for (let k = 0; k < 3; k++) S.box(F, n0 + 0.5, -1.4 + k * 0.45, 0, n1 - 0.5, 0.4, 0.17 * (k + 1));
+
+        // aisles under lean-to roofs, flying buttresses over them
+        for (const [a0, a1, side] of [[0, n0, -1], [n1, A, 1]]) {
+            const ws = prism(T, lrect(a0, tw, a1, bEnd), 0, za), inner = side < 0 ? a1 : a0, outer = side < 0 ? a0 : a1;
+            const prof = [P3(outer, tw, za), P3(inner, tw, za), P3(inner, tw, za + 2.6)];
+            const e = [Q(outer, bEnd)[0] - Q(outer, tw)[0], Q(outer, bEnd)[1] - Q(outer, tw)[1], 0];
+            S.prism(prof, e);
+            const slope = [P3(outer, tw, za), P3(outer, bEnd, za), P3(inner, bEnd, za + 2.6), P3(inner, tw, za + 2.6)];
+            kit.shade(T, slope, outward(slope, P3((a0 + a1) / 2, (tw + bEnd) / 2, za - 3)));
+            const W = ws[side < 0 ? 3 : 1], bays = Math.max(2, Math.round((bEnd - tw) / 4.2));
+            for (let i = 0; i < bays; i++) {
+                const s = (i + 0.5) * W.len / bays;
+                if (W.seen && (!T.shade || !W.dark)) kit.arch(T, (u, c) => W.at(u, c, 0.03), s, 1.6, 1.3, za - 3.4);
+                if (i === 0) continue;
+                // buttress pier at the bay line with a flyer up to the clerestory
+                const b = tw + (bEnd - tw) * i / bays, pa = outer - side * 0.2;
+                S.box(F, Math.min(pa, pa + side * 0.9), b - 0.4, 0, Math.max(pa, pa + side * 0.9), b + 0.4, za + 3.2);
+                S.line([P3(pa + side * 0.45, b, za + 3.2), P3(pa + side * 0.45, b, za + 5.2)]);
+                S.line([P3(pa, b, za + 2.6), P3(inner, b, ze - 1.2)]);
+                S.line([P3(pa, b, za + 1.6), P3(inner, b, ze - 2.6)]);
+            }
+            shadeWall(T, W, 0, W.len, 0, za);
+        }
+
+        // nave, its roof, and the clerestory windows over the aisle roofs
+        const nave = prism(T, lrect(n0, 0.4, n1, bEnd), 0, ze);
+        const R = kit.gableRoof(T, F, [n0, 0.4, n1, bEnd], ze, false, geo.rad(58), rng, { attic: false });
+        kit.shadeGable(T, F, R);
+        for (const [W, right] of [[nave[1], true], [nave[3], false]]) {
+            if (!W.seen) continue;
+            shadeWall(T, W, 0, W.len, za + 2.6, ze);
+            if (T.shade && W.dark) continue;
+            // the right wall runs front to back, the left one back to front
+            const bays = Math.max(2, Math.round((bEnd - tw) / 4.2));
+            for (let i = 0; i < bays; i++) {
+                const b = tw + (i + 0.5) * (bEnd - tw) / bays;
+                kit.arch(T, (u, c) => W.at(u, c, 0.03), right ? b - 0.4 : bEnd - b, za + 3.4, 1.2, ze - za - 4.8);
+            }
+        }
+        // rose window and portal on the front between the towers
+        const front = (a, z) => P3(a, 0.38, z), am = A / 2, rr = Math.min(ra * 0.62, ze * 0.2), zr = ze * 0.66;
+        S.loop(ring(T.segs(rr), (c, s) => front(am + rr * c, zr + rr * s)));
+        if (T.detail) {
+            S.loop(ring(T.segs(rr * 0.35), (c, s) => front(am + rr * 0.35 * c, zr + rr * 0.35 * s)));
+            for (let i = 0; i < 12; i++) {
+                const t = TAU * i / 12;
+                S.line([front(am + rr * 0.35 * Math.cos(t), zr + rr * 0.35 * Math.sin(t)), front(am + rr * Math.cos(t), zr + rr * Math.sin(t))]);
+            }
+        }
+        kit.arch(T, front, am, 0.51, Math.min(3.2, ra), Math.min(6.5, zr - rr - 1.2));
+        if (T.detail) kit.arch(T, front, am, 0.51, Math.min(3.2, ra) + 0.9, Math.min(6.5, zr - rr - 1.2) + 0.7);
+
+        // apse with a conical roof
+        const [cx, cy] = Q(am, bEnd), za2 = ze * 0.85;
+        S.lathe(cx, cy, [[ra, 0], [ra, za2]], T.segs(ra));
+        shadeRound(T, cx, cy, 0, za2, ra, ra);
+        S.lathe(cx, cy, [[ra + 0.4, za2], [0, za2 + ra * 1.1]], T.segs(ra));
+        shadeRound(T, cx, cy, za2, za2 + ra * 1.1, ra + 0.4, 0.1);
+
+        // the two towers, a belfry and a spire on each
+        for (const a0 of [0, A - tw]) {
+            const ws = prism(T, lrect(a0, 0, a0 + tw, tw), 0, zt);
+            for (const W of ws) {
+                if (!W.seen) continue;
+                shadeWall(T, W, 0, W.len, 0, zt);
+                if (T.shade && W.dark) continue;
+                for (const f of [0.35, 0.62]) S.line([W.at(0, zt * f, 0.02), W.at(W.len, zt * f, 0.02)]);
+                for (const s of [0.32, 0.68]) kit.arch(T, (u, c) => W.at(u, c, 0.03), W.len * s, zt - 7.2, Math.min(1.1, tw * 0.2), 5.6);
+                kit.arch(T, (u, c) => W.at(u, c, 0.03), W.len / 2, zt * 0.42, 1.2, 3.2);
+            }
+            S.box(F, a0 - 0.3, -0.3, zt, a0 + tw + 0.3, tw + 0.3, zt + 0.7);
+            T.block(lrect(a0, 0, a0 + tw, tw), zt + hs, L.id);
+            for (const [u, v] of [[a0, 0], [a0 + tw, 0], [a0 + tw, tw], [a0, tw]]) S.line([P3(u, v, zt + 0.7), P3(u, v, zt + 3.2)]);
+            const [sx, sy] = Q(a0 + tw / 2, tw / 2), rs = tw / 2 - 0.15, z0 = zt + 0.7;
+            S.lathe(sx, sy, [[rs, z0], [0, z0 + hs]], 8, false, Math.PI / 8);
+            for (let i = 0; i < 8; i++) {
+                const t0 = Math.PI / 8 + i * TAU / 8, t1 = t0 + TAU / 8;
+                const tri = [[sx + rs * Math.cos(t0), sy + rs * Math.sin(t0), z0], [sx + rs * Math.cos(t1), sy + rs * Math.sin(t1), z0], [sx, sy, z0 + hs]];
+                shadeFace(T, tri, outward(tri, [sx, sy, z0 + hs * 0.25]), [Math.cos(t1) - Math.cos(t0), Math.sin(t1) - Math.sin(t0), 0]);
+            }
+            S.line([[sx, sy, z0 + hs], [sx, sy, z0 + hs + 1.6]]);
+            S.line([[sx - T.cam.rx * 0.5, sy - T.cam.ry * 0.5, z0 + hs + 1.1], [sx + T.cam.rx * 0.5, sy + T.cam.ry * 0.5, z0 + hs + 1.1]]);
+        }
+        quiet(S, () => {
+            for (let i = rng.int(2, 5); i > 0; i--) inKind(S, LIFE, () => kit.person(T, ...Q(rng.range(n0, n1), rng.range(-2.4, -1.5)), 0, rng));
+        });
+    }
+
+    // Tower wrapped in planted balconies, a vertical forest
+    function gardenTower(T, L) {
+        const { rng } = L, S = T.S, o = 1.3, x0 = L.x0 + o + 0.4, y0 = L.y0 + o + 0.4, x1 = L.x1 - o - 0.4, y1 = L.y1 - o - 0.4;
+        const poly = rect(x0, y0, x1, y1), floors = Math.max(6, Math.round(L.h / FL)), top = floors * FL, every = rng.pick([1, 2, 2]);
+        shaft(T, L, poly, 0, top, rng.pick(['glass', 'ribbon']), rng, false);
+        T.block(rect(x0 - o, y0 - o, x1 + o, y1 + o), top, L.id);
+        const edges = walls(T, rect(x0 - o, y0 - o, x1 + o, y1 + o));
+        quiet(S, () => {
+            for (let f = 2; f < floors; f += every) {
+                const z = f * FL;
+                S.kind = ARCH;
+                S.box(F0, x0 - o, y0 - o, z - 0.3, x1 + o, y1 + o, z);
+                // a row of bushes along the edge of each balcony we see
+                for (const W of edges) {
+                    if (!W.seen) continue;
+                    const n = Math.max(2, Math.round(W.len / 1.1)), hump = (s0, s1) => {
+                        const pts = [];
+                        for (let k = 0; k <= 6; k++) pts.push(W.at(geo.lerp(s0, s1, k / 6), z + 0.35 + 0.55 * Math.sin(Math.PI * k / 6), -0.3));
+                        return pts;
+                    };
+                    S.face([W.at(0.2, z, -0.3), W.at(W.len - 0.2, z, -0.3), W.at(W.len - 0.2, z + 0.7, -0.3), W.at(0.2, z + 0.7, -0.3)], false);
+                    inKind(S, PARK, () => {
+                        const pts = [W.at(0.2, z, -0.3)];
+                        for (let i = 0; i < n; i++) pts.push(...hump(0.2 + (W.len - 0.4) * i / n, 0.2 + (W.len - 0.4) * (i + 1) / n).slice(i ? 1 : 0));
+                        pts.push(W.at(W.len - 0.2, z, -0.3));
+                        S.line(pts);
+                    });
+                }
+            }
+        });
+        const z = parapet(T, poly, top);
+        rooftop(T, x0 + 0.6, y0 + 0.6, x1 - 0.6, y1 - 0.6, z, rng, { garden: 1, tank: 0, mast: 0.1 });
+    }
+
     const TYPES = { glass: glassTower, office: officeTower, deco: decoTower, drum: drumTower, taper: taperTower, twist: twistTower,
-        podium: podiumTower, clutter: clutterBlock, dark: monolith, build: construction, dome: domeHall, low: lowRise, parking: garage, park: pocketPark };
+        podium: podiumTower, clutter: clutterBlock, dark: monolith, build: construction, dome: domeHall, low: lowRise, parking: garage, park: pocketPark,
+        church: cathedral, green: gardenTower };
 
     // ------------------------------------------------------------------
     // Landmarks
@@ -1286,6 +1476,29 @@
         T.solids.add(x - L / 2, y - L / 2, x + L / 2, y + L / 2, 1e4, -7);
     }
 
+    // Helicopter hovering over a helipad, the rotor drawn as a blurred disc
+    function helicopter(T, x, y, z, ang, rng) {
+        const S = T.S, F = turned(x, y, z, ang);
+        S.kind = ARCH;
+        const prof = [[-1.6, 0.4], [1, 0], [2.3, 0.6], [2.2, 1.5], [0.8, 2.1], [-1.6, 1.9]];
+        S.prism(prof.map(([u, c]) => F.P(u, -0.9, c)), F.V(0, 1.8, 0));
+        S.box(F, -7.2, -0.22, 1.2, -1.6, 0.22, 1.65);
+        const fin = [F.P(-7.5, 0, 1.2), F.P(-6.7, 0, 1.2), F.P(-6.9, 0, 3), F.P(-7.6, 0, 3)];
+        S.face(fin);
+        S.loop(fin);
+        for (const v of [-1, 1]) {
+            S.line([F.P(-1.4, v, -0.6), F.P(1.8, v, -0.6), F.P(2.3, v, -0.3)]);
+            for (const u of [-0.8, 1]) S.line([F.P(u, v * 0.85, 0.15), F.P(u, v, -0.6)]);
+        }
+        S.line([F.P(0, 0, 2.1), F.P(0, 0, 2.6)]);
+        inKind(S, CABLE, () => {
+            const r = 5.6, a = rng.range(0, Math.PI);
+            S.loop(ring(T.segs(r), (c, s) => F.P(c * r, s * r, 2.6)));
+            for (const t of [a, a + Math.PI / 2]) S.line([F.P(Math.cos(t) * r, Math.sin(t) * r, 2.62), F.P(-Math.cos(t) * r, -Math.sin(t) * r, 2.62)]);
+            S.loop(ring(12, (c, s) => F.P(-7.1 + c * 1.1, 0.3, 2.2 + s * 1.1)));
+        });
+    }
+
     // ------------------------------------------------------------------
     // Streets
     // ------------------------------------------------------------------
@@ -1325,7 +1538,8 @@
                 // inner lanes pass close to the piers of the highway overhead
                 if (busy.some(q => Math.abs(q[0] - u) < 6.5 && q[1] === v) || T.piers.some(q => Math.hypot(q[0] - x, q[1] - y) < 4.5)) continue;
                 busy.push([u, v]);
-                inKind(S, LIFE, () => kit.car(T, x, y, 0, dir, rng, true));
+                // about a third are yellow cabs, in the pad ink
+                inKind(S, rng.chance(0.32) ? PAD : LIFE, () => kit.car(T, x, y, 0, dir, rng, true));
             }
         });
     }
@@ -1402,8 +1616,9 @@
         sweep(T, path, [[-half, half, zd - 0.6, zd], [-half, -half + 0.4, zd, zd + 1.1], [half - 0.4, half, zd, zd + 1.1], [-gw / 2, gw / 2, zb, zd - 0.6]],
             [[-half, zd + 1.1], [half, zd + 1.1], [-half + 0.4, zd + 1.1], [half - 0.4, zd + 1.1], [-half + 0.4, zd], [half - 0.4, zd], [-half, zd - 0.6], [half, zd - 0.6], [-gw / 2, zb], [gw / 2, zb]]);
         for (let d = rng.range(4, 12); d < path.len; d += 24) {
-            const { p, t } = path.at(d), F = turned(p[0], p[1], 0, Math.atan2(t[1], t[0]));
-            S.box(F, -0.9, -1.1, 0, 0.9, 1.1, zb - 1.3);
+            const { p, t } = path.at(d), F = turned(p[0], p[1], 0, Math.atan2(t[1], t[0])), Rv = T.river;
+            // piers standing in the river go down to the water
+            S.box(F, -0.9, -1.1, Rv && p[1] > Rv.ya && p[1] < Rv.yb ? ZW : 0, 0.9, 1.1, zb - 1.3);
             S.box(F, -1.1, -gw / 2 - 1.2, zb - 1.3, 1.1, gw / 2 + 1.2, zb);
             T.piers.push(p);
         }
@@ -1526,6 +1741,7 @@
                 if (b === a || b.id === a.id) continue;
                 const dx = b.p[0] - a.p[0], dy = b.p[1] - a.p[1], L = Math.hypot(dx, dy);
                 if (L < 6 || L > 45 || Math.abs(b.p[2] - a.p[2]) > L * 0.35 + 2 || b.used > 1) continue;
+                if (T.river && Math.min(a.p[1], b.p[1]) < T.river.yb && Math.max(a.p[1], b.p[1]) > T.river.ya) continue;
                 if (dx * a.n[0] + dy * a.n[1] < 0.3 * L || -dx * b.n[0] - dy * b.n[1] < 0.3 * L) continue;
                 cand.push(b);
             }
@@ -1588,26 +1804,254 @@
     }
 
     // ------------------------------------------------------------------
+    // The river
+    // ------------------------------------------------------------------
+
+    // R is the river: land from y0 to y1 across the whole map (x0 to x1), the
+    // promenades running down to the quay edges at ya and yb, water between,
+    // and the streets that cross it on bridges (R.bridges, [x, half width]).
+    const offBridge = (R, x, pad) => R.bridges.every(([bx, bh]) => Math.abs(x - bx) > bh + pad);
+
+    function riverBanks(T, R, rng) {
+        const S = T.S, { x0, x1, y0, y1, ya, yb } = R;
+        S.kind = ARCH;
+        S.face(lift(rect(x0, ya, x1, yb), ZW), false);
+        S.box(F0, x0, y0, ZW, x1, ya, 0.2);
+        S.box(F0, x0, yb, ZW, x1, y1, 0.2);
+        // coping and a tide line along the far quay wall, the one we see
+        S.line([[x0, yb - 0.02, -0.25], [x1, yb - 0.02, -0.25]]);
+        inKind(S, WATER, () => {
+            for (let x = x0 + rng.range(0, 6); x < x1; x += rng.range(4, 9)) S.line([[x, yb - 0.02, ZW + 0.6], [x + rng.range(2, 5), yb - 0.02, ZW + 0.6]]);
+        });
+        // railings along both edges, then trees, lamps and people on the promenades
+        for (const [ye, side] of [[ya - 0.3, -1], [yb + 0.3, 1]]) {
+            S.line([[x0, ye, 1.25], [x1, ye, 1.25]]);
+            for (let x = Math.ceil(x0 / 2.5) * 2.5; x < x1; x += 2.5) if (offBridge(R, x, 0.3)) S.line([[x, ye, 0.2], [x, ye, 1.25]]);
+            const mid = ye + side * (PROM / 2 - 0.3);
+            for (let x = x0 + rng.range(0, 9); x < x1; x += rng.range(8, 11)) if (offBridge(R, x, 3)) tree(T, x, mid, 0.2, rng);
+            for (let x = x0 + rng.range(0, 18); x < x1; x += rng.range(16, 22)) if (offBridge(R, x, 1.5)) lamp(T, x, ye + side * 0.4, 0, -side);
+            quiet(S, () => {
+                for (let x = x0 + rng.range(0, 30); x < x1; x += rng.range(20, 40)) if (offBridge(R, x, 2) && rng.chance(0.5)) inKind(S, ARCH, () => kit.bench(T, x, ye + side * 1.4, 0.2, side > 0 ? 3 : 1));
+                for (let k = Math.round((x1 - x0) / 9 * T.p.traffic); k > 0; k--) {
+                    const x = rng.range(x0, x1);
+                    if (offBridge(R, x, 1)) inKind(S, LIFE, () => kit.person(T, x, ye + side * rng.range(0.8, PROM - 0.8), 0.2, rng));
+                }
+            });
+        }
+    }
+
+    // Steel bridge carrying the street at x over the river, w wide. The deck runs
+    // the whole width of the land band, sunk into the promenades.
+    function riverBridge(T, R, x, w, style, rng) {
+        const S = T.S, { y0, y1, ya, yb } = R, zd = 0.32, zp = zd + 1.1, h = w / 2, span = yb - ya;
+        S.kind = ARCH;
+        S.box(F0, x - h, y0, zd - 1.5, x + h, y1, zd);
+        for (const s of [-1, 1]) S.box(F0, x + s * h - (s > 0 ? 0.35 : 0), ya - 3, zd, x + s * h + (s < 0 ? 0.35 : 0), yb + 3, zp);
+        inKind(S, PAD, () => { for (let y = y0 + 1; y < y1 - 1; y += 6) S.line([[x, y, zd + 0.01], [x, Math.min(y1 - 1, y + 3), zd + 0.01]]); });
+        inKind(S, ROAD, () => { for (const s of [-1, 1]) S.line([[x + s * (h - 2.2), y0, zd + 0.01], [x + s * (h - 2.2), y1, zd + 0.01]]); });
+        const curve = (f, n = 32) => Array.from({ length: n + 1 }, (_, i) => f(i / n));
+        if (style === 'girder') {
+            for (let k = 1, n = Math.ceil(span / 22); k < n; k++) {
+                const y = ya + span * k / n;
+                S.box(F0, x - h + 0.8, y - 0.9, ZW, x + h - 0.8, y + 0.9, zd - 1.5);
+            }
+        } else if (style === 'arch') {
+            // tied arches either side with hangers down to the deck, braced across the top
+            const rise = span * 0.2, top = (t, d = 0) => zp + (rise - d) * Math.sin(Math.PI * t);
+            for (const s of [-1, 1]) {
+                const xs = x + s * (h - 0.2);
+                S.line(curve(t => [xs, geo.lerp(ya, yb, t), top(t)]));
+                S.line(curve(t => [xs, geo.lerp(ya, yb, t), top(t, 0.9)]));
+                for (let y = ya + 3.5; y < yb - 3; y += 3.5) S.line([[xs, y, zp], [xs, y, top((y - ya) / span, 0.9)]]);
+            }
+            for (let t = 0.3; t < 0.71; t += 0.1) S.line([[x - h + 0.2, geo.lerp(ya, yb, t), top(t)], [x + h - 0.2, geo.lerp(ya, yb, t), top(t)]]);
+        } else if (style === 'truss') {
+            // Warren truss either side, end posts sloping down to the banks
+            const ht = 5.5, n = Math.max(4, Math.round(span / 5)), dy = span / n;
+            for (const s of [-1, 1]) {
+                const xs = x + s * (h - 0.2);
+                S.line([[xs, ya, zp], [xs, ya + dy, zp + ht], [xs, yb - dy, zp + ht], [xs, yb, zp]]);
+                const zig = [];
+                for (let k = 1; k < n; k++) zig.push([xs, ya + k * dy, k % 2 ? zp + ht : zp]);
+                S.line([[xs, ya + dy, zp + ht], ...zig.slice(1)]);
+                for (let k = 2; k < n - 1; k += 2) S.line([[xs, ya + k * dy, zp], [xs, ya + k * dy, zp + ht]]);
+            }
+            for (let k = 1; k < n; k++) S.line([[x - h + 0.2, ya + k * dy, zp + ht], [x + h - 0.2, ya + k * dy, zp + ht]]);
+            for (let k = 1; k < n - 1; k++) S.line([[x - h + 0.2, ya + k * dy, zp + ht], [x + h - 0.2, ya + (k + 1) * dy, zp + ht]]);
+        } else if (style === 'suspension') {
+            // two towers standing in the water near the banks, main cables slung between
+            const ht = geo.clamp(span * 0.32, 14, 26), ys = [ya + span * 0.16, yb - span * 0.16], zt = zd + ht;
+            for (const yt of ys) {
+                for (const s of [-1, 1]) S.box(F0, x + s * (h + 0.4) - 0.6, yt - 0.7, ZW, x + s * (h + 0.4) + 0.6, yt + 0.7, zt);
+                S.box(F0, x - h - 0.4, yt - 0.5, zt - 1.6, x + h + 0.4, yt + 0.5, zt - 0.4);
+                S.box(F0, x - h - 0.4, yt - 0.5, zd + ht * 0.45, x + h + 0.4, yt + 0.5, zd + ht * 0.45 + 1);
+                T.block([[x - h - 1, yt - 0.7], [x + h + 1, yt + 0.7]], zt, -6);
+            }
+            const sag = y => {
+                if (y < ys[0]) return geo.lerp(zp + 0.4, zt - 0.2, (y - y0) / (ys[0] - y0));
+                if (y > ys[1]) return geo.lerp(zt - 0.2, zp + 0.4, (y - ys[1]) / (y1 - ys[1]));
+                const f = (y - ys[0]) / (ys[1] - ys[0]);
+                return zp + 1.2 + (zt - 0.2 - zp - 1.2) * (2 * f - 1) ** 2;
+            };
+            inKind(S, CABLE, () => {
+                for (const s of [-1, 1]) {
+                    const xs = x + s * (h + 0.4);
+                    S.line(curve(t => { const y = geo.lerp(y0 + 1, y1 - 1, t); return [xs, y, sag(y)]; }, 60));
+                    for (let y = ys[0] + 2.5; y < ys[1] - 1; y += 2.5) S.line([[xs, y, zp], [xs, y, sag(y)]]);
+                }
+            });
+        } else if (style === 'stayed') {
+            // one A-frame pylon mid river and a fan of stays to both edges of the deck
+            const ym = (ya + yb) / 2, ht = geo.clamp(span * 0.45, 16, 30), zt = zd + ht;
+            for (const s of [-1, 1]) S.solid([[x + s * (h + 1.4), ym - 0.9, ZW], [x + s * (h + 0.2), ym - 0.9, ZW], [x + s * (h + 0.2), ym + 0.9, ZW], [x + s * (h + 1.4), ym + 0.9, ZW],
+                [x + s * 0.8, ym - 0.6, zt], [x, ym - 0.6, zt], [x, ym + 0.6, zt], [x + s * 0.8, ym + 0.6, zt]], BOX);
+            T.block([[x - h - 1.4, ym - 0.9], [x + h + 1.4, ym + 0.9]], zt, -6);
+            S.box(F0, x - 0.9, ym - 0.7, zt, x + 0.9, ym + 0.7, zt + 1.6);
+            inKind(S, CABLE, () => {
+                for (const s of [-1, 1]) for (const d of [-1, 1]) for (let k = 1; k <= 7; k++) {
+                    const y = ym + d * (span / 2 + 2) * k / 7, z = zt - 0.6 - k * 0.55;
+                    S.line([[x + s * 0.4 * (1 - z / zt), ym + d * 0.4, z], [x + s * (h - 0.2), y, zp]]);
+                }
+            });
+        }
+        quiet(S, () => {
+            for (let y = y0 + rng.range(2, 8); y < y1 - 4; y += rng.range(9, 16)) {
+                const v = rng.pick([-1.7, 1.7]);
+                inKind(S, rng.chance(0.3) ? PAD : LIFE, () => kit.car(T, x + v, y, zd, v < 0 ? 3 : 1, rng, true));
+            }
+        });
+    }
+
+    // Long barge with containers on it and the wheelhouse at the stern. Some
+    // containers are painted in the roof ink.
+    function barge(T, x, y, ang, rng) {
+        const S = T.S, L = rng.range(26, 34), F = turned(x, y, ZW, ang);
+        const Hl = kit.hullSolid(T, F, L, 6.4, 1.3, 0.3, false), zd = Hl.z(0) + 0.05;
+        for (let u = -L * 0.28; u < L * 0.38 - 6; u += 6.3) for (const v of [-1.3, 1.3]) {
+            if (!rng.chance(0.85)) continue;
+            const stack = rng.chance(0.35) ? 2 : 1, painted = rng.chance(0.45);
+            for (let k = 0; k < stack; k++) {
+                const z0 = zd + k * 2.6;
+                S.box(F, u, v - 1.2, z0, u + 6, v + 1.2, z0 + 2.5);
+                if (!painted || !T.detail) continue;
+                const n = F.V(0, v < 0 ? -1 : 1, 0), side = v < 0 ? v - 1.21 : v + 1.21;
+                if (T.sees(n)) inKind(S, ROOF, () => S.hatch([F.P(u, side, z0), F.P(u + 6, side, z0), F.P(u + 6, side, z0 + 2.5), F.P(u, side, z0 + 2.5)], [0, 0, 1], T.gap * 0.8));
+            }
+        }
+        const us = -L * 0.46;
+        S.box(F, us, -2.2, zd, us + 4, 2.2, zd + 2.6);
+        S.box(F, us + 0.6, -1.6, zd + 2.6, us + 3.4, 1.6, zd + 4.4);
+        S.box(F, us + 0.3, -1.9, zd + 4.4, us + 3.7, 1.9, zd + 4.7);
+        S.line([F.P(us + 2, 0, zd + 4.7), F.P(us + 2, 0, zd + 6.5)]);
+        return kit.wake(T, x, y, ang, L, rng, ZW, 1.4);
+    }
+
+    // Boats, a barge and the ripples on the water. Wakes come back as patches
+    // the ripples keep out of.
+    function riverTraffic(T, R, rng) {
+        const S = T.S, { x0, x1, ya, yb } = R, ym = (ya + yb) / 2, span = yb - ya;
+        // the stretch of river on the page
+        let lo = Infinity, hi = -Infinity;
+        for (let x = x0; x < x1; x += 4) for (const y of [ya, yb]) {
+            const q = T.cam.project(x, y, ZW);
+            if (q[0] > 0 && q[0] < T.W && q[1] > 0 && q[1] < T.H) { lo = Math.min(lo, x); hi = Math.max(hi, x); }
+        }
+        if (!(hi > lo)) return;
+        const patches = [], clear = (x, pad) => offBridge(R, x, pad) && patches.every(P => !(Math.abs(P.x - x) < P.r));
+        if (span > 30 && rng.chance(0.7)) {
+            const x = rng.range(lo + 20, hi - 20);
+            if (clear(x, 22)) {
+                const ang = rng.chance(0.5) ? 0 : Math.PI, y = ym + (ang ? 1 : -1) * span * 0.18;
+                patches.push({ x, r: 40, poly: barge(T, x, y, ang, rng) });
+            }
+        }
+        for (let k = Math.round((hi - lo) / 70 * (span > 30 ? 2 : 1)); k > 0; k--) {
+            const x = rng.range(lo, hi);
+            if (!clear(x, 12)) continue;
+            const ang = rng.chance(0.5) ? 0 : Math.PI, y = ym + (ang ? 1 : -1) * rng.range(0.1, 0.32) * span;
+            patches.push({ x, r: 18, poly: kit.underway(T, x, y, ang + rng.range(-0.08, 0.08), rng, ZW) });
+        }
+        // a few boats tied up along the far quay
+        quiet(S, () => {
+            for (let x = lo + rng.range(0, 30); x < hi; x += rng.range(25, 60)) {
+                if (!clear(x, 10) || !rng.chance(0.6)) continue;
+                const kind = rng.weighted([[3, 'launch'], [2, 'row'], [1, 'sail']]);
+                kit.boat(T, frame(x, yb - kit.BEAM[kind] / 2 - 0.4, ZW, rng.chance(0.5) ? 0 : 2), kind, rng);
+                patches.push({ x, r: 6 });
+            }
+        });
+        // ripples as short dashes along the page, the way Harbour does its water
+        const r = [T.cam.rx, T.cam.ry];
+        inKind(S, WATER, () => {
+            for (let k = Math.round((hi - lo + 40) * span / 85); k > 0; k--) {
+                const x = rng.range(lo - 20, hi + 20), y = rng.range(ya + 1.2, yb - 1.2), l = rng.range(1.5, 4.5);
+                if (!offBridge(R, x, 2) || patches.some(P => P.poly && geo.pointInPolygon(x, y, P.poly))) continue;
+                S.line([[x - r[0] * l / 2, y - r[1] * l / 2, ZW], [x + r[0] * l / 2, y + r[1] * l / 2, ZW]]);
+            }
+        });
+    }
+
+    // Street shadows land on the ground at 0.2 m, except over the river where
+    // they fall further, onto the water. Every shadow is split between the two.
+    function riverShadows(S, R, land) {
+        const water = S.shadowGroup(ZW, [R.x0, R.ya, R.x1, R.yb], land.ang), cast = S.castShadow;
+        S.shadow = land;
+        S.castShadow = function (pts) {
+            if (this.shadow !== land) return cast.call(this, pts);
+            const [sx, sy] = this.sun, at = z => PG.iso.hull(pts.map(p => { const h = Math.max(0, p[2] - z); return [p[0] + h * sx, p[1] + h * sy]; }));
+            const s = at(land.z);
+            for (const piece of [geo.clipPolygonHalfPlane(s, [0, R.ya], [0, -1]), geo.clipPolygonHalfPlane(s, [0, R.yb], [0, 1])]) if (piece.length >= 3) land.polys.push(piece);
+            const w = at(ZW);
+            if (w.length >= 3 && w.some(q => q[1] > R.ya) && w.some(q => q[1] < R.yb)) water.polys.push(w);
+        };
+    }
+
+    // ------------------------------------------------------------------
     // The district
     // ------------------------------------------------------------------
 
+    // Each district scales the odds of the building types, and the heights. A
+    // type left out keeps its usual odds.
+    const DISTRICTS = {
+        downtown: { height: 1.1, glass: 2.2, taper: 1.6, twist: 1.6, podium: 1.5, dark: 1.4, build: 1.3, office: 0.8, deco: 0.5, green: 0.8, clutter: 0.1, low: 0.15, parking: 0.2, park: 0.4, church: 0.3 },
+        midtown: { height: 0.85, deco: 2.4, office: 2, drum: 1.2, glass: 0.5, taper: 0.4, twist: 0.3, dark: 0.6, clutter: 0.5, low: 1.1, church: 1.4, park: 1.2 },
+        old: { height: 0.62, clutter: 3.2, low: 2, parking: 1.2, office: 0.7, glass: 0.1, taper: 0.1, twist: 0.1, podium: 0.2, dark: 0.2, deco: 0.4, green: 0.2, church: 0.8 },
+        leafy: { height: 0.75, park: 3, green: 3, dome: 2, church: 1.5, low: 1.4, glass: 0.6, clutter: 0.3, dark: 0.3, build: 0.6 },
+    };
+
+    // Big soft patches from noise, with downtown near the middle of the page
+    function district(T, cx, cy) {
+        const core = 1 / (1 + (Math.hypot(cx, cy) / (T.B * 2.4)) ** 2), v = T.noise.noise2(cx / (T.B * 2.6) + 7.3, cy / (T.B * 2.6) - 2.1);
+        if (core > 0.55 && v > -0.45) return 'downtown';
+        if (v > 0.22 + T.p.clutter * -0.25) return 'old';
+        if (v < -0.38 + T.p.parks * 0.3) return 'leafy';
+        return 'midtown';
+    }
+
     // low keeps to the short types, for lots under a viaduct or in front of the landmark
-    function pickType(rng, w, d, prev, low, p) {
-        const m = Math.min(w, d), M = Math.max(w, d);
-        const opts = low ? [[3, 'low'], [1.2, 'parking'], [2 * p.clutter, 'clutter'], [0.5 + p.parks * 3, 'park'], [m > 20 ? 0.8 : 0, 'dome']] : [
+    function pickType(rng, w, d, prev, low, p, dist, oneOff) {
+        const m = Math.min(w, d), M = Math.max(w, d), D = DISTRICTS[dist];
+        const church = m > 15 && M > 24 ? 0.5 : 0;
+        const opts = (low ? [[3, 'low'], [1.2, 'parking'], [2 * p.clutter, 'clutter'], [0.5 + p.parks * 3, 'park'], [m > 20 ? 0.8 : 0, 'dome'], [church, 'church']] : [
             [m > 12 ? 2.2 : 0.5, 'glass'], [1.3, 'office'], [m > 13 ? 1.4 : 0, 'deco'], [m > 9 ? 1.5 : 0.4, 'drum'], [m > 11 ? 1.2 : 0, 'taper'],
             [m > 12 ? 1 : 0, 'twist'], [m > 17 && M > 21 ? 3 : 0, 'podium'], [1.8 * (0.3 + p.clutter), 'clutter'], [m > 9 ? 0.7 : 0.2, 'dark'],
-            [p.cranes && m > 14 ? 0.7 : 0, 'build'], [m > 20 ? 0.4 : 0, 'dome'], [m < 12 ? 1.4 : 0.4, 'low'], [p.parks * 2, 'park'], [0.2, 'parking']];
+            [p.cranes && m > 14 ? 0.7 : 0, 'build'], [m > 20 ? 0.4 : 0, 'dome'], [m < 12 ? 1.4 : 0.4, 'low'], [p.parks * 2, 'park'], [0.2, 'parking'],
+            [m > 13 ? 0.5 : 0, 'green'], [church, 'church']]).map(([w, t]) => [w * (D[t] ?? 1), t]);
+        // a cathedral is a one-off, two in sight looks like a mistake
+        if (oneOff) opts.forEach(o => { if (o[1] === 'church') o[0] = 0; });
         let t = rng.weighted(opts);
         for (let k = 0; k < 3 && t === prev; k++) t = rng.weighted(opts);
         return t;
     }
 
     const HEIGHT = { glass: [0.95, 1.3], office: [0.6, 1.05], deco: [0.85, 1.2], drum: [0.7, 1.15], taper: [0.85, 1.25], twist: [1, 1.4], podium: [0.95, 1.3],
-        clutter: [0.4, 0.6], dark: [1, 1.4], build: [0.55, 0.85], dome: [0, 0], low: [0.12, 0.25], parking: [0.15, 0.22], park: [0, 0] };
+        clutter: [0.4, 0.6], dark: [1, 1.4], build: [0.55, 0.85], dome: [0, 0], low: [0.12, 0.25], parking: [0.15, 0.22], park: [0, 0], green: [0.75, 1.1], church: [0, 0] };
 
     function blockLots(T, i, j, x0, y0, x1, y1, hw) {
         const p = T.p, rng = new PG.RNG(hash(T.seed, i, j, 5)), MIN = 8, out = [], stop = [0.18, 0.5, 0.7, 1];
+        const dist = district(T, (x0 + x1) / 2, (y0 + y1) / 2), D = DISTRICTS[dist];
+        // office towers on one block mostly share a facade, which ties the block together
+        const facade = rng.weighted([[3, 'ribbon'], [3, 'grid'], [2, 'piers'], [1.5, 'bands']]);
         const split = (a0, b0, a1, b1, depth) => {
             const w = a1 - a0, d = b1 - b0, canX = w > 2 * MIN + 1, canY = d > 2 * MIN + 1;
             if ((!canX && !canY) || rng.chance(stop[depth])) { out.push([a0, b0, a1, b1]); return; }
@@ -1635,15 +2079,20 @@
                 const c = T.cam, ahead = -(cx * c.fx + cy * c.fy) - T.B, side = Math.abs(cx * c.rx + cy * c.ry);
                 if (ahead > 0) cap = Math.min(cap, p.height * (0.2 + 0.8 * geo.clamp(Math.max(side / (2.2 * T.B), ahead / (4 * T.B)), 0, 1) ** 1.5));
             }
-            const type = park ? 'park' : pickType(rng, a1 - a0, b1 - b0, prev, cap < 30, p);
+            // and the ones in front of the river, so the water isn't all behind towers
+            if (T.river && cy < T.river.y0) cap = Math.min(cap, p.height * (0.22 + 0.78 * geo.clamp((T.river.y0 - cy) / (2.6 * T.B), 0, 1) ** 1.3));
+            const type = park ? 'park' : pickType(rng, a1 - a0, b1 - b0, prev, cap < 30, p, dist, T.churches > 0);
             prev = type;
+            if (type === 'church') T.churches++;
             const core = 1 / (1 + (Math.hypot(cx, cy) / (T.B * 2.8)) ** 2), [lo, hi] = HEIGHT[type];
-            let h = p.height * (0.5 + 0.7 * core) * geo.lerp((lo + hi) / 2, rng.range(lo, hi), 0.5 + p.variety * 0.5) * (1 + p.variety * rng.range(-0.3, 0.3));
+            let h = p.height * (0.5 + 0.7 * core) * D.height * geo.lerp((lo + hi) / 2, rng.range(lo, hi), 0.5 + p.variety * 0.5) * (1 + p.variety * rng.range(-0.3, 0.3));
             if (type === 'low') h = rng.range(2, 4) * FL + 1;
             if (type === 'parking') h = rng.range(3, 5) * 3.1;
             if (type === 'clutter') h = Math.min(h, 52);
-            h = Math.max(type === 'low' || type === 'parking' ? h : 14, Math.min(h, cap));
-            return { id: hash(i, j, k), x0: a0, y0: b0, x1: a1, y1: b1, h: Math.round(h / FL) * FL + 0.4, type, rng: new PG.RNG(hash(T.seed, i, j, k, 9)), i, j };
+            // spires included, for the visibility test
+            if (type === 'church') h = 40;
+            h = Math.max(type === 'low' || type === 'parking' || type === 'church' ? h : 14, Math.min(h, cap));
+            return { id: hash(i, j, k), x0: a0, y0: b0, x1: a1, y1: b1, h: Math.round(h / FL) * FL + 0.4, type, facade, rng: new PG.RNG(hash(T.seed, i, j, k, 9)), i, j };
         });
         // Neighbours right beside each side (-x, +x, -y, +y) as [from, to, height] along it,
         // so rooms and blade signs don't hang into them
@@ -1656,29 +2105,31 @@
 
     PG.register({
         id: 'skyline', name: 'Skyline District', category: 'Scenes', fit: false,
-        description: 'A crowded cyberpunk city in isometric ink: glass and banded towers, Kowloon clutter, cranes, elevated roads, neon signs and sagging cables round a faceted landmark.',
+        description: 'A crowded city in isometric ink: glass, deco and garden towers grouped into districts, a river with steel bridges, Kowloon clutter, a cathedral, elevated roads and neon signs round a faceted landmark.',
         params: [
             { type: 'section', label: 'City' },
-            { id: 'scale', label: 'Scale (mm per m)', type: 'range', min: 0.7, max: 2.5, step: 0.05, value: 1.05, random: [0.9, 1.3] },
+            { id: 'scale', label: 'Scale (mm per m)', type: 'range', min: 0.7, max: 2.5, step: 0.05, value: 1.05, random: [0.95, 1.3] },
             { id: 'block', label: 'Block size (m)', type: 'range', min: 36, max: 70, step: 1, value: 48, random: [42, 56] },
             { id: 'height', label: 'Tower height (m)', type: 'range', min: 25, max: 120, step: 1, value: 72, random: [50, 90] },
             { id: 'variety', label: 'Height variety', type: 'range', min: 0, max: 1, step: 0.05, value: 0.7, random: [0.4, 0.95] },
             { id: 'landmark', label: 'Landmark', type: 'select', value: 'cone', options: [['none', 'None'], ['cone', 'Diagrid cone'], ['needle', 'TV tower']], random: ['cone', 'cone', 'needle', 'none'] },
-            { id: 'parks', label: 'Parks', type: 'range', min: 0, max: 1, step: 0.05, value: 0.15, random: [0, 0.35] },
+            { id: 'water', label: 'River', type: 'select', value: 'river', options: [['none', 'None'], ['canal', 'Canal'], ['river', 'Wide river']], random: ['river', 'river', 'canal', 'none'] },
+            { id: 'parks', label: 'Parks & gardens', type: 'range', min: 0, max: 1, step: 0.05, value: 0.25, random: [0.05, 0.5] },
             { id: 'airship', label: 'Airship', type: 'checkbox', value: true, random: 0.6 },
+            { id: 'heli', label: 'Helicopter', type: 'checkbox', value: true, random: 0.6 },
             { type: 'section', label: 'Streets' },
             { id: 'transit', label: 'Elevated transit', type: 'select', value: 'both', options: [['none', 'None'], ['highway', 'Highway'], ['monorail', 'Monorail'], ['both', 'Highway & monorail']], random: ['both', 'both', 'highway', 'monorail'] },
-            { id: 'cables', label: 'Overhead cables', type: 'range', min: 0, max: 1, step: 0.05, value: 0.4, random: [0.2, 0.7] },
+            { id: 'cables', label: 'Overhead cables', type: 'range', min: 0, max: 1, step: 0.05, value: 0.25, random: [0.1, 0.55] },
             { id: 'bridges', label: 'Skybridges', type: 'range', min: 0, max: 1, step: 0.05, value: 0.35, random: [0.1, 0.7] },
             { id: 'traffic', label: 'Traffic & people', type: 'range', min: 0, max: 1, step: 0.05, value: 0.6, random: [0.3, 0.9] },
             { type: 'section', label: 'Buildings' },
-            { id: 'clutter', label: 'Kowloon clutter', type: 'range', min: 0, max: 1, step: 0.05, value: 0.45, random: [0.2, 0.75] },
-            { id: 'signs', label: 'Signs & pipes', type: 'range', min: 0, max: 1, step: 0.05, value: 0.45, random: [0.2, 0.75] },
+            { id: 'clutter', label: 'Kowloon clutter', type: 'range', min: 0, max: 1, step: 0.05, value: 0.3, random: [0.1, 0.65] },
+            { id: 'signs', label: 'Signs & pipes', type: 'range', min: 0, max: 1, step: 0.05, value: 0.4, random: [0.2, 0.7] },
             { id: 'cranes', label: 'Construction cranes', type: 'checkbox', value: true, random: 0.75 },
             { id: 'detail', label: 'Windows & small details', type: 'checkbox', value: true },
             { type: 'section', label: 'Light' },
             { id: 'shade', label: 'Hatch shaded walls', type: 'checkbox', value: true },
-            { id: 'gap', label: 'Hatch spacing (mm)', type: 'range', min: 0.5, max: 2, step: 0.05, value: 0.85, random: false, show: p => p.shade || p.shadows },
+            { id: 'gap', label: 'Hatch spacing (mm)', type: 'range', min: 0.5, max: 2, step: 0.05, value: 1, random: false, show: p => p.shade || p.shadows },
             { id: 'shadows', label: 'Street shadows', type: 'checkbox', value: true },
             { id: 'sun', label: 'Sun from', type: 'select', value: 'left', options: [['left', 'Left'], ['right', 'Right']], random: true },
             { type: 'section', label: 'View' },
@@ -1697,19 +2148,23 @@
             const lm = kind === 'none' ? null : { kind, H: Math.max(p.height * (kind === 'needle' ? 2.6 : 1.75), 60), R: 0, foot: 0 };
             const ce = Math.cos(geo.rad(p.elev)), D = lm ? geo.clamp(k * lm.H * ce - 0.4 * H, 0, 0.32 * H) : 0.05 * H;
             const cam = makeCamera(p.yaw, p.elev, k, W, H, fx * D / (k * se), fy * D / (k * se));
-            const S = new Scene(cam, W, H), sun = p.sun === 'left' ? [0.3, -0.42] : [-0.42, 0.3], toSun = unit([-sun[0], -sun[1], 1]);
+            const S = new Scene(cam, W, H), dir = p.sun === 'left' ? [0.3, -0.42] : [-0.42, 0.3], toSun = unit([-dir[0], -dir[1], 1]);
+            // ground shadows shorter than the walls' light would give, or tower shadows swallow every street
+            const sun = [dir[0] * 0.7, dir[1] * 0.7];
             const light = n => (n[0] * toSun[0] + n[1] * toSun[1] + (n[2] || 0) * toSun[2]) / (Math.hypot(n[0], n[1], n[2] || 0) || 1);
             const T = {
                 S, cam, p, k, B, W, H, seed, detail: p.detail, sees: n => cam.facing(n[0], n[1], n[2] || 0), segs: r => segments(r, k),
-                picket: Math.max(0.45, 0.75 / k), tones: p.shade ? {} : null, hLit: p.gap, hDark: p.gap, gap: p.gap, shade: p.shade,
-                light, dark: n => light(n) < 0.02, anchors: [], solids: new Solids(), waterKind: GLASS, lm, piers: [], paths: [], cranes: [],
+                picket: Math.max(0.45, 0.75 / k), tones: p.shade ? { lit: ROOF, dark: SHADE } : null, hLit: p.gap, hDark: p.gap, gap: p.gap, shade: p.shade,
+                light, lit: n => light(n) >= 0.02, dark: n => light(n) < 0.02, anchors: [], solids: new Solids(), waterKind: WATER, lm, piers: [], paths: [], cranes: [],
+                noise: ctx.noise, churches: 0, pads: [], river: null,
             };
             T.anchor = (q, n, id) => T.anchors.push({ p: q, n, id });
+            T.pad = (x, y, z, r) => T.pads.push([x, y, z, r]);
             T.block = (poly, z, id) => {
                 const b = geo.bbox([poly]);
                 T.solids.add(b.minX, b.minY, b.maxX, b.maxY, z, id);
             };
-            if (p.shadows) { S.sun = sun; S.shadowGroup(0.2, null, Math.atan2(cam.ry, cam.rx)); }
+            const land = p.shadows ? (S.sun = sun, S.shadowGroup(0.2, null, Math.atan2(cam.ry, cam.rx))) : null;
 
             const zMax = Math.max(p.height * 2.2, lm ? lm.H * 1.2 : 0) + 20;
             const corners = [0, zMax].flatMap(z => [[0, 0], [W, 0], [W, H], [0, H]].map(q => cam.ground(q[0], q[1], z)));
@@ -1743,10 +2198,30 @@
             const widthY = j => transitLines.has('y' + j) ? 20 : (hash(seed, 12, j) & 3) === 0 ? 15 : 10;
             const superblock = (i, j) => lm && (i === -1 || i === 0) && (j === -1 || j === 0);
 
+            // The river takes a row of blocks (two for a wide one) across the lower
+            // part of the page, in front of the landmark. No transit line may run
+            // down the middle of it, a riverside one is fine.
+            let R = null;
+            if (p.water === 'canal' || p.water === 'river') {
+                const rows = p.water === 'river' ? 2 : 1, rr = new PG.RNG(hash(seed, 41));
+                const want = cam.ground(W * 0.5, H * rr.range(0.6, 0.74), 0)[1] / B - rows / 2;
+                const ok = j => !(lm && j <= 0 && j + rows - 1 >= -1) && Array.from({ length: rows - 1 }, (_, m) => j + m + 1).every(l => !transitLines.has('y' + l));
+                const j = Array.from({ length: 9 }, (_, d) => Math.round(want) + d - 4).filter(ok).sort((a, b) => Math.abs(a - want) - Math.abs(b - want))[0];
+                const y0 = j * B + widthY(j) / 2, y1 = (j + rows) * B - widthY(j + rows) / 2;
+                R = T.river = { j, rows, x0: gx0 - 60, x1: gx1 + 60, y0, y1, ya: y0 + PROM, yb: y1 - PROM, bridges: [] };
+                const span = R.yb - R.ya, styles = span > 40 ? [[3, 'suspension'], [3, 'stayed'], [2, 'arch'], [1.5, 'truss']] : [[3, 'arch'], [2.5, 'truss'], [1.5, 'girder']];
+                for (let i = i0; i <= i1 + 1; i++) {
+                    const brng = new PG.RNG(hash(seed, i, 63));
+                    if (!transitLines.has('x' + i) && brng.chance(widthX(i) >= 15 ? 0.85 : 0.45)) R.bridges.push([i * B, widthX(i) / 2, brng.weighted(styles), brng]);
+                }
+                if (land) riverShadows(S, R, land);
+            }
+            const wet = j => R && j >= R.j && j < R.j + R.rows;
+
             const lots = [];
             const visible = (x0, y0, x1, y1, h) => S.onPage([0, h].flatMap(z => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(q => cam.project(q[0], q[1], z))));
             for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-                if (superblock(i, j) && (i !== -1 || j !== -1)) continue;
+                if (superblock(i, j) && (i !== -1 || j !== -1) || wet(j)) continue;
                 const sb = superblock(i, j), ie = sb ? i + 2 : i + 1, je = sb ? j + 2 : j + 1;
                 const x0 = i * B + widthX(i) / 2, x1 = ie * B - widthX(ie) / 2, y0 = j * B + widthY(j) / 2, y1 = je * B - widthY(je) / 2;
                 if (!visible(x0, y0, x1, y1, sb ? lm.H * 1.2 : p.height * 2.2 + 10)) continue;
@@ -1776,20 +2251,40 @@
             if (mono) { monorail(T, mono, 21, hw, rng); paths.push([mono, 2.5, 16, 25]); }
 
             for (let i = i0; i <= i1 + 1; i++) for (let j = j0; j <= j1; j++) {
-                if (lm && i === 0 && (j === -1 || j === 0)) continue;
+                if (lm && i === 0 && (j === -1 || j === 0) || wet(j)) continue;
                 const a = j * B + widthY(j) / 2, b = (j + 1) * B - widthY(j + 1) / 2, w = widthX(i);
                 if (!visible(i * B - w / 2, a, i * B + w / 2, b, 8)) continue;
                 street(T, 1, i * B, a, b, w, new PG.RNG(hash(seed, i, j, 21)));
             }
             for (let j = j0; j <= j1 + 1; j++) for (let i = i0; i <= i1; i++) {
-                if (lm && j === 0 && (i === -1 || i === 0)) continue;
+                if (lm && j === 0 && (i === -1 || i === 0) || R && j > R.j && j < R.j + R.rows) continue;
                 const a = i * B + widthX(i) / 2, b = (i + 1) * B - widthX(i + 1) / 2, w = widthY(j);
                 if (!visible(a, j * B - w / 2, b, j * B + w / 2, 8)) continue;
                 street(T, 0, j * B, a, b, w, new PG.RNG(hash(seed, i, j, 22)));
             }
 
+            if (R) {
+                const rrng = new PG.RNG(hash(seed, 43));
+                riverBanks(T, R, rrng);
+                for (const [x, h, style, brng] of R.bridges) if (visible(x - h, R.y0, x + h, R.y1, 30)) riverBridge(T, R, x, h * 2, style, brng);
+                riverTraffic(T, R, rrng);
+            }
+
             skybridges(T, lots, rng, transitLines);
             for (const f of T.cranes) withBase(T, 0.2, () => quiet(S, f));
+            if (p.heli) {
+                // over whichever helipad sits nearest the middle of the page, if it's clear above
+                const hrng = new PG.RNG(hash(seed, 37)), mid = q => Math.hypot(q[0] - W / 2, q[1] - H * 0.45);
+                const pads = T.pads.map(q => [q, cam.project(q[0], q[1], q[2])]).filter(([, q]) => q[0] > W * 0.1 && q[0] < W * 0.9 && q[1] > H * 0.15 && q[1] < H * 0.9).sort((a, b) => mid(a[1]) - mid(b[1]));
+                for (const [[x, y, z]] of pads) {
+                    const hz = z + hrng.range(10, 16), hx = x + hrng.range(-4, 4), hy = y + hrng.range(-4, 4);
+                    let top = 0;
+                    for (let dx = -8; dx <= 8; dx += 4) for (let dy = -8; dy <= 8; dy += 4) top = Math.max(top, T.solids.top(hx + dx, hy + dy));
+                    if (top > hz - 5) continue;
+                    helicopter(T, hx, hy, hz, hrng.range(0, TAU), hrng);
+                    break;
+                }
+            }
             if (p.airship) {
                 // high over one side of the page, clear of the tallest roof under it
                 const arng = new PG.RNG(hash(seed, 31)), len = arng.range(55, 68), sg = arng.chance(0.5) ? -1 : 1, lx = cam.project(0, 0, 0)[0];

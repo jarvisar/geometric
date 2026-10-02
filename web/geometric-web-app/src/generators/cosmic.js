@@ -143,14 +143,19 @@
         return D;
     }
     // A shape is plain data: masks (convex), lines with a role and depth offset, and fills.
-    function draw(D, s) {
+    // Ridges carry a `solid` too, and once the sun is down they swap their facets for that
+    // dark fill. The first `keep` ink lines (the outline) and any colored ones (lava) stay.
+    function draw(D, s, dark = false) {
         if (!D.sees(s.box)) return;
-        const S = D.S, raw = s.part === 'cloud';
+        const S = D.S, raw = s.part === 'cloud', sil = dark && s.solid;
         S.part = s.part;
         if (s.top) D.columns(s.top, s.bot, s.z, !raw);
         if (s.masks) for (const m of s.masks) D.face(m, s.z);
-        if (s.lines) for (const [pts, role, dz = 0.01] of s.lines) D.line(pts, s.z + dz, role, raw);
-        if (s.fills) for (const [segs, role] of s.fills) for (const q of segs) D.line(q, s.z + 0.005, role);
+        if (s.lines) s.lines.forEach(([pts, role, dz = 0.01], k) => { if (!sil || k < (sil.keep || 1) || role !== INK) D.line(pts, s.z + dz, role, raw); });
+        if (sil) {
+            sil.segs ||= fill(sil.polys, sil.gap, 0, sil.exc);
+            for (const q of sil.segs) D.line(q, s.z + 0.005, sil.role);
+        } else if (s.fills) for (const [segs, role] of s.fills) for (const q of segs) D.line(q, s.z + 0.005, role);
         if (s.marks) for (const [pts, role] of s.marks) D.mark(pts, s.z + 0.01, role);
         S.part = undefined;
     }
@@ -312,7 +317,7 @@
         pts.push([xc + hw - cliff, top], [xc + hw, base - talus], [xc + hw + talus * 0.9, base]);
         const poly = pts.concat([[xc + hw + talus, base + 0.5], [xc - hw - talus, base + 0.5]]);
         return {
-            z, top: pts, bot: pts.map(([x]) => [x, base + 0.3]), lines: [[pts, INK]], box: bounds([poly]),
+            z, top: pts, bot: pts.map(([x]) => [x, base + 0.3]), lines: [[pts, INK]], box: bounds([poly]), solid: { polys: [poly], gap: E.gap * 0.7, role: INK },
             fills: [[fill([poly], height / rng.int(3, 6), rng.range(-0.05, 0.05)), BROWN],
                 [fill([poly], E.gap * 0.8, L * 0.9, [shift(poly, -L * (cliff + width * 0.12), 0)]), INK]],
         };
@@ -434,7 +439,7 @@
         for (let j = 1; j <= m; j++) masks.push([lintel[j - 1], lintel[j], lintel[2 * m + 1 - j], lintel[2 * m + 2 - j]]);
         const pieces = legs.concat([lintel]);
         return {
-            z, masks, box: [xc - ro - flare, base - height, xc + ro + flare, base],
+            z, masks, box: [xc - ro - flare, base - height, xc + ro + flare, base], solid: { polys: pieces, gap: E.gap * 0.7, role: INK, keep: pieces.length },
             lines: pieces.map(P => [geo.close(P), INK, -0.01]),
             fills: [[fill(pieces, height / rng.int(4, 7), rng.range(-0.06, 0.06)), BROWN], [fill(pieces, E.gap * 0.8, L * 0.8, [shift(lintel, -L * ro * 0.2, -ro * 0.08)].concat(legs.map(q => shift(q, -L * ro * 0.12, -ro * 0.08)))), INK]],
         };
@@ -470,6 +475,49 @@
         if (rng.chance(0.6)) {
             const dome = Array.from({ length: 41 }, (_, j) => { const a = PI + PI * j / 40; return [xc + width * 0.55 * Math.cos(a), base + height * 1.15 * Math.sin(a)]; });
             out.push({ z: z + 0.5, lines: [[dome, CYAN], [dome.map(([x, y]) => [xc + (x - xc) * 0.96, base + (y - base) * 0.96]), CYAN]] });
+        }
+        return out;
+    }
+    // Rounded bar between two points, convex so it works as a mask
+    function limb(a, b, r, n = 4) {
+        const t0 = Math.atan2(b[1] - a[1], b[0] - a[0]), pts = [];
+        for (let j = 0; j <= n; j++) { const t = t0 - PI / 2 + PI * j / n; pts.push([b[0] + r * Math.cos(t), b[1] + r * Math.sin(t)]); }
+        for (let j = 0; j <= n; j++) { const t = t0 + PI / 2 + PI * j / n; pts.push([a[0] + r * Math.cos(t), a[1] + r * Math.sin(t)]); }
+        return pts;
+    }
+    // The page's explorer, seen from behind looking into the scene. Feet at (x, y). Same suit
+    // color on every panel so it reads as one character. `point` raises an arm toward the sky
+    // on that side, and big figures (the over-the-shoulder shot) get seams, straps and tanks.
+    function astronaut(E, rng, x, y, size, z, o = {}) {
+        const S = size, L = E.light, g = E.gap, P = (u, v) => [x + u * S, y - v * S], big = S > 30;
+        const head = [x, y - 0.85 * S], hr = 0.15 * S, helmet = geo.ngon(head[0], head[1], hr, clamp(Math.ceil(hr * 3), 12, 60));
+        const torso = [P(-0.19, 0.36), P(0.19, 0.36), P(0.21, 0.64), P(0.15, 0.74), P(-0.15, 0.74), P(-0.21, 0.64)];
+        const legs = [-1, 1].map(s => limb(P(s * 0.08, 0.42), P(s * 0.1, 0.06), 0.075 * S));
+        const arms = [-1, 1].map(s => s === o.point ? limb(P(s * 0.2, 0.66), P(s * 0.42, 0.95), 0.06 * S) : limb(P(s * 0.2, 0.66), P(s * 0.26, 0.4), 0.06 * S));
+        const body = [torso, helmet, ...legs, ...arms];
+        const pack = [P(-0.15, 0.42), P(0.15, 0.42), P(0.16, 0.72), P(-0.16, 0.72)];
+        const out = [{
+            z, masks: body, box: [x - 0.5 * S, y - 1.1 * S, x + 0.5 * S, y + 0.1 * S],
+            lines: body.map(q => [geo.close(q), INK, -0.01]).concat(legs.map((q, k) => [[P(k ? 0.03 : -0.17, 0.16), P(k ? 0.17 : -0.03, 0.16)], INK])),
+            // shade on the side away from the light, stopped where a copy shifted toward it would cover
+            fills: S > 14 ? [[fill(body, g * 0.8, 0.9 * L, body.map(q => shift(q, -L * 0.13 * S, -0.04 * S))), INK]] : [],
+        }, {
+            z: z + 0.02, masks: [pack], lines: [[geo.close(pack), INK]],
+            fills: [[fill([pack], g * (S > 14 ? 0.9 : 1.2), PI / 2), E.suit]],
+        }];
+        // antenna with a little light on it
+        const tip = [head[0] - L * hr * 0.9, head[1] - hr * 1.9];
+        out[0].lines.push([[[head[0] - L * hr * 0.55, head[1] - hr * 0.8], tip], INK], [geo.circle(tip[0], tip[1], Math.max(0.35, hr * 0.12), 8), WARM]);
+        if (big) {
+            out[0].lines.push([geo.arc(head[0], head[1], hr * 0.82, -PI * 0.85, -PI * 0.15), INK],
+                [geo.ellipse(x, y - 0.735 * S, 0.12 * S, 0.025 * S, 0, 24), INK]);
+            for (const s of [-1, 1]) out[1].lines.push([geo.close(limb(P(s * 0.075, 0.47), P(s * 0.075, 0.67), 0.05 * S, 6)), INK, 0.01]);
+            out[1].lines.push([[P(-0.16, 0.56), P(0.16, 0.56)], INK, 0.015]);
+        }
+        if (o.flag) {
+            const fx = x + o.flag * 0.45 * S, top = y - 1.25 * S, cloth = [[fx, top], [fx + o.flag * 0.42 * S, top + 0.03 * S], [fx + o.flag * 0.42 * S, top + 0.26 * S], [fx, top + 0.24 * S]];
+            out.push({ z: z - 0.05, lines: [[[[fx, y + 0.02 * S], [fx, top]], INK]] },
+                { z: z - 0.04, masks: [cloth], lines: [[geo.close(cloth), INK]], fills: [[fill([cloth], g * 0.9, PI / 2), WARM]] });
         }
         return out;
     }
@@ -608,25 +656,43 @@
             D.line([[x - h, y + r * v], [x + h, y + r * v]], z + 0.005, E.cast.sun);
         }
     }
+    // The page picks one sky per time of day up front, like a comic's color script. A dusk
+    // page then reads as cool hatched skies, then sunbursts, then warm bands, then night,
+    // instead of every panel rolling its own.
+    function skyScript(rng, sunRole) {
+        const cool = rng.pick([COOL, COOL, VIOLET, CYAN]), warm = sunRole === WARM ? GOLD : WARM;
+        return {
+            angle: rng.pick([PI / 4, -PI / 4, PI / 6, -PI / 3]), k: rng.range(2, 2.6), q: rng.range(1.08, 1.14), alt: rng.chance(0.4),
+            day: { style: rng.weighted([[3, 'hatch'], [1.5, 'rays'], [0.8, 'cross'], [1, 'split']]), role: cool, role2: warm },
+            low: { style: rng.weighted([[3, 'rays'], [1.2, 'glow'], [1.5, 'split']]), role: rng.pick([cool, sunRole]), role2: sunRole },
+            set: { style: rng.weighted([[3.5, 'bands'], [1.5, 'split'], [1, 'rays']]), role: rng.pick([sunRole, warm]), role2: sunRole },
+            night: { style: rng.weighted([[2, 'none'], [1, 'hatch']]), role: rng.pick([VIOLET, COOL]) },
+        };
+    }
     function skyStyle(E, rng, phase, sun) {
-        const st = { style: 'none', role: COOL, role2: WARM, angle: rng.pick([PI / 4, -PI / 4, PI / 6, -PI / 3, 0]), k: rng.range(2, 3), q: rng.range(1.08, 1.16), alt: rng.chance(0.3) };
-        if (phase === 'night') { st.style = rng.chance(0.3) ? 'hatch' : 'none'; st.role = rng.pick([VIOLET, COOL]); st.k *= 1.5; st.angle = 0; }
-        else if (phase === 'set') { st.style = rng.weighted([[3.5, 'bands'], [2.5, 'rays'], [1, 'glow'], [1.2, 'split']]); st.role = rng.pick([WARM, GOLD, VIOLET]); st.role2 = rng.pick([WARM, GOLD]); }
-        else if (phase === 'low') { st.style = rng.weighted([[3, 'rays'], [2, 'bands'], [1.2, 'glow'], [1.5, 'hatch'], [1.5, 'split']]); st.role = rng.pick([WARM, GOLD, VIOLET, COOL]); st.role2 = rng.pick([WARM, GOLD]); }
-        else { st.style = rng.weighted([[2.2, 'rays'], [3, 'hatch'], [1.3, 'cross'], [1.2, 'split'], [1, 'none']]); st.role = rng.pick([COOL, COOL, CYAN, VIOLET, GREEN]); }
+        const sc = E.script, st = { role2: WARM, angle: sc.angle, k: sc.k, q: sc.q, alt: sc.alt, fade: true, ...sc[phase] };
+        if (phase === 'night') { st.k *= 1.5; st.angle = 0; }
         if (!sun && (st.style === 'rays' || st.style === 'glow' || st.style === 'bands')) st.style = phase === 'night' ? 'none' : 'hatch';
-        const warm = role => role === WARM || role === GOLD, other = role => warm(role) ? rng.pick([COOL, VIOLET, CYAN]) : rng.pick([WARM, GOLD]);
-        // the second color comes from the other family, so crossings mix two inks
-        if (st.style === 'cross') { st.role2 = other(st.role); if (!st.angle) st.angle = PI / 4; }
-        if (st.style === 'rays') st.rays = phase === 'day' && rng.chance(0.5) ? st.role : E.cast.sun;
-        // No more than two skies in a row in the same family of inks
-        if (st.style !== 'none' && st.style !== 'cross') {
-            const key = st.style === 'rays' ? 'rays' : 'role', fam = warm(st[key]);
-            if (E.run.n >= 2 && E.run.fam === fam) { st[key] = other(st[key]); if (key === 'rays') st.role = st.rays; }
-            if (E.run.fam === warm(st[key])) E.run.n++; else E.run = { fam: warm(st[key]), n: 1 };
-        }
-        if (st.role === st.role2) st.role2 = other(st.role);
+        if (st.style === 'rays') st.rays = phase === 'day' ? st.role : E.cast.sun;
+        // glowing rings only make sense in the sun's own color
+        if (st.style === 'glow') st.role = E.cast.sun;
+        if (st.role === st.role2) st.role2 = st.role === WARM ? COOL : WARM;
         return st;
+    }
+    // Ragged line ends between two heights, so a hatched sky thins out into a glow near the
+    // horizon. Each line's cut depends only on which grid row it is, so panels that share a
+    // panorama fade the same way.
+    function fade(segs, gap, angle, from, to, salt) {
+        const out = [], c = Math.cos(angle), s = Math.sin(angle);
+        for (const [a, b] of segs) {
+            const row = Math.round(((a[1] * c - a[0] * s) / gap) - 0.5), h = ((PG.iso.hash(row, salt) >>> 0) % 1000) / 1000;
+            const cut = lerp(from, to, h ** 0.75);
+            if (a[1] <= cut && b[1] <= cut) { out.push([a, b]); continue; }
+            if (a[1] > cut && b[1] > cut) continue;
+            const m = geo.lerpPt(a, b, (cut - a[1]) / (b[1] - a[1])), q = a[1] <= cut ? [a, m] : [m, b];
+            if (Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]) > 0.4) out.push(q);
+        }
+        return out;
     }
     function sky(E, rng, D, st, sun, bottom, horizon) {
         const { X, Y, W } = D, g = E.gap, y1 = Math.min(bottom, Y + D.H) + 0.5;
@@ -635,13 +701,18 @@
         const seg = (a, b, role) => { const t = win.clipSeg(a[0], a[1], b[0], b[1]); if (t && t[1] - t[0] > 1e-6) D.line([geo.lerpPt(a, b, t[0]), geo.lerpPt(a, b, t[1])], 0, role); };
         const reach = sun ? Math.max(...rect.map(([x, y]) => Math.hypot(x - sun[0], y - sun[1]))) + 1 : 0;
         const bands = (from, to, role) => { for (let y = from - g * 1.5, step = g * 1.5, k = 0; y > to && k < 300; k++, step *= st.q, y -= step) seg([X - 1, y], [X + W + 1, y], role); };
+        // fading only works when the horizon is actually inside the panel
+        const top = Y, depth = st.fade ? Math.min(st.fadeTo ?? horizon, y1) - top : 0;
+        const faded = (segs, gap, angle, a, b, salt) => depth > 8 ? fade(segs, gap, angle, top + depth * a, top + depth * b, salt) : segs;
         if (st.style === 'hatch' || st.style === 'cross') {
-            for (const q of fill([rect], g * st.k, st.angle)) D.line(q, 0, st.role);
-            if (st.style === 'cross') for (const q of fill([rect], g * st.k * 1.15, st.angle + PI / 2)) D.line(q, 0.001, st.role2);
+            for (const q of faded(fill([rect], g * st.k, st.angle), g * st.k, st.angle, 0.45, 0.92, 1)) D.line(q, 0, st.role);
+            // the second pass only crosses the top of the sky, so it darkens toward the zenith
+            if (st.style === 'cross') for (const q of faded(fill([rect], g * st.k * 1.15, st.angle + PI / 2), g * st.k * 1.15, st.angle + PI / 2, 0.15, 0.6, 2)) D.line(q, 0.001, st.role2);
         } else if (st.style === 'split') {
             // diagonal hatch overhead, glowing bands down by the horizon
-            const cut = horizon - (horizon - Y) * rng.range(0.3, 0.5);
-            for (const q of fill([[[X - 1, Y - 1], [X + W + 1, Y - 1], [X + W + 1, cut], [X - 1, cut]]], g * st.k, st.angle || PI / 4)) D.line(q, 0, st.role);
+            const cut = horizon - (horizon - Y) * rng.range(0.3, 0.5), ang = st.angle || PI / 4;
+            const over = fill([[[X - 1, Y - 1], [X + W + 1, Y - 1], [X + W + 1, cut], [X - 1, cut]]], g * st.k, ang);
+            for (const q of depth > 8 ? fade(over, g * st.k, ang, lerp(Y, cut, 0.5), cut, 3) : over) D.line(q, 0, st.role);
             st.q = 1.04;
             bands(horizon, cut, st.role2);
         } else if (st.style === 'bands') {
@@ -667,7 +738,7 @@
             let x = rng.range(X + 1.3, X + W - 1.3), y = rng.range(Y + 1.3, y1);
             // a milky way: some stars pulled toward a diagonal band
             if (band && i % 2) { const u = rng.random(); x = X + W * u; y = Y + (y1 - Y) * (band[1] + band[0] * (u - 0.5)) + rng.gauss(0, W * 0.05); if (x < X + 1.3 || x > X + W - 1.3 || y < Y + 1.3 || y > y1) continue; }
-            const kind = rng.random(), s = rng.range(0.55, 1.1), role = rng.chance(0.2) ? rng.pick(E.starRoles) : INK;
+            const kind = rng.random(), s = rng.range(0.55, 1.1), role = rng.chance(0.1) ? rng.pick(E.starRoles) : INK;
             if (avoid.some(([u, v, r]) => Math.hypot(x - u, y - v) < r + 1.5)) continue;
             if (kind < 0.5) D.mark(geo.circle(x, y, rng.range(0.22, 0.38), 6), 1, role);
             else if (kind < 0.9) D.cross(x, y, s, 1, role);
@@ -731,8 +802,9 @@
     }
 
     // ------------------------------------------------------------------
-    // Scenes. Each one returns shared shapes (built once for panels that share a
-    // landscape) and a local() that adds each panel's sky, sun and visitors.
+    // Scenes. Each one returns a local() that draws one panel. A landscape builds its
+    // shapes once, so panels that share it line up, and local() draws them with that
+    // panel's time of day before adding the sky, sun and visitors.
     // ------------------------------------------------------------------
     const phaseOf = e => e > 0.45 ? 'day' : e > 0.12 ? 'low' : e > -0.15 ? 'set' : 'night';
     function sunAt(rng, D, horizon, e, m) {
@@ -790,18 +862,20 @@
         const ang = rng.pick([-0.35, -0.55, 0.4, 0.25, -0.8]) * L;
         const hz = y0 + h * (tall ? rng.range(0.52, 0.66) : big ? rng.range(0.4, 0.5) : rng.range(0.4, 0.54));
         const tint = rng.pick([VIOLET, COOL, CYAN, VIOLET]), green = rng.pick([GREEN, GREEN, CYAN, INK]);
-        let far = null, water = null;
+        let far = null, water = null, front = null;
         const add = s => { if (Array.isArray(s)) shared.push(...s); else if (s) shared.push(s); return s; };
         const layer = (top, z, role = INK) => { if (!far) far = top; return add({ z, top, lines: [[top, role]], fills: [], marks: [], box: bounds([top.concat([[top[0][0], yb]])]) }); };
+        // after sunset the ranges go dark, the far ones a little lighter and in their tint
+        const solid = (s, gap, role, exc) => { s.solid = { polys: [s.top.concat([[xb, yb + 2], [xa, yb + 2]])], gap, role, exc }; return s; };
         const distant = (base, amp) => {
-            const r = jagged(rng, xa, xb, base, amp, Math.min(amp * rng.range(0.9, 1.8), pw * 0.3), Math.max(0.45, amp / 9)), s = layer(r.pts, 20);
+            const r = jagged(rng, xa, xb, base, amp, Math.min(amp * rng.range(0.9, 1.8), pw * 0.3), Math.max(0.45, amp / 9)), s = solid(layer(r.pts, 20), g * 0.95, tint);
             if (rng.chance(0.8)) s.fills.push([fill([r.pts.concat([[xb, base + amp], [xa, base + amp]])], g * rng.range(1.1, 1.5), rng.pick([0, 0, PI / 4, -PI / 4])), tint]);
             return s;
         };
         const range = (base, amp, z, snow) => {
             const r = jagged(rng, xa, xb, base, amp, Math.min(amp * (big ? rng.range(0.8, 1.5) : rng.range(1.2, 2.2)), pw * rng.range(0.3, 0.55)), Math.max(0.5, amp / 18));
-            const s = layer(r.pts, z);
-            facets(E, rng, s, r, base, base + amp * 0.6, ang, rng.chance(0.5) ? tint : null, snow ? snowcap(rng, xa, xb, base - amp * rng.range(0.55, 0.72), amp) : null);
+            const cap = snow ? snowcap(rng, xa, xb, base - amp * rng.range(0.55, 0.72), amp) : null, s = solid(layer(r.pts, z), g * 0.7, INK, cap);
+            facets(E, rng, s, r, base, base + amp * 0.6, ang, rng.chance(0.5) ? tint : null, cap);
             return s;
         };
         // A cone with a shaded flank, lava runs and a plume of smoke drifting off the crater
@@ -809,7 +883,7 @@
             const xc = x0 + w * rng.range(0.25, 0.75), half = Math.min(amp * rng.range(1.3, 1.9), pw * 0.5), crater = half * rng.range(0.12, 0.2), top = base - amp;
             const flank = s => Array.from({ length: 13 }, (_, i) => [lerp(xc + s * half, xc + s * crater, i / 12), base - amp * (i / 12) ** 1.7 + (i % 12 ? rng.range(-0.03, 0.03) * amp : 0)]);
             const pts = [[xa, base], ...flank(-1), [xc - crater * 0.3, top + amp * 0.05], [xc + crater * 0.3, top + amp * 0.05], ...flank(1).reverse(), [xb, base]].filter((q, i, a) => !i || q[0] > a[i - 1][0]);
-            const s = layer(pts, z);
+            const s = solid(layer(pts, z), g * 0.7, INK);
             const crease = [[xc + L * crater * 0.3, top + amp * 0.05], [xc + L * half * 0.12, top + amp * 0.45], [xc + L * half * 0.3, base]];
             const lit = [[xc - L * half * 3, top - amp], [crease[0][0], top - amp], ...crease, [crease[2][0], base + amp], [xc - L * half * 3, base + amp]];
             s.fills.push([fill([pts.concat([[xb, base + 1], [xa, base + 1]])], g * 0.85, ang, [lit]), INK]);
@@ -834,12 +908,6 @@
             if (ps.length) s.fills.push([fill(ps, g * rng.range(0.9, 1.2), ang + rng.range(-0.2, 0.2)), role]);
             const lit = rng.chance(0.35) ? patches(rng, pts, -L, 0.7, 0.6) : [];
             if (lit.length) s.fills.push([fill(lit, g * 1.6, -ang), role === tint ? green : tint]);
-            if (rng.chance(0.25 * detail)) {
-                // striped fields following the hill
-                const rows = [];
-                for (let k = 1; k < 7; k++) rows.push(pts.map(([x, y]) => [x, y + k * g * 2.6]));
-                s.fills.push([rows, role === INK ? GREEN : role]);
-            }
             s.pts = pts;
             return s;
         };
@@ -858,6 +926,7 @@
             // more depth than that between them or they show through each other
             const step = Math.min(0.08, 1.3 / list.length);
             list.sort((a, b) => a[1] - b[1]).forEach(([x, y], k) => add(make(x, y, z + 0.3 + k * step)));
+            front = { pts, z: z + 0.3 + list.length * step + 0.1, depth, lo, hi };
         };
         const bush = (x, y, size, z) => cloud(E, rng, x, y, size, size * rng.range(0.4, 0.6), z, { part: 'bush', role: green, lumps: 1.5, angle: ang });
         // little patches of grass stripes
@@ -918,7 +987,10 @@
         } else if (biome === 'desert') {
             // mesa country, a sea of dunes, or arches and hoodoos
             const kind = rng.weighted([[4, 'mesas'], [2.5, 'dunes'], [2, 'arches']]), sand = rng.pick([GOLD, GOLD, BROWN, WARM]);
-            if (kind !== 'dunes' && rng.chance(0.7)) { const s = layer(tableland(rng, xa, xb, hz, h * rng.range(0.05, 0.1)), 20); s.fills.push([fill([s.top.concat([[xb, hz + h * 0.1], [xa, hz + h * 0.1]])], g * 1.5, 0), rng.pick([GOLD, WARM, VIOLET])]); }
+            if (kind !== 'dunes' && rng.chance(0.7)) {
+                const role = rng.pick([GOLD, WARM, VIOLET]), s = solid(layer(tableland(rng, xa, xb, hz, h * rng.range(0.05, 0.1)), 20), g * 0.95, role);
+                s.fills.push([fill([s.top.concat([[xb, hz + h * 0.1], [xa, hz + h * 0.1]])], g * 1.5, 0), role]);
+            }
             if (kind === 'dunes') {
                 if (rng.chance(0.6)) distant(hz, h * rng.range(0.04, 0.08));
                 const n = clamp(Math.round(h / u * 1.4), 2, 5) + (tall ? 1 : 0);
@@ -987,20 +1059,39 @@
                     : biome === 'moon' ? (x, y, z) => boulder(E, rng, x, y, u * rng.range(0.06, 0.12), z, INK) : tree(u * rng.range(0.2, 0.3), biome === 'snow' ? 'pine' : 'round'), 3,
                 Math.max(x0 + 1, near[0][0]), Math.min(x0 + w - 1, near[near.length - 1][0]));
         }
+        // The explorer stands on the nearest ground with props, in front of them and toward the
+        // near edge of that strip. A lone feature panel can instead get the over-the-shoulder
+        // shot: a big figure cut off by the bottom of the frame, looking into the scene.
+        if (E.p.explorer && rng.chance(hero ? 0.9 : 0.4)) {
+            if (hero && count === 1 && rng.chance(0.65)) {
+                // cropped at the waist so no stubs of leg poke up from the frame
+                // kept clear of the side of the frame, or the arm on that side gets cut off
+                const side = rng.sign(), size = Math.min(h * rng.range(0.62, 0.74), w * 0.7), off = Math.max(0, w / 2 - size * 0.38 - 2) * rng.range(0.75, 1);
+                add(astronaut(E, rng, x0 + w / 2 + side * off, yb + size * 0.39, size, 40, {}));
+            } else if (front) {
+                const point = giant || biome === 'moon' ? rng.chance(0.5) * rng.sign() : 0, span = front.hi - front.lo, x = front.lo + span * rng.range(0.15, 0.85), size = Math.max(5.5, u * (biome === 'moon' ? 0.18 : 0.15));
+                if (span > size * 3) add(astronaut(E, rng, x, heightAt(front.pts, x) + front.depth * rng.range(0.7, 1), size, front.z, { point, flag: biome === 'moon' && rng.chance(0.7) ? rng.sign() : 0 }));
+            }
+        }
         // a saucer crossing a shared panorama left to right, either arriving and beaming down
         // in the last panel or beaming in the first and flying off
         const flight = count > 1 && E.p.visitors && rng.chance(0.35) && E.fly() ? rng.sign() : 0;
+        // lowest and highest points of the far ridge inside a panel
         const skyline = D => {
-            let y = -Infinity;
-            if (!far) return D.Y + D.H;
-            for (const [x, v] of far) if (x >= D.X - 1 && x <= D.X + D.W + 1 && v > y) y = v;
-            return Math.max(y, heightAt(far, D.X), heightAt(far, D.X + D.W));
+            let lo = -Infinity, hi = Infinity;
+            if (!far) return [D.Y + D.H, D.Y + D.H];
+            for (const [x, v] of far) if (x >= D.X - 1 && x <= D.X + D.W + 1) { lo = Math.max(lo, v); hi = Math.min(hi, v); }
+            const ends = [heightAt(far, D.X), heightAt(far, D.X + D.W)];
+            return [Math.max(lo, ...ends), Math.min(hi, ...ends)];
         };
 
         const local = (D, prng, e) => {
-            const phase = biome === 'moon' ? 'night' : phaseOf(e), dm = Math.min(D.W, D.H), bottom = skyline(D);
+            const phase = biome === 'moon' ? 'night' : phaseOf(e), dm = Math.min(D.W, D.H), [bottom, peak] = skyline(D);
+            for (const s of shared) draw(D, s, phase === 'set' || phase === 'night');
             const sun = phase === 'night' ? null : sunAt(prng, D, hz, e, Math.min(dm, h));
             const st = skyStyle(E, prng, phase, sun), avoid = sun ? [[sun[0], sun[1], sun[2] * 1.4]] : [];
+            // the hatch thins out around the peaks rather than behind them, where it wouldn't show
+            st.fadeTo = lerp(peak, bottom, 0.6);
             sky(E, prng, D, st, sun, bottom, hz);
             if (sun) sunDisc(E, D, sun, phase === 'set' && prng.chance(0.6));
             stars(E, prng, D, bottom, E.p.stars * (biome === 'moon' ? 1.4 : phase === 'night' ? 1 : phase === 'set' ? 0.25 : 0.08), avoid);
@@ -1008,7 +1099,7 @@
             // small planets stay clear of the giant, or only slivers of them show around its rim
             if (giant) avoid.push(giant);
             if (E.p.story === 'approach') featured(E, prng, D, t, hz, avoid, sun);
-            scatter(E, prng, D, prng.int(phase === 'night' ? 1 : 0, phase === 'night' ? 3 : 1), hz - h * 0.08, avoid, 3, [0.03, 0.07], sun);
+            scatter(E, prng, D, prng.int(0, phase === 'night' ? 2 : 1), hz - h * 0.08, avoid, 3, [0.035, 0.07], sun);
             if (phase === 'night' && prng.chance(0.25)) shootingStar(D, prng, D.X, D.Y, D.W, hz - D.Y);
             // the moon has no air, so no weather at all
             const airless = biome === 'moon', weather = !airless && prng.chance(0.6) ? prng.int(1, big ? 4 : 3) : 0;
@@ -1045,13 +1136,13 @@
                 else comet(E, prng, D, D.X + D.W * prng.range(0.2, 0.8), D.Y + (hz - D.Y) * prng.range(0.15, 0.45), dm * prng.range(0.25, 0.45), [prng.sign() * 0.8, -0.6], 9);
             }
         };
-        return { shared, local };
+        return { local };
     }
 
     function cloudscape(E, R, t) {
         const [, , w, h] = R;
         return {
-            shared: [], local: (D, prng, e) => {
+            local: (D, prng, e) => {
                 const phase = e > -0.15 ? phaseOf(Math.max(e, 0.2)) : 'night', m = Math.min(w, h);
                 const sun = phase === 'night' ? null : [D.X + D.W * prng.range(0.2, 0.8), D.Y + D.H * prng.range(0.15, 0.45), m * prng.range(0.08, 0.14)];
                 const st = skyStyle(E, prng, phase, sun), avoid = sun ? [[sun[0], sun[1], sun[2] * 1.4]] : [];
@@ -1073,9 +1164,9 @@
     }
     function space(E, t, kind) {
         return {
-            shared: [], local: (D, prng) => {
+            local: (D, prng) => {
                 const m = Math.min(D.W, D.H), avoid = [];
-                if (prng.chance(0.2)) sky(E, prng, D, { style: 'hatch', role: prng.pick([VIOLET, COOL]), angle: prng.pick([PI / 4, -PI / 4]), k: 3.2 }, null, D.Y + D.H, 0);
+                if (prng.chance(0.2)) sky(E, prng, D, { style: 'hatch', role: E.script.night.role, angle: E.script.angle, k: 3.2 }, null, D.Y + D.H, 0);
                 if (kind === 'giant') {
                     const pl = E.p.story === 'approach' ? E.cast.planets[0] : prng.pick(E.cast.planets), r = m * prng.range(0.26, 0.4);
                     const x = D.X + D.W * prng.range(0.35, 0.65), y = D.Y + D.H * prng.range(0.4, 0.6);
@@ -1145,7 +1236,7 @@
                 shade: i === 0 ? INK : accents[i], band: accents[(i + 2) % 6], ringRole: accents[(i + 3) % 6], shadeGap: rng.range(0.7, 0.95), shadeAngle: rng.pick([PI / 4, -PI / 4, PI / 3, 0.2]),
             };
         });
-        return { planets, sun: rng.pick([WARM, WARM, GOLD]) };
+        return { planets, sun: rng.pick([WARM, WARM, GOLD]), suit: rng.pick([COOL, VIOLET, WARM]) };
     }
 
     PG.register({
@@ -1165,6 +1256,7 @@
             { id: 'detail', label: 'Scenery', type: 'range', min: 0, max: 1, step: 0.05, value: 0.6, random: [0.35, 0.9], hint: 'Trees, rocks, cacti and other props.' },
             { id: 'stars', label: 'Star density', type: 'range', min: 0, max: 2, step: 0.1, value: 1, random: [0.5, 1.5] },
             { id: 'visitors', label: 'Visitors', type: 'checkbox', value: true, random: 0.75, hint: 'The odd saucer, rocket or comet.' },
+            { id: 'explorer', label: 'Explorer', type: 'checkbox', value: true, random: 0.85, hint: 'A little astronaut who turns up across the panels.' },
             { id: 'spacing', label: 'Hatch spacing (mm)', type: 'range', min: 0.35, max: 2, step: 0.05, value: 0.75, random: [0.6, 1] },
             { type: 'section', label: 'Pens' }, { id: 'pens' },
         ],
@@ -1182,10 +1274,11 @@
             const { width: W, height: H, seed } = ctx, pens = PG.pens.count(p.pens), layers = PG.pens.layers(pens);
             const { rects, gap } = layout(p, W, H, rngOf(seed, 1)), n = rects.length, crng = rngOf(seed, 2);
             const E = { p, gap: p.spacing, light: crng.sign(), cast: makeCast(crng), starRoles: [COOL, WARM, GOLD, CYAN] };
+            E.suit = E.cast.suit;
             const ll = Math.hypot(1, 0.75);
             E.lightVec = [-E.light / ll, -0.75 / ll];
             E.cloudAngle = crng.pick([-0.95, -0.7, 0.8]) * E.light;
-            E.run = { fam: null, n: 0 };
+            E.script = skyScript(crng, E.cast.sun);
             // the approaching planet only turns up through featured()
             E.pool = p.story === 'approach' ? E.cast.planets.slice(1) : E.cast.planets;
             // The biggest panel gets a feature scene when it clearly stands out
@@ -1234,7 +1327,6 @@
                 const scene = kind === 'land' ? land(E, rng, R, biome, pw, time[i], grp.includes(hero), grp.length) : kind === 'clouds' ? cloudscape(E, R, time[i]) : space(E, time[i], kind);
                 for (const idx of grp) {
                     const [X, Y, w, h] = rects[idx], D = canvas(X, Y, w, h);
-                    for (const s of scene.shared) draw(D, s);
                     scene.local(D, rngOf(seed, 5, idx), elev[idx]);
                     const f = p.frame === 'bold' ? 0.4 : 0, inner = PG.shapes.rect(f, f, w - f, h - f);
                     D.render().forEach((paths, role) => {
