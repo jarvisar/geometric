@@ -1427,28 +1427,69 @@
         }
     }
 
-    function showInstallToast() {
-        storageSet(INSTALL_KEY, true);
+    // The larger toast with the logo, used for install and update offers. `action` is optional.
+    function cardToast(title, text, action, onAction, onClose) {
         const logo = $('.brand .logo').cloneNode(true);
         logo.setAttribute('class', 'install-logo');
-        const text = el('div', { class: 'install-text' },
-            el('b', { text: 'Install Plotter Geometry' }),
-            el('span', { text: installEvent ? 'Works offline, in its own window.' : 'Tap Share, then Add to Home Screen.' }));
-        installToast = el('div', { class: 'toast install', role: 'status' }, el('span', { class: 'install-icon' }, logo), text);
-        if (installEvent) {
-            const install = el('button', { class: 'btn accent', type: 'button', text: 'Install' });
-            install.addEventListener('click', installApp);
-            installToast.append(install);
+        const card = el('div', { class: 'toast install', role: 'status' }, el('span', { class: 'install-icon' }, logo),
+            el('div', { class: 'install-text' }, el('b', { text: title }), el('span', { text })));
+        if (action) {
+            const btn = el('button', { class: 'btn accent', type: 'button', text: action });
+            btn.addEventListener('click', onAction);
+            card.append(btn);
         }
         const close = el('button', { class: 'icon-btn', type: 'button', title: 'Not now', 'aria-label': 'Not now' }, icon('x'));
-        close.addEventListener('click', hideInstallToast);
-        installToast.append(close);
-        $('#toasts').append(installToast);
+        close.addEventListener('click', onClose);
+        card.append(close);
+        $('#toasts').append(card);
+        return card;
+    }
+
+    function showInstallToast() {
+        storageSet(INSTALL_KEY, true);
+        installToast = cardToast('Install Plotter Geometry',
+            installEvent ? 'Works offline, in its own window.' : 'Tap Share, then Add to Home Screen.',
+            installEvent && 'Install', installApp, hideInstallToast);
         setTimeout(hideInstallToast, 20000);
     }
 
     function hideInstallToast() {
         if (installToast) { installToast.remove(); installToast = null; }
+    }
+
+    // ------------------------------------------------------------------ update check
+
+    // Deploys stamp the commit into <meta name="build"> and version.json. If those stop
+    // matching while the app is open, a newer deploy is live and a reload picks it up.
+    // Local copies say "dev" and skip this.
+    const BUILD = document.querySelector('meta[name="build"]')?.content || 'dev';
+    let lastUpdateCheck = 0, updateToast = null, dismissedBuild = null;
+
+    async function checkForUpdate() {
+        if (updateToast || document.hidden || Date.now() - lastUpdateCheck < 60 * 1000) return;
+        lastUpdateCheck = Date.now();
+        try {
+            const res = await fetch('version.json', { cache: 'no-store' });
+            const { build } = res.ok ? await res.json() : {};
+            if (build && build !== BUILD && build !== dismissedBuild && !updateToast) showUpdateToast(build);
+        } catch (e) { /* offline */ }
+    }
+
+    function setupUpdateCheck() {
+        if (BUILD === 'dev' || !/^https?:$/.test(location.protocol)) return;
+        // shortly after load too, in case this page itself came from a stale cache
+        setTimeout(checkForUpdate, 5000);
+        setInterval(checkForUpdate, 10 * 60 * 1000);
+        document.addEventListener('visibilitychange', checkForUpdate);
+    }
+
+    // Stays up until used or closed. Closing it only skips this build, a later deploy offers again.
+    function showUpdateToast(build) {
+        updateToast = cardToast('Update available', 'Reload to get the latest version.', 'Reload', () => location.reload(), () => {
+            dismissedBuild = build;
+            updateToast.remove();
+            updateToast = null;
+        });
     }
 
     // ------------------------------------------------------------------ wiring
@@ -1698,6 +1739,7 @@
         if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
             navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service worker not registered:', err));
         }
+        setupUpdateCheck();
     }
 
     // Handle for scripted checks (scripts/drive.js) and console tinkering.

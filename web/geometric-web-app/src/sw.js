@@ -2,7 +2,8 @@
  * Service worker: makes the app installable and usable offline.
  *
  * Every request goes to the network first, so a new deploy shows up on the
- * next load, and each response refreshes the cache. Offline, the cached copy
+ * next load, and each response refreshes the cache. app.js polls version.json
+ * to offer that reload when a deploy lands while the app is open. Offline, the cached copy
  * is served instead. The app shell and every design are cached on install, so
  * the whole app works offline from the first visit.
  */
@@ -33,9 +34,13 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
     const req = event.request;
-    if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+    const url = new URL(req.url);
+    if (req.method !== 'GET' || url.origin !== self.location.origin) return;
+    // The update check only makes sense against the network, never a cached copy
+    if (url.pathname.endsWith('/version.json')) return;
     event.respondWith(
-        fetch(req)
+        // GitHub Pages sends max-age=600, so revalidate or a plain reload can still get the old deploy
+        fetch(req, { cache: 'no-cache' })
             .then(res => {
                 if (res.ok) {
                     const copy = res.clone();

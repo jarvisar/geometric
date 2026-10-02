@@ -37,6 +37,9 @@ jobs:
           node web/geometric-web-app/scripts/build-pages.js
           cp -r web/geometric-web-app/src _site
           rm -rf _site/dev
+          # The app compares its build meta tag with version.json to know when a new deploy is up
+          sed -i 's/<meta name="build" content="dev">/<meta name="build" content="${{ github.sha }}">/' _site/index.html
+          echo '{ "build": "${{ github.sha }}" }' > _site/version.json
 
       - uses: actions/configure-pages@v5
 
