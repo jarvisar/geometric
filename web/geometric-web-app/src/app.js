@@ -98,6 +98,10 @@
 
     const STORAGE_KEY = 'plotter-geometry:state:v1';
     const SNAPS_KEY = 'plotter-geometry:snapshots:v1';
+    // Scenes stay out of the gallery until unlocked (Konami code, or 6 quick clicks on the logo)
+    const SCENES_KEY = 'plotter-geometry:scenes:v1';
+    let scenesUnlocked = storageGet(SCENES_KEY) === true;
+    const listedGenerators = () => PG.generators.filter(g => scenesUnlocked || g.category !== 'Scenes');
     const MM_PER_CSS_PX = 25.4 / 96;
 
     const PAPERS = PG.settings.papers;
@@ -1108,9 +1112,10 @@
         // Thumbnails use the current pen and paper colours, which can also change through undo or loaded settings
         const colors = JSON.stringify([state.paper.color, state.pens.map(p => p.color)]);
         if (colors !== thumbColors) { thumbCache.clear(); thumbColors = colors; }
-        const cats = PG.categories.concat([...new Set(PG.generators.map(g => g.category))].filter(c => !PG.categories.includes(c)));
+        const listed = listedGenerators();
+        const cats = PG.categories.concat([...new Set(listed.map(g => g.category))].filter(c => !PG.categories.includes(c)));
         for (const cat of cats) {
-            const gens = PG.generators.filter(g => g.category === cat);
+            const gens = listed.filter(g => g.category === cat);
             if (!gens.length) continue;
             const section = el('section', { 'data-cat': cat }, el('h3', { class: 'gallery-cat', text: cat }));
             const cards = el('div', { class: 'cards' });
@@ -1196,7 +1201,7 @@
     }
 
     function surprise() {
-        const others = PG.generators.filter(g => g.id !== state.gen);
+        const others = listedGenerators().filter(g => g.id !== state.gen);
         const def = others[Math.floor(Math.random() * others.length)] || currentDef();
         state.gen = def.id;
         closeGallery();
@@ -1594,12 +1599,43 @@
         });
     }
 
+    function unlockScenes() {
+        if (scenesUnlocked) return;
+        scenesUnlocked = true;
+        storageSet(SCENES_KEY, true);
+        toast('Scenes unlocked');
+        if (!$('#gallery').hidden) { buildGallery(); filterGallery($('#gallerySearch').value); }
+    }
+
+    function bindScenesUnlock() {
+        const code = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
+        let pos = 0;
+        document.addEventListener('keydown', e => {
+            const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+            pos = key === code[pos] ? pos + 1 : key === code[0] ? 1 : 0;
+            if (pos === code.length) { pos = 0; unlockScenes(); }
+        });
+
+        // The logo links to the about page, so hold a plain click briefly to see if more follow
+        const link = $('.brand a');
+        let clicks = 0, timer = 0;
+        link.addEventListener('click', e => {
+            if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+            e.preventDefault();
+            clearTimeout(timer);
+            if (++clicks >= 6) { clicks = 0; unlockScenes(); return; }
+            timer = setTimeout(() => { clicks = 0; location.href = link.href; }, 350);
+        });
+    }
+
     // Initial state: share link (#s=…) > saved state > defaults. `#gen=<id>` picks a design.
     async function loadInitialState() {
         const saved = storageGet(STORAGE_KEY);
         if (saved) {
             try { state = PG.settings.read(saved, true); }
             catch (err) { toast(`Saved settings could not be restored. Using defaults. ${err.message}`, true); }
+            // saved from before scenes were hidden; share links below can still open one
+            if (!scenesUnlocked && PG.byId[state.gen] && PG.byId[state.gen].category === 'Scenes') state.gen = PG.generators[0].id;
         }
         const hash = location.hash.slice(1);
         if (hash) {
@@ -1647,6 +1683,7 @@
         window.addEventListener('pagehide', () => { if (saveTimer) saveNow(); });
         bindTopbar();
         bindKeys();
+        bindScenesUnlock();
         bindCanvas();
         rebuildAll();
         syncInstallItem();

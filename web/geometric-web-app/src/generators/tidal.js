@@ -1046,7 +1046,7 @@
     }
 
     PG.register({
-        id: 'tidal', name: 'Tidal Atlas', category: 'Fields', fit: false,
+        id: 'tidal', name: 'Tidal Atlas', category: 'Scenes', fit: false,
         description: 'One eroded landscape drawn again and again as the sea rises, its valleys drowning into fjords and its ridges into island chains.',
         params: [
             { type: 'section', label: 'Studies' },

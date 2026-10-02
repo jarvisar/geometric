@@ -1,6 +1,9 @@
 const assert = (ok, message) => { if (!ok) throw new Error(message); };
 const ids = ['ribbons', 'stairwell', 'tidal', 'cosmic', 'skyline'];
 await open('index.html');
+// scenes are hidden from the gallery until unlocked
+await evaluate(`localStorage.setItem('plotter-geometry:scenes:v1', 'true')`);
+await open('index.html');
 await evaluate(`plotterApp.regenerate()`);
 const setup = async () => evaluate(`
     window.__set = (id, value) => {
