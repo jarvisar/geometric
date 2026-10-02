@@ -417,13 +417,22 @@
                 const ca = Math.cos(g.ang), sa = Math.sin(g.ang);
                 const dr = ca * cam.rx + sa * cam.ry, df = ca * cam.fx + sa * cam.fy;
                 const spacing = (gap * Math.hypot(dr, cam.se * df)) / (cam.k * cam.se);
-                const polys = g.polys.map(P => P.map(p => [p[0] * ca + p[1] * sa, p[1] * ca - p[0] * sa]));
+                const polys = g.polys.map(P => {
+                    const Q = P.map(p => [p[0] * ca + p[1] * sa, p[1] * ca - p[0] * sa]);
+                    let lo = Infinity, hi = -Infinity;
+                    for (const p of Q) { if (p[1] < lo) lo = p[1]; if (p[1] > hi) hi = p[1]; }
+                    return { Q, lo, hi };
+                }).sort((a, b) => a.lo - b.lo);
                 const back = (u, v) => [u * ca - v * sa, u * sa + v * ca, g.z];
                 let y0 = Infinity, y1 = -Infinity;
-                for (const P of polys) for (const p of P) { if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; }
+                for (const P of polys) { if (P.lo < y0) y0 = P.lo; if (P.hi > y1) y1 = P.hi; }
+                // sweep down the lines, only checking the shadows each one crosses
+                let next = 0, live = [];
                 for (let j = Math.ceil(y0 / spacing); j * spacing <= y1; j++) {
                     const y = j * spacing, iv = [];
-                    for (const P of polys) {
+                    while (next < polys.length && polys[next].lo <= y) live.push(polys[next++]);
+                    live = live.filter(P => P.hi >= y);
+                    for (const { Q: P } of live) {
                         let lo = Infinity, hi = -Infinity;
                         for (let i = 0, n = P.length; i < n; i++) {
                             const a = P[i], b = P[(i + 1) % n];

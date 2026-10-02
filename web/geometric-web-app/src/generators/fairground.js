@@ -10,6 +10,9 @@
  * The roller coaster takes two neighbouring cells and runs a figure of eight
  * over the path between them. Where the showpieces sit on the page comes from
  * one of a few layouts, so seeds don't all share the same composition.
+ * Around each ride the lawn's edges get rows of stalls, vans and kiosks facing
+ * the paths, and smaller sideshows go out on the grass, so it isn't one ride
+ * sat in a field.
  *
  * Red is for stripes and lit roof slopes, blue for shadows and the lake,
  * yellow for gondolas, cars, flags and pennants. Six pens add green trees and
@@ -21,7 +24,7 @@
     const { hash, makeCamera, frame, card, ring, hull, Scene, segments } = PG.iso;
     const {
         wall, rect, gableRoof, bench, unit, outward, shade, shadeGable, awning, marketHall, cart, bistro,
-        crookLamp, railFence, fountain, bandstand, hullSolid, turned, withKind, lerp3,
+        crookLamp, railFence, fountain, bandstand, hullSolid, turned, withKind, lerp3, wheels, cabin,
     } = PG.isokit;
 
     // line kinds. The last four only get pens of their own with six or eight pens.
@@ -870,6 +873,302 @@
     }
 
     // ------------------------------------------------------------------
+    // Sideshows, tents and vans, packed into the spare room on the lawns
+    // ------------------------------------------------------------------
+
+    // Round marquee: plain walls under a striped cone with a scalloped edge.
+    // Big ones have a dark way in on the side we see, small ones (kiosks) a
+    // serving hatch.
+    function marquee(T, x, y, r, rng) {
+        const S = T.S, n = T.segs(r + 0.3), sec = 2 * Math.max(4, Math.round(r * 2)), hw = r > 2 ? 2.2 : 1.8;
+        S.lathe(x, y, [[r, 0], [r, hw]], n);
+        const roof = [[r + 0.3, hw - 0.1], [r * 0.5, hw + r * 0.5], [0, hw + r * 0.8]];
+        S.lathe(x, y, roof, n);
+        stripes(T, x, y, roof, sec, rng.range(0, TAU), canopy(rng));
+        valance(T, x, y, r + 0.32, hw - 0.1, sec, 0.3);
+        flag(T, x, y, hw + r * 0.8, 1);
+        const c = T.cam, fa = Math.atan2(-c.fy, -c.fx) + rng.range(-0.6, 0.6), ux = -Math.sin(fa), uy = Math.cos(fa);
+        const ox = x + (r + 0.06) * Math.cos(fa), oy = y + (r + 0.06) * Math.sin(fa);
+        const [w, z0, z1] = r > 2 ? [0.7, 0, 2] : [0.5, 0.9, 1.6];
+        const hole = [[ox - ux * w, oy - uy * w, z0], [ox + ux * w, oy + uy * w, z0], [ox + ux * w, oy + uy * w, z1], [ox - ux * w, oy - uy * w, z1]];
+        S.face(hole, false);
+        S.loop(hole);
+        S.hatch(hole, [0, 0, 1], T.hDark * 0.8);
+    }
+
+    // Kiosk: a little six-sided hut with a hatch on each side we see and a
+    // pointed roof, shaded rather than striped so it doesn't look like a
+    // small marquee
+    function kiosk(T, x, y, rng) {
+        const S = T.S, r = 1.3, n = 6, rot = rng.range(0, TAU), zr = 2.3, R = r + 0.35;
+        const at = (i, rr, z) => { const a = rot + (TAU * i) / n; return [x + rr * Math.cos(a), y + rr * Math.sin(a), z]; };
+        S.lathe(x, y, [[r, 0], [r, zr]], n, false, rot);
+        for (let i = 0; i < n; i++) {
+            const m = rot + (TAU * (i + 0.5)) / n;
+            if (!T.sees([Math.cos(m), Math.sin(m), 0])) continue;
+            const p0 = at(i, r + 0.01, 0), p1 = at(i + 1, r + 0.01, 0), e = (f, z) => [geo.lerp(p0[0], p1[0], f), geo.lerp(p0[1], p1[1], f), z];
+            const hole = [e(0.2, 1.05), e(0.8, 1.05), e(0.8, 1.85), e(0.2, 1.85)];
+            S.loop(hole);
+            S.hatch(hole, [0, 0, 1], T.hDark * 0.8);
+        }
+        const base = Array.from({ length: n }, (_, i) => at(i, R, zr)), apex = [x, y, zr + 1.2];
+        S.solid(base.concat([apex]), [base.map((_, i) => i), ...base.map((_, i) => [i, (i + 1) % n, n])]);
+        const centre = [x, y, zr + 0.4];
+        for (let i = 0; i < n; i++) {
+            const tri = [base[i], base[(i + 1) % n], apex];
+            shade(T, tri, outward(tri, centre), 'canopy');
+        }
+        S.line([apex, [x, y, apex[2] + 0.5]]);
+    }
+
+    // Showman's living wagon: a long body on wheels with a raised strip down
+    // the roof, windows down the sides, lining out in yellow and steps up to
+    // the door at one end
+    function wagon(T, x, y, ang, rng) {
+        const S = T.S, F = turned(x, y, 0, ang), L = rng.range(5, 6), hw = 1.1, zb = 0.75, zt = 2.9;
+        const fp = [-L / 2, -hw, L / 2, hw];
+        S.box(F, -L / 2, -hw, zb, L / 2, hw, zt);
+        S.box(F, -L / 2 - 0.15, -hw - 0.15, zt, L / 2 + 0.15, hw + 0.15, zt + 0.12);
+        S.box(F, -L / 2 + 0.5, -0.5, zt + 0.12, L / 2 - 0.5, 0.5, zt + 0.5);
+        wheels(T, F, [-L / 2 + 1, L / 2 - 1], hw, 0.5);
+        for (const side of [0, 2]) {
+            const W = wall(F, side, fp);
+            if (!T.sees(W.n)) continue;
+            for (let s = 0.45; s + 0.75 < L - 0.3; s += 1.2) rect(T, W.at, s, zb + 0.95, 0.75, 0.8);
+            if (!T.tones) continue;
+            inKind(S, RED, () => S.hatch([W.at(0, zb), W.at(L, zb), W.at(L, zb + 0.5), W.at(0, zb + 0.5)], F.V(1, 0, 0), T.hDark));
+            inKind(S, YELLOW, () => S.line([W.at(0.1, zt - 0.2), W.at(L - 0.1, zt - 0.2)]));
+        }
+        S.box(F, L / 2, -0.4, 0, L / 2 + 0.35, 0.4, 0.5);
+        S.box(F, L / 2 + 0.35, -0.4, 0, L / 2 + 0.7, 0.4, 0.25);
+        const D = wall(F, 1, fp);
+        if (T.sees(D.n)) rect(T, D.at, hw - 0.4, zb, 0.8, 1.9);
+    }
+
+    // Food van: a box van with a serving hatch and striped awning down the
+    // side we see, a sign on the roof and someone waiting at the hatch
+    function foodVan(T, x, y, ang, rng) {
+        const S = T.S, L = 5, hw = 1.05, zb = 0.6, zt = 2.7, cab = 1.2;
+        let F = turned(x, y, 0, ang);
+        if (!T.sees(F.V(0, -1, 0))) F = turned(x, y, 0, ang + Math.PI);
+        S.box(F, -L / 2, -hw, zb, L / 2 - cab, hw, zt);
+        S.box(F, L / 2 - cab, -hw + 0.05, zb, L / 2, hw - 0.05, 1.45);
+        cabin(T, F, L / 2 - cab, L / 2 - 0.05, L / 2 - cab, L / 2 - 0.6, hw - 0.05, 1.45, 2.3);
+        wheels(T, F, [-L / 2 + 0.9, L / 2 - 0.85], hw, 0.42);
+        const W = wall(F, 0, [-L / 2, -hw, L / 2 - cab, hw]), a = 0.4, b = W.len - 0.4;
+        const hatch = [W.at(a, 1.4), W.at(b, 1.4), W.at(b, 2.2), W.at(a, 2.2)];
+        S.loop(hatch);
+        S.hatch(hatch, [0, 0, 1], T.hDark * 0.8);
+        S.box(F, -L / 2 + a, -hw - 0.3, 1.28, -L / 2 + b, -hw, 1.4);
+        awning(T, F, -L / 2 + 0.15, L / 2 - cab - 0.15, -hw, 2.55, 0.8, T.tones ? RED : undefined);
+        S.box(F, -L / 2 + 0.6, -0.06, zt, L / 2 - cab - 0.6, 0.06, zt + 0.8);
+        if (T.tones) {
+            inKind(S, YELLOW, () => {
+                const zig = [];
+                for (let i = 0; i <= 10; i++) zig.push(F.P(-L / 2 + 0.75 + ((L - cab - 1.5) * i) / 10, -0.08, zt + 0.2 + (i % 2) * 0.4));
+                S.line(zig);
+            });
+        }
+        for (let i = rng.int(0, 2); i > 0; i--) person(T, ...F.P(rng.range(-L / 2 + 0.6, L / 2 - cab - 0.6), -hw - rng.range(1.1, 1.6), 0).slice(0, 2), 0, rng);
+    }
+
+    // High striker: a tall board painted in bands with a bell on top and a
+    // pad at the bottom, with someone lined up to hit it
+    function striker(T, x, y, rng) {
+        const S = T.S, c = T.cam, H = rng.range(5.5, 7), w = 0.3;
+        let F = turned(x, y, 0, Math.atan2(c.ry, c.rx));
+        if (!T.sees(F.V(0, -1, 0))) F = turned(x, y, 0, Math.atan2(c.ry, c.rx) + Math.PI);
+        S.box(F, -0.8, -0.7, 0, 0.8, 0.5, 0.3);
+        S.box(F, -w, -0.08, 0.3, w, 0.08, H);
+        S.box(F, -0.3, -0.62, 0.3, 0.3, -0.25, 0.5);
+        S.lathe(x, y, [[0.32, H], [0.27, H + 0.25], [0.1, H + 0.4], [0, H + 0.42]], 12);
+        const W = wall(F, 0, [-w, -0.08, w, 0.08]);
+        for (let z = 0.8, i = 0; z + 0.4 < H; z += 0.8, i++) {
+            const band = [W.at(0, z), W.at(W.len, z), W.at(W.len, z + 0.4), W.at(0, z + 0.4)];
+            if (T.tones) inKind(S, i % 2 ? YELLOW : RED, () => S.hatch(band, F.V(1, 0, 0), T.hDark));
+            else if (T.detail) S.line([band[0], band[1]]);
+        }
+        person(T, ...F.P(0.75, -1.1, 0).slice(0, 2), 0, rng);
+    }
+
+    // Kiddie ride: little cars round a platform under a striped umbrella
+    function kiddie(T, x, y, rng) {
+        const S = T.S, r = 2.7, H = 3, a0 = rng.range(0, TAU), n = rng.int(5, 6);
+        S.lathe(x, y, [[r, 0], [r, 0.35]], T.segs(r));
+        S.lathe(x, y, [[0.18, 0.35], [0.14, H]], 8);
+        const top = [[r, H], [0.3, H + 1.1], [0, H + 1.2]];
+        S.lathe(x, y, top, T.segs(r));
+        S.loop(ring(T.segs(r), (c, s) => [x + (r * 1.015 + 0.01) * c, y + (r * 1.015 + 0.01) * s, H]));
+        stripes(T, x, y, top, 12, a0, canopy(rng));
+        valance(T, x, y, r + 0.02, H, 12, 0.25);
+        flag(T, x, y, H + 1.2, 0.8);
+        for (let i = 0; i < n; i++) {
+            const a = a0 + (TAU * (i + 0.5)) / n, G = turned(x + 1.75 * Math.cos(a), y + 1.75 * Math.sin(a), 0.35, a + Math.PI / 2);
+            S.box(G, -0.5, -0.32, 0.05, 0.5, 0.32, 0.45);
+            if (T.tones) inKind(S, i % 2 ? RED : YELLOW, () => S.hatch([G.P(-0.5, -0.32, 0.45), G.P(0.5, -0.32, 0.45), G.P(0.5, 0.32, 0.45), G.P(-0.5, 0.32, 0.45)], G.V(0, 1, 0), T.hLit));
+            if (rng.chance(0.6)) rider(T, ...G.P(-0.1, 0, 0.3));
+        }
+    }
+
+    // Hook a duck: ducks bobbing round a ring of water, under a striped
+    // canopy on a pole in the middle
+    function hookDuck(T, x, y, rng) {
+        const S = T.S, r = 1.8, H = 2.8, ce = T.cam.ce;
+        S.lathe(x, y, [[r, 0], [r, 0.75]], T.segs(r));
+        S.loop(ring(T.segs(r), (c, s) => [x + (r - 0.15) * c, y + (r - 0.15) * s, 0.75]));
+        S.lathe(x, y, [[0.6, 0.75], [0.6, 1]], 12);
+        S.line([[x, y, 1], [x, y, H]]);
+        const top = [[r + 0.35, H], [0.2, H + 0.9], [0, H + 0.95]];
+        S.lathe(x, y, top, T.segs(r + 0.35));
+        stripes(T, x, y, top, 10, rng.range(0, TAU), canopy(rng));
+        valance(T, x, y, r + 0.37, H, 10, 0.25);
+        const a0 = rng.range(0, TAU);
+        for (let i = 0; i < 9; i++) {
+            const a = a0 + (TAU * i) / 9, P = card(T, x + 1.2 * Math.cos(a), y + 1.2 * Math.sin(a), 0.75, 0.02);
+            const duck = ring(6, (c, s) => P(0.14 * c, 0.1 + (0.14 * s) / ce));
+            S.face(duck, false);
+            inKind(S, T.tones ? YELLOW : INK, () => S.loop(duck));
+        }
+        const fa = Math.atan2(-T.cam.fy, -T.cam.fx);
+        for (const o of [-0.5, 0.45]) if (rng.chance(0.7)) person(T, x + (r + 0.6) * Math.cos(fa + o), y + (r + 0.6) * Math.sin(fa + o), 0, rng);
+    }
+
+    // Swing boats: boats hung in a row from a high bar between two A-frames,
+    // each caught at a different point in its swing
+    const BOAT = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
+    function swingBoats(T, x, y, ang, rng) {
+        const S = T.S, n = rng.int(2, 3), H = 4.8, L = 4, gap = 1.5, half = (n * gap) / 2 + 0.3;
+        const F = turned(x, y, 0, ang);
+        for (const e of [-half, half]) {
+            for (const s of [-1, 1]) tube(T, F.P(e, s * 2, 0), F.P(e, 0, H), 0.1, 6);
+            S.line([F.P(e, -1.3, 1.6), F.P(e, 1.3, 1.6)]);
+        }
+        tube(T, F.P(-half - 0.2, 0, H), F.P(half + 0.2, 0, H), 0.1, 6);
+        for (let i = 0; i < n; i++) {
+            const u = -half + 0.3 + gap * (i + 0.5), th = rng.range(-0.6, 0.6), U = F.V(1, 0, 0);
+            const Wb = F.V(0, -Math.sin(th), Math.cos(th)), B = axes(add(F.P(u, 0, H), mul(Wb, -L)), F.V(0, Math.cos(th), Math.sin(th)), U, Wb);
+            const v = [B.P(-0.7, -0.4, 0), B.P(0.7, -0.4, 0), B.P(0.7, 0.4, 0), B.P(-0.7, 0.4, 0),
+                B.P(-1.15, -0.4, 0.7), B.P(1.15, -0.4, 0.7), B.P(1.15, 0.4, 0.7), B.P(-1.15, 0.4, 0.7)];
+            S.solid(v, BOAT);
+            for (const e of [-1.05, 1.05]) S.line([F.P(u, 0, H), B.P(e, 0, 0.7)]);
+            for (const [f, s] of [[2, -1], [4, 1]]) {
+                if (!T.tones || !T.sees(mul(U, s))) continue;
+                inKind(S, i % 2 ? YELLOW : RED, () => S.hatch(BOAT[f].map(j => v[j]), [0, 0, 1], T.hLit));
+            }
+            for (const e of [-0.5, 0.5]) if (rng.chance(0.7)) rider(T, ...B.P(e, 0, 0.35));
+        }
+    }
+
+    // What lines the paths round each sort of lawn, and how often
+    const EDGE = {
+        ride: { booth: 3, van: 2, kiosk: 2, wagon: 1.5, cart: 1, table: 0.5 },
+        big: { wagon: 2, van: 1.5, kiosk: 1.5, cart: 1, booth: 1 },
+        food: { van: 4, kiosk: 2, cart: 2, table: 2 },
+        stalls: { booth: 6, kiosk: 1.5, van: 1, cart: 1 },
+        garden: { table: 2, kiosk: 1.5, cart: 1, bed: 1.5 },
+    };
+    // and what stands out on the open grass
+    const OPEN = {
+        ride: { marquee: 1.5, striker: 1, kiddie: 1, ducks: 1, boats: 1, table: 1 },
+        big: { marquee: 1, wagon: 1 },
+        food: { table: 3, marquee: 1 },
+        stalls: { ducks: 2, striker: 1, kiddie: 1, marquee: 1, boats: 1 },
+        garden: { table: 2, marquee: 1, kiddie: 1, ducks: 1, boats: 1, bed: 2 },
+    };
+    // length along the path, depth back from it and how many in a row
+    const ROW = {
+        booth: [3.2, 2.9, r => r.int(2, 4)], van: [5, 3, r => r.int(1, 2)], wagon: [6, 2.4, r => r.int(1, 2)],
+        kiosk: [3.4, 3.4, () => 1], cart: [2, 1.2, () => 1], table: [2.2, 2.2, r => r.int(2, 3)], bed: [2.6, 2.6, () => 1],
+    };
+    const ROOM = { wagon: 3.4, striker: 1.4, kiddie: 3, ducks: 2.5, boats: 3.6, table: 1.4, bed: 1.6 };
+    const MOST = { striker: 3, boats: 3, kiddie: 4, ducks: 4, marquee: 6 };
+
+    // Rows of stalls, vans and kiosks round the edge of a lawn, set back
+    // behind the lamp posts and facing the paths like shops on a street, with
+    // a gap here and there
+    function midway(T, c, rng, mix) {
+        const S = T.S, P = c.lawn.poly, busy = T.p.busy, set = 1.3;
+        if (busy <= 0) return;
+        const pts = geo.resample(P.concat([P[0]]), 0.5), N = pts.length - 1;
+        let area = 0;
+        for (let i = 0; i < P.length; i++) area += P[i][0] * P[(i + 1) % P.length][1] - P[(i + 1) % P.length][0] * P[i][1];
+        const sg = area > 0 ? 1 : -1;
+        // a spot on the edge s metres round, the way along it and the way into the lawn
+        const i0 = rng.int(0, N - 1);
+        const spot = s => {
+            const i = i0 + Math.round(s / 0.5), a = pts[(i - 3 + 3 * N) % N], b = pts[(i + 3) % N], l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+            const t = [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
+            return { q: pts[i % N], t, n: [-t[1] * sg, t[0] * sg] };
+        };
+        // long things are checked and claimed as a row of discs
+        const discs = (q, t, n, len, dep) => {
+            const out = [], r = dep / 2, m = Math.max(0, Math.ceil((len - dep) / r));
+            for (let j = 0; j <= m; j++) {
+                const u = m ? -len / 2 + r + ((len - dep) * j) / m : 0;
+                out.push([q[0] + t[0] * u + n[0] * (set + r), q[1] + t[1] * u + n[1] * (set + r), r + 0.15]);
+            }
+            return out;
+        };
+        const L = N * 0.5;
+        let s = 0, k = null, run = 0;
+        while (s < L - 2) {
+            if (!run) {
+                if (rng.chance(0.15 + 0.6 * (1 - busy))) { s += rng.range(2, 6); continue; }
+                k = rng.weighted(Object.keys(mix).map(q => [mix[q], q]));
+                run = ROW[k][2](rng);
+            }
+            const [len, dep] = ROW[k], { q, t, n } = spot(s + len / 2);
+            const at = [q[0] + n[0] * set, q[1] + n[1] * set];
+            const D = discs(q, t, n, len, dep);
+            // a booth's front has to face us, or it's a row of plain backs
+            const back = k === 'booth' && !T.sees([-n[0], -n[1], 0]);
+            if (back || !D.every(([x, y, r]) => c.lawn.free(x, y, r))) {
+                run = 0;
+                s += 1;
+                continue;
+            }
+            for (const [x, y, r] of D) c.lawn.take(x, y, r);
+            const ang = Math.atan2(t[1], t[0]), mid = d => [at[0] + n[0] * d, at[1] + n[1] * d];
+            S.kind = INK;
+            if (k === 'booth') booth(T, axes([at[0] - t[0] * len / 2, at[1] - t[1] * len / 2, 0], [t[0], t[1], 0], [n[0], n[1], 0], Z), len - 0.15, rng);
+            else if (k === 'van') foodVan(T, ...mid(dep / 2 + 0.2), ang, rng);
+            else if (k === 'wagon') wagon(T, ...mid(dep / 2), ang, rng);
+            else if (k === 'kiosk') kiosk(T, ...mid(dep / 2), rng);
+            else if (k === 'cart') cart(T, ...mid(dep / 2), 0, rng);
+            else if (k === 'table') bistro(T, ...mid(dep / 2), 0, rng, rng.chance(0.7));
+            else flowerBed(T, ...mid(dep / 2), 1.1, rng);
+            run--;
+            s += len + (k === 'booth' && run ? 0.05 : rng.range(0.5, 1.5));
+        }
+    }
+
+    // A few things out on the open grass: sideshows, kiddie rides and tents
+    function fill(T, c, rng, mix) {
+        const S = T.S, cap = Math.round(c.r * c.r * 0.03 * T.p.busy), here = {};
+        for (let placed = 0, misses = 0; placed < cap && misses < 6;) {
+            // one marquee a lawn, or they bunch up once everything else has run out
+            const ok = Object.keys(mix).filter(k => (T.made[k] || 0) < (MOST[k] || Infinity) && !(k === 'marquee' && here.marquee));
+            if (!ok.length) return;
+            const k = rng.weighted(ok.map(q => [mix[q], q])), r = k === 'marquee' ? rng.range(2.3, 3.4) : ROOM[k];
+            const at = c.lawn.place(rng, (k === 'marquee' ? r + 0.4 : r) + 0.5, 30);
+            if (!at) { misses++; continue; }
+            T.made[k] = (T.made[k] || 0) + 1;
+            here[k] = true;
+            placed++;
+            const [x, y] = at, { at: e } = c.lawn.edge(x, y), along = Math.atan2(e[1] - y, e[0] - x) + Math.PI / 2;
+            S.kind = INK;
+            if (k === 'marquee') marquee(T, x, y, r, rng);
+            else if (k === 'wagon') wagon(T, x, y, along, rng);
+            else if (k === 'striker') striker(T, x, y, rng);
+            else if (k === 'kiddie') kiddie(T, x, y, rng);
+            else if (k === 'ducks') hookDuck(T, x, y, rng);
+            else if (k === 'boats') swingBoats(T, x, y, rng.range(0, TAU), rng);
+            else if (k === 'table') bistro(T, x, y, 0, rng, rng.chance(0.7));
+            else flowerBed(T, x, y, rng.range(0.9, 1.3), rng);
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Layout
     // ------------------------------------------------------------------
 
@@ -1153,7 +1452,7 @@
                 // nothing tall anywhere under the rim, which reaches well into the cells either side
                 for (const o of on) {
                     const dx = o.x - c.x, dy = o.y - c.y;
-                    if (o !== c && Math.abs(dx * c.E[0] + dy * c.E[1]) < c.R + o.r && Math.abs(dy * c.E[0] - dx * c.E[1]) < o.r + 4) o.underWheel = true;
+                    if (o !== c && Math.abs(dx * c.E[0] + dy * c.E[1]) < c.R + o.r && Math.abs(dy * c.E[0] - dx * c.E[1]) < o.r + 4) o.underWheel = c;
                 }
                 // and no other showpiece behind it on the page, or the two read as one tangle
                 const up = (2 * c.R + 2.8) * cm.k * cm.ce;
@@ -1209,23 +1508,26 @@
         const { x, y, r } = c;
         S.kind = INK;
         const trees = n => Math.round(n * p.trees * rng.range(0.6, 1.4));
+        // keep clear under the wheel, here and on the lawns either side
+        const w = c.kind === 'wheel' ? c : c.underWheel;
+        if (w) for (let q = -w.R; q <= w.R; q += 3) c.lawn.take(w.x + w.E[0] * q, w.y + w.E[1] * q, 4.8);
         if (c.kind === 'wheel') {
-            const { R, E } = c;
-            bigWheel(T, x, y, R, E, rng);
-            // keep clear under the wheel, trees either side
-            for (let q = -R; q <= R; q += 3) c.lawn.take(x + E[0] * q, y + E[1] * q, 4.8);
-            greenery(T, c, rng, trees(3));
+            // only trees round it, anything busier shows through the spokes
+            bigWheel(T, x, y, c.R, c.E, rng);
+            greenery(T, c, rng, trees(4));
             return;
         }
         if (c.kind === 'coaster') {
             const A = geo.insetConvex(c.poly, 2.4), B = geo.insetConvex(c.partner.poly, 2.4);
             if (A.length < 3 || B.length < 3) return;
             const onLawn = (px, py) => c.lawn.inside(px, py, 0.5) || c.partner.lawn.inside(px, py, 0.5);
-            const { pts, station } = coaster(T, A, B, [c.x, c.y], [c.partner.x, c.partner.y], onLawn, rng);
+            const { pts, zs, station } = coaster(T, A, B, [c.x, c.y], [c.partner.x, c.partner.y], onLawn, rng);
             // trees inside the loops, clear of the track
             for (const cc of [c, c.partner]) {
-                for (let i = 0; i < pts.length; i += 2) cc.lawn.take(pts[i][0], pts[i][1], 2.8);
+                // the posts splay out wider under the tall parts
+                for (let i = 0; i < pts.length; i += 2) cc.lawn.take(pts[i][0], pts[i][1], 2.8 + zs[i] * 0.12);
                 cc.lawn.take(station[0], station[1], 6);
+                fill(T, cc, rng, OPEN.big);
                 greenery(T, cc, rng, trees(3));
             }
             return;
@@ -1234,6 +1536,7 @@
         if (c.kind === 'lake') {
             const lk = lake(T, c, rng);
             if (lk) lakes.push(lk);
+            midway(T, c, rng, EDGE.big);
             greenery(T, c, rng, trees(3));
             return;
         }
@@ -1242,6 +1545,7 @@
             // capped so the middle never gets a maze, which crowds the track
             const room = railway(T, c, rng);
             if (room > 2.5) garden(T, c, rng, Math.min(room, 8.5));
+            fill(T, c, rng, OPEN.garden);
             greenery(T, c, rng, trees(3));
             return;
         }
@@ -1292,43 +1596,20 @@
                 const at = c.lawn.place(rng, 1.4);
                 if (at) { S.kind = INK; cart(T, at[0], at[1], 0, rng); }
             }
-        } else if (c.kind === 'stalls') {
-            stalls(T, c, rng);
-        } else {
+        } else if (c.kind !== 'stalls') {
             garden(T, c, rng);
         }
         if (rr) {
             c.lawn.take(x, y, rr);
             if (c.kind !== 'helter') queue(T, c, rr, rng);
         }
-        greenery(T, c, rng, trees(c.kind === 'garden' ? 5 : 2));
+        // lamps and bunting along the paths first, then rows of stalls behind
+        // them, a few things out on the grass and trees in whatever's left
         if (p.bunting > 0) bunting(T, c, rng);
-    }
-
-    // Rows of game stalls along the edges of a lawn, facing the paths
-    function stalls(T, c, rng) {
-        const P = c.poly;
-        for (let i = 0; i < P.length; i++) {
-            const a = P[i], b = P[(i + 1) % P.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
-            if (L < 7) continue;
-            const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
-            // v points into the lawn
-            const into = geo.pointInPolygon(a[0] + ux * L / 2 - uy, a[1] + uy * L / 2 + ux, c.lawn.poly) ? 1 : -1;
-            const vx = -uy * into, vy = ux * into;
-            // only along edges where we'd see the fronts, not a row of backs
-            if (vx * T.cam.fx + vy * T.cam.fy < 0.15) continue;
-            for (let s = 1.6; s < L - 4; ) {
-                const w = rng.range(2.8, 3.6);
-                if (s + w > L - 1.6) break;
-                const mx = a[0] + ux * (s + w / 2) + vx * 1.6, my = a[1] + uy * (s + w / 2) + vy * 1.6;
-                if (c.lawn.free(mx, my, 1.2) && c.lawn.inside(a[0] + ux * s + vx * 0.3, a[1] + uy * s + vy * 0.3, 0.1) && c.lawn.inside(a[0] + ux * (s + w) + vx * 0.3, a[1] + uy * (s + w) + vy * 0.3, 0.1)) {
-                    T.S.kind = INK;
-                    booth(T, axes([a[0] + ux * s + vx * 0.3, a[1] + uy * s + vy * 0.3, 0], [ux, uy, 0], [vx, vy, 0], Z), w, rng);
-                    c.lawn.take(mx, my, w / 2 + 0.4);
-                }
-                s += w + rng.range(0.3, 1.2);
-            }
-        }
+        const sort = rr ? 'ride' : c.kind;
+        midway(T, c, rng, EDGE[sort]);
+        fill(T, c, rng, OPEN[sort]);
+        greenery(T, c, rng, trees(c.kind === 'garden' ? 5 : 3));
     }
 
     // Garden: a fountain, bandstand, maze or flower bed in the middle, more
@@ -1525,6 +1806,8 @@
                 hint: 'Chance of a lake with swan pedalos' },
             { id: 'stalls', label: 'Game stalls', type: 'range', min: 0, max: 1, step: 0.01, value: 0.5, random: [0.2, 0.9],
                 hint: 'Share of the leftover patches lined with stalls instead of gardens' },
+            { id: 'busy', label: 'Sideshows', type: 'range', min: 0, max: 1, step: 0.01, value: 0.75, random: [0.4, 1],
+                hint: 'How much of the spare grass gets packed with tents, vans and sideshows' },
             { type: 'section', label: 'Details' },
             { id: 'people', label: 'People', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.3, 1] },
             { id: 'trees', label: 'Trees', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.3, 1] },
@@ -1559,6 +1842,7 @@
             const T = {
                 S, cam, p, k,
                 detail: p.detail,
+                made: {},
                 sees: n => cam.facing(n[0], n[1], n[2]),
                 segs: r => segments(r, k),
                 picket: Math.max(0.28, 0.9 / k),
