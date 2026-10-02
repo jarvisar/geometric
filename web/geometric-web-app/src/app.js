@@ -1394,16 +1394,25 @@
             const section = el('section', { 'data-cat': cat }, el('h3', { class: 'gallery-cat', text: cat }));
             const cards = el('div', { class: 'cards' });
             for (const def of gens) {
-                const thumb = el('canvas', { class: 'thumb', width: 320, height: 320 });
-                const card = el('button', { class: 'card' + (def.id === state.gen ? ' current' : ''), type: 'button', 'data-id': def.id,
-                    'data-search': `${def.name} ${def.description || ''} ${def.category} ${def.id}`.toLowerCase() },
-                thumb,
-                el('div', { class: 'card-text' }, el('div', { class: 'card-name', text: def.name }), el('div', { class: 'card-desc', text: def.description || '' })));
-                card.addEventListener('click', () => selectGenerator(def.id));
-                cards.append(card);
-                const cached = thumbCache.get(def.id);
-                if (cached) thumb.getContext('2d').drawImage(cached, 0, 0);
-                else thumbQueue.push([def, thumb]);
+                // A design with gallery presets (Image) gets a card per preset instead of one for itself
+                const entries = def.gallery ? def.gallery.map((g, i) => ({ ...g, key: `${def.id}:${i}` }))
+                    : [{ name: def.name, description: def.description, key: def.id }];
+                const params = currentParams(def);
+                for (const entry of entries) {
+                    // `params` picks the card's highlight, `preview` (e.g. a demo picture) is applied too so the result matches the thumbnail
+                    const preset = { ...entry.preview, ...entry.params };
+                    const current = def.id === state.gen && Object.entries(entry.params || {}).every(([k, v]) => params[k] === v);
+                    const thumb = el('canvas', { class: 'thumb', width: 320, height: 320 });
+                    const card = el('button', { class: 'card' + (current ? ' current' : ''), type: 'button', 'data-id': def.id,
+                        'data-search': `${entry.name} ${entry.description || ''} ${def.name} ${def.category} ${def.id}`.toLowerCase() },
+                    thumb,
+                    el('div', { class: 'card-text' }, el('div', { class: 'card-name', text: entry.name }), el('div', { class: 'card-desc', text: entry.description || '' })));
+                    card.addEventListener('click', () => selectGenerator(def.id, preset));
+                    cards.append(card);
+                    const cached = thumbCache.get(entry.key);
+                    if (cached) thumb.getContext('2d').drawImage(cached, 0, 0);
+                    else thumbQueue.push([def, thumb, Object.assign(PG.defaultParams(def), preset), entry.key]);
+                }
             }
             section.append(cards);
             body.append(section);
@@ -1423,13 +1432,12 @@
         if (!thumbQueue.length) return;
         const version = thumbVersion;
         thumbTimer = setTimeout(async () => {
-            const [def, canvasEl] = thumbQueue.shift();
-            await renderThumb(def, canvasEl);
+            await renderThumb(...thumbQueue.shift());
             if (version === thumbVersion) pumpThumbs();
         }, 16);
     }
 
-    async function renderThumb(def, canvasEl) {
+    async function renderThumb(def, canvasEl, params = PG.defaultParams(def), key = def.id) {
         // near-A4 scale, since fill designs size their features in real millimetres
         const size = 190;
         const S = {
@@ -1438,7 +1446,7 @@
         };
         const g = canvasEl.getContext('2d');
         try {
-            const res = await thumbRunner.run({ gen: def.id, params: PG.defaultParams(def), settings: S, images: {} });
+            const res = await thumbRunner.run({ gen: def.id, params, settings: S, images: {} });
             const k = canvasEl.width / size;
             PG.drawResult(g, res, { scale: k, ox: 0, oy: 0 },
                 { paper: { w: size, h: size }, paperColor: state.paper.color, pens: state.pens, minLinePx: 0.9, hairline: true });
@@ -1448,7 +1456,7 @@
         }
         const copy = el('canvas', { width: canvasEl.width, height: canvasEl.height });
         copy.getContext('2d').drawImage(canvasEl, 0, 0);
-        thumbCache.set(def.id, copy);
+        thumbCache.set(key, copy);
     }
 
     function filterGallery(text) {
@@ -1464,9 +1472,10 @@
         });
     }
 
-    function selectGenerator(id) {
+    function selectGenerator(id, preset) {
         if (!PG.byId[id]) return;
         state.gen = id;
+        if (preset) Object.assign(currentParams(PG.byId[id]), preset);
         closeGallery();
         designChanged();
         requestGenerate();

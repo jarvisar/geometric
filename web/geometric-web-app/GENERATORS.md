@@ -101,6 +101,11 @@ pass explicit `segs` or a smaller `tol` there.
 * `section`: a heading, no value.
 * `show: p => bool` hides a control when irrelevant.
 * `randomize(rng, p)` can return curated values (e.g. gear ratios that close nicely).
+* `gallery: [{ name, description, params, preview }]` shows one gallery card per
+  entry instead of one for the design. Picking a card applies `params` and
+  `preview` to the design. `params` decides which card is highlighted, `preview`
+  is for things like a demo picture that just suits the thumbnail. Image uses
+  this for its modes.
 
 ## Plotter etiquette
 

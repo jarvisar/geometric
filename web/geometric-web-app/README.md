@@ -63,7 +63,7 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 * **Cosmic Comics**: comic pages of little alien landscapes. The panels come from recursive cuts, and the time of day moves along the page, from day into night, night into day, or with a planet getting closer. There are faceted mountains, lakes, mesas and arches, moons, crystal worlds, puffy clouds with hatched undersides, ringed planets, sunbursts and the odd flying saucer. Each page keeps one sky style per time of day, and the mountains go dark once the sun is down. A little astronaut turns up across the panels, sometimes in a big over-the-shoulder shot in the feature panel. Also works as a contact sheet or a single postcard.
 
 **Image**
-* **Image**: turns a photo into a squiggle spiral, squiggled rows, cross-hatching or a single-line TSP portrait. Works with a built-in demo scene until you drop in a picture.
+* **Image**: turns a photo into plotter lines. Each style has its own card in the gallery: squiggle spiral, squiggle rows, waves with hidden lines, cross-hatch, engraving-style flow lines, contours, halftone, stipple, TSP art, scribble loops, an adaptive Hilbert curve and string art. They're all modes of one design, so a loaded photo carries over when you switch. Until you drop in a picture it uses a built-in demo, either spheres, the moon or Saturn.
 
 Any design can also be laid out as a **grid** on one sheet. Each cell gets its own seed or its own random parameters, or one parameter sweeps from cell to cell.
 
@@ -106,10 +106,12 @@ drawings, share the JSON or SVG file instead. Both include the image data.
   `Reset` puts the design's parameters back to defaults. The arrow next to it has
   `Reset everything`, which does that for every design, resets the seed, paper,
   pens and layout, and clears the locks. Undo brings it all back except the locks.
-* **Images**: the *Image* design turns a photo into spiral, squiggle, cross-hatch or
-  single-line TSP art. Drop a picture onto the preview. Photos stay in this browser
-  across reloads, and undo restores cleared or replaced photos. TSP refinement
-  counts work instead of elapsed time, so CPU speed does not change the drawing.
+* **Images**: the *Image* design turns a photo into line art in 12 styles. Drop a
+  picture onto the preview. Photos stay in this browser across reloads, and undo
+  restores cleared or replaced photos. TSP refinement and the flow line packing
+  count work instead of elapsed time, so CPU speed does not change the drawing.
+  String art works best when the subject fills the circle of pins. It stops by
+  itself once another line would make the drawing darker than the photo.
 * **Sections**: click a heading in the settings pane to collapse it. Each design
   remembers its collapsed sections. The pen-count control is at the top.
 * Press `?` in the app for all keyboard shortcuts.
