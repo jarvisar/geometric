@@ -14,8 +14,27 @@
             path.moveTo(p[0][0], p[0][1]);
             for (let i = 1; i < p.length; i++) path.lineTo(p[i][0], p[i][1]);
         }
-        layer._path2d = path;
+        // Hidden from JSON and structured clone, the scripted checks hash result layers
+        Object.defineProperty(layer, '_path2d', { value: path, configurable: true });
         return path;
+    };
+
+    // Layers drawResult can stroke, straight from packed geometry (PG.packLayers). xy can
+    // replace the packed points, e.g. with a morph frame.
+    PG.pathLayers = function (packed, xy = packed.xy) {
+        const out = [];
+        let path = 0, start = 0;
+        for (let i = 0; i < packed.pens.length; i++) {
+            const p2 = new Path2D();
+            for (; path < packed.layerEnds[i]; path++) {
+                const end = packed.ends[path];
+                p2.moveTo(xy[start * 2], xy[start * 2 + 1]);
+                for (let j = start + 1; j < end; j++) p2.lineTo(xy[j * 2], xy[j * 2 + 1]);
+                start = end;
+            }
+            out.push({ pen: packed.pens[i], _path2d: p2 });
+        }
+        return out;
     };
 
     // Draw a result onto ctx. view = { scale (px per mm), ox, oy (px) }.

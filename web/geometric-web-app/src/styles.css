@@ -630,6 +630,8 @@ select:focus-visible { outline: none; border-color: var(--focus); box-shadow: va
 }
 .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #view { cursor: grab; }
+/* The WebGL line layer sits over the paper, pointer events go through to #view */
+#lines { pointer-events: none; }
 #view.panning { cursor: grabbing; }
 
 /* one joined row of buttons */

@@ -52,6 +52,7 @@
     <script src="lib/worker-source.js"></script>
     <script src="lib/generation.js"></script>
     <script src="lib/render.js"></script>
+    <script src="lib/gl.js"></script>
     <script src="lib/export.js"></script>
     <script src="lib/loader.js"></script>
     <script type="application/ld+json">
@@ -171,6 +172,7 @@
 
         <section class="stage" id="stage">
             <canvas id="view"></canvas>
+            <canvas id="lines" aria-hidden="true"></canvas>
 
             <div class="stage-tools">
                 <button id="fitView" class="tool" title="Fit to screen (F)"><svg class="ic"><use href="#i-fit"/></svg></button>

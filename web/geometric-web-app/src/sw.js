@@ -14,7 +14,7 @@ const SHELL = [
     './', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest',
     'lib/core.js', 'lib/pens.js', 'lib/noise.js', 'lib/contours.js', 'lib/iso.js', 'lib/isokit.js', 'lib/optimize.js',
     'lib/pipeline.js', 'lib/settings.js', 'lib/images.js', 'lib/generation.js', 'lib/worker-source.js',
-    'lib/render.js', 'lib/export.js', 'lib/loader.js',
+    'lib/render.js', 'lib/gl.js', 'lib/export.js', 'lib/loader.js',
     'icons/favicon.svg', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
     'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png', 'images/svgmap-square.webp',
     ...PG.GENERATOR_FILES.map(name => `generators/${name}.js`),

@@ -323,6 +323,9 @@
             }
         }
         let layers = [...byPen.entries()].sort((a, b) => a[0] - b[0]).map(([pen, paths]) => ({ pen, paths }));
+        // The preview morphs between drawings using the geometry from before optimising, since
+        // merging and sorting change the path order from one drawing to the next
+        const motion = extra.motion ? layers : null;
 
         const T3 = performance.now();
         const rawStats = PG.optimize.stats(layers);
@@ -352,10 +355,75 @@
 
         const stats = PG.optimize.stats(layers);
         const T4 = performance.now();
-        return {
-            layers, stats, rawStats, outlines,
+        const res = {
+            gen: def.id, layers, stats, rawStats, outlines,
             area: { x: m, y: m, w: W, h: H },
             timing: { generate: genMs, place: T3 - T0 - genMs, optimize: T4 - T3, total: T4 - T0 },
         };
+        if (motion) res.motion = motion;
+        return res;
+    };
+
+    // ------------------------------------------------------------------
+    // Results cross from the worker as flat arrays: x, y pairs in one Float64Array plus the
+    // index where each path and layer ends. Structured clone of nested [x, y] arrays took
+    // 10-25 ms on the main thread for the big scenes. Float64 keeps exports exact.
+    // ------------------------------------------------------------------
+    PG.packLayers = function (layers) {
+        let points = 0, paths = 0;
+        for (const l of layers) { paths += l.paths.length; for (const p of l.paths) points += p.length; }
+        const xy = new Float64Array(points * 2), ends = new Uint32Array(paths);
+        const pens = new Uint8Array(layers.length), layerEnds = new Uint32Array(layers.length);
+        let k = 0, n = 0;
+        layers.forEach((l, i) => {
+            pens[i] = l.pen;
+            for (const p of l.paths) {
+                for (const q of p) { xy[k++] = q[0]; xy[k++] = q[1]; }
+                ends[n++] = k / 2;
+            }
+            layerEnds[i] = n;
+        });
+        return { xy, ends, pens, layerEnds };
+    };
+
+    PG.unpackLayers = function ({ xy, ends, pens, layerEnds }) {
+        const layers = [];
+        let path = 0, start = 0;
+        for (let i = 0; i < pens.length; i++) {
+            const paths = [];
+            for (; path < layerEnds[i]; path++) {
+                const end = ends[path], p = new Array(end - start);
+                for (let j = start; j < end; j++) p[j - start] = [xy[j * 2], xy[j * 2 + 1]];
+                paths.push(p);
+                start = end;
+            }
+            layers.push({ pen: pens[i], paths });
+        }
+        return layers;
+    };
+
+    // Morphing redraws the whole drawing every frame, so bigger ones only get the crossfade
+    const MOTION_POINTS = 150000;
+    PG.packResult = function (result) {
+        const { layers, motion, ...rest } = result;
+        const out = Object.assign(rest, {
+            packed: PG.packLayers(layers),
+            layerStats: layers.map(l => Object.assign({ pen: l.pen }, PG.optimize.stats([l]))),
+        });
+        let points = 0;
+        if (motion) for (const l of motion) for (const p of l.paths) points += p.length;
+        if (motion && points <= MOTION_POINTS) out.motion = PG.packLayers(motion);
+        return out;
+    };
+    PG.transferList = r => [r.packed, r.motion].filter(Boolean).flatMap(p => [p.xy.buffer, p.ends.buffer, p.pens.buffer, p.layerEnds.buffer]);
+
+    // layers is only rebuilt as nested arrays when something asks for it (exports, thumbnails).
+    // The preview draws straight from the flat arrays.
+    PG.unpackResult = function (data) {
+        let layers = null;
+        return Object.defineProperty(data, 'layers', {
+            enumerable: true, configurable: true,
+            get: () => layers || (layers = PG.unpackLayers(data.packed)),
+        });
     };
 })();

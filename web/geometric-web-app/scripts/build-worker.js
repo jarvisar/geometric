@@ -10,8 +10,8 @@ const files = ['core', 'pens', 'noise', 'contours', 'iso', 'isokit', 'optimize',
 const source = files.map(f => fs.readFileSync(path.join(src, f), 'utf8').replace(/\r\n/g, '\n')).join('\n') + `
 self.onmessage = ({ data: job }) => {
     try {
-        const result = PG.run(PG.byId[job.gen], job.params, job.settings, { images: job.images });
-        self.postMessage({ result });
+        const result = PG.packResult(PG.run(PG.byId[job.gen], job.params, job.settings, { images: job.images, motion: job.motion }));
+        self.postMessage({ result }, PG.transferList(result));
     } catch (err) { self.postMessage({ error: err.message }); }
 };
 `;

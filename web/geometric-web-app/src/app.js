@@ -197,7 +197,7 @@
         next.images = { ...state.images, ...next.images, [next.gen]: next.images[next.gen] || {} };
         const runner = new PG.GenerationRunner();
         let nextResult;
-        try { nextResult = await runner.run(generationJob(next)); }
+        try { nextResult = await runner.run({ ...generationJob(next), motion: true }); }
         finally { runner.dispose(); }
         if (version !== restoreVersion || before !== JSON.stringify({ ...state, ui: undefined })) throw new Error('Settings changed while loading. Try again.');
         const previous = { state, result, lastGenMs, resultKey };
@@ -216,13 +216,14 @@
         }
         // Preview jobs still running for the old settings finish, but their versions are now too old to show
         preview.drop();
+        cachePut(resultKey, result);
         clearTimeout(genTimer);
         genTimer = 0;
         setError(null);
         settle(++generationVersion);
         renderStats();
         renderPenUsage();
-        beginFade();
+        beginTransition(previous.result);
         draw();
         commit();
         scheduleSave();
@@ -325,16 +326,24 @@
         currentParams(def);
         constrainLayout();
         const key = geometryKey();
-        // e.g. letting go of a slider at the value that's already drawn
-        if (!force && key === resultKey) {
-            settle(version);
-            return done;
+        let job = null, failure = null;
+        // generationJob throws when a saved photo is missing, which should show up like any failed run
+        try { job = generationJob(); } catch (err) { failure = err; }
+        if (!failure && !force) {
+            // e.g. letting go of a slider at the value that's already drawn
+            if (key === resultKey) {
+                settle(version);
+                return done;
+            }
+            const hit = cacheGet(key);
+            if (hit) {
+                preview.drop();
+                present(hit, key, version);
+                return done;
+            }
         }
         setBusy(true);
-        let run;
-        // generationJob throws when a saved photo is missing, which should show up like any failed run
-        try { run = preview.run(generationJob(), { live, key: force ? null : key }); }
-        catch (err) { run = Promise.reject(err); }
+        const run = failure ? Promise.reject(failure) : preview.run({ ...job, motion: true }, { live, key: force ? null : key });
         run.then(next => {
             if (!next || version <= shownVersion) return;
             // Requests for the same settings share a job, and the first one already put it up
@@ -342,28 +351,57 @@
                 settle(version);
                 return;
             }
-            result = next;
-            resultKey = key;
-            lastGenMs = next.timing.total;
-            setError(null);
-            showResult(version);
+            present(next, key, version);
         }, err => {
             if (err.name === 'AbortError' || version !== generationVersion) return;
             setError(`${def.name}: ${err.message}`);
+            const prev = result;
             result = null;
             resultKey = '';
-            showResult(version);
+            showResult(version, prev);
         });
         return done;
     }
 
-    function showResult(version) {
+    function present(next, key, version) {
+        cachePut(key, next);
+        const prev = result;
+        result = next;
+        resultKey = key;
+        lastGenMs = next.timing.total;
+        setError(null);
+        showResult(version, prev);
+    }
+
+    function showResult(version, prev) {
         settle(version);
         renderStats();
         renderPenUsage();
-        beginFade();
+        beginTransition(prev);
         draw();
         scheduleSave();
+    }
+
+    // Recent drawings by geometry key, so dragging back over a value, undo and redo put them up
+    // without generating again. Limited by the size of their flat geometry.
+    const CACHE_BYTES = 64 * 1024 * 1024;
+    const resultCache = new Map();
+    let cacheBytes = 0;
+    const sizeOf = r => r.packed.xy.byteLength + (r.motion ? r.motion.xy.byteLength : 0);
+    function cacheGet(key) {
+        const r = resultCache.get(key);
+        if (r) { resultCache.delete(key); resultCache.set(key, r); }
+        return r;
+    }
+    function cachePut(key, r) {
+        if (!r.packed || resultCache.has(key)) return;
+        resultCache.set(key, r);
+        cacheBytes += sizeOf(r);
+        for (const [k, old] of resultCache) {
+            if (cacheBytes <= CACHE_BYTES || old === r) break;
+            resultCache.delete(k);
+            cacheBytes -= sizeOf(old);
+        }
     }
 
     // Anything older than a version that's up won't be shown, so its waiters are done too.
@@ -376,12 +414,8 @@
     }
 
     const hiddenPens = () => new Set(state.pens.map((p, i) => (p.visible ? -1 : i)).filter(i => i >= 0));
-
-    function visibleResult() {
-        if (!result) return null;
-        const hidden = hiddenPens();
-        return Object.assign({}, result, { layers: result.layers.filter(l => !hidden.has(l.pen)) });
-    }
+    // Per-pen stats come with the result, so the stats bar never rebuilds the nested paths
+    const layerStats = r => r.layerStats || r.layers.map(l => Object.assign({ pen: l.pen }, PG.optimize.stats([l])));
 
     function setBusy(on) { $('#busy').hidden = !on; }
     function setError(msg) {
@@ -396,13 +430,14 @@
         const bar = $('#stats');
         bar.innerHTML = '';
         if (!result) return;
-        const vis = visibleResult();
-        const st = PG.optimize.stats(vis.layers);
+        const hidden = hiddenPens();
+        const vis = layerStats(result).filter(l => !hidden.has(l.pen));
+        const paths = vis.reduce((n, l) => n + l.paths, 0), points = vis.reduce((n, l) => n + l.points, 0);
         const stat = (cls, ...kids) => el('span', { class: 'stat ' + (cls || '') }, ...kids);
         const items = [
-            stat('', el('b', { text: fmtCount(st.paths) }), st.paths === 1 ? 'path' : 'paths'),
-            stat('', el('b', { text: fmtCount(st.points) }), 'points'),
-            vis.layers.length > 1 ? stat('', el('b', { text: vis.layers.length }), 'pens') : null,
+            stat('', el('b', { text: fmtCount(paths) }), paths === 1 ? 'path' : 'paths'),
+            stat('', el('b', { text: fmtCount(points) }), 'points'),
+            vis.length > 1 ? stat('', el('b', { text: vis.length }), 'pens') : null,
             stat('dim', `${Math.round(lastGenMs)} ms`),
         ];
         bar.append(...items.filter(Boolean));
@@ -427,6 +462,7 @@
         padBottom = $('#stats').offsetParent ? 72 : 30;
         canvas.width = Math.round(cw * dpr);
         canvas.height = Math.round(ch * dpr);
+        if (glLines) glLines.resize(canvas.width, canvas.height);
         draw();
     }
 
@@ -464,6 +500,17 @@
         return JSON.stringify([paper, state.pens, state.view.margin, state.view.penWidth]);
     }
 
+    // With WebGL2 the lines go on a second canvas over this one (lib/gl.js). Canvas2D is the fallback.
+    const glLines = PG.GLLines ? PG.GLLines.create($('#lines')) : null;
+    const useGL = () => !!glLines && glLines.ok;
+
+    // While the paper size changes, the last drawing is scaled onto the new sheet until its replacement is in
+    function placement(area, v) {
+        const P = state.paper, pw = area.x * 2 + area.w, ph = area.y * 2 + area.h;
+        const k = Math.min(P.w / pw, P.h / ph);
+        return { scale: v.scale * k, ox: v.ox + ((P.w - pw * k) / 2) * v.scale, oy: v.oy + ((P.h - ph * k) / 2) * v.scale };
+    }
+
     function draw() {
         if (!cw) return;
         const ctx = canvas.getContext('2d');
@@ -471,88 +518,177 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         const v = viewTransform();
         drawPaper(ctx, v);
-        if (result) {
-            // While the paper size changes, the last drawing is scaled onto the new sheet until its replacement is in
-            const P = state.paper, pw = result.area.x * 2 + result.area.w, ph = result.area.y * 2 + result.area.h;
-            const k = Math.min(P.w / pw, P.h / ph);
-            const placed = { scale: v.scale * k, ox: v.ox + ((P.w - pw * k) / 2) * v.scale, oy: v.oy + ((P.h - ph * k) / 2) * v.scale };
-            PG.drawResult(ctx, result, placed, {
-                paper: { w: pw, h: ph },
-                pens: state.pens,
-                showMargin: state.view.margin,
-                hidden: hiddenPens(),
-                minLinePx: 0.8 * dpr,
-                hairline: !state.view.penWidth,
-            });
+        if (result && state.view.margin) {
+            PG.drawResult(ctx, { layers: [], outlines: result.outlines }, placement(result.area, v), { paper: state.paper, showMargin: true });
         }
+        drawLines(v);
         drawnLook = lookKey();
         $('#zoomLabel').textContent = `${Math.round(v.css.s * MM_PER_CSS_PX * 100)}%`;
-        continueFade();
     }
 
-    // ---- crossfade
-    // A new drawing fades in over the last one. The old frame is a snapshot of the canvas, so a fade
-    // costs two drawImage calls a frame instead of stroking both drawings again.
-    const FADE_MS = 150;
-    const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const fadeFrom = document.createElement('canvas'), fadeTo = document.createElement('canvas');
-    let fade = null, fadeFrame = 0, lastShownAt = 0;
-
-    const viewSignature = () => { const v = viewTransform(); return [canvas.width, canvas.height, v.scale, v.ox, v.oy].join(); };
-    function copyCanvas(target) {
-        if (target.width !== canvas.width || target.height !== canvas.height) {
-            target.width = canvas.width;
-            target.height = canvas.height;
+    // Transition frames only redraw the lines. On the Canvas2D fallback that means the whole canvas.
+    function drawLines(v = viewTransform()) {
+        const items = frameItems(performance.now());
+        const opts = { pens: state.pens, hidden: hiddenPens(), minLinePx: 0.8 * dpr, hairline: !state.view.penWidth };
+        if (useGL()) {
+            const clip = { x: v.ox, y: v.oy, w: state.paper.w * v.scale, h: state.paper.h * v.scale };
+            glLines.draw(items.map(it => ({ ...it, transform: placement(it.area, v) })), { ...opts, clip });
+        } else {
+            const ctx = canvas.getContext('2d');
+            for (const it of items) {
+                if (it.opacity > 0) PG.drawResult(ctx, { layers: paths2d(it) }, placement(it.area, v), { ...opts, alpha: it.opacity });
+            }
         }
-        const g = target.getContext('2d');
-        g.clearRect(0, 0, target.width, target.height);
-        g.drawImage(canvas, 0, 0);
+        if (trans && !transFrame) transFrame = requestAnimationFrame(stepTransition);
     }
 
-    // Call right before draw() puts up a new drawing.
-    function beginFade() {
+    // Canvas2D fallback: Path2D layers for an item. The last couple of static ones are kept.
+    const paths2dMemo = new Map();
+    function paths2d(it) {
+        if (it.xy2) return PG.pathLayers(it.geo, lerpPoints(it.xy, it.xy2, it.t));
+        let layers = paths2dMemo.get(it.xy);
+        if (!layers) {
+            paths2dMemo.set(it.xy, (layers = PG.pathLayers(it.geo, it.xy)));
+            if (paths2dMemo.size > 2) paths2dMemo.delete(paths2dMemo.keys().next().value);
+        }
+        return layers;
+    }
+
+    // ---- transitions
+    // A new drawing morphs from the last one when both have the same paths (most curves while
+    // dragging, some Randomize results), otherwise it crossfades. Morphs use the unoptimised
+    // geometry from the worker and the real drawing goes up when they end.
+    //
+    // Each lasts as long as the time since the last drawing. Dragging a fast design already
+    // changes it every frame, and a long transition there just smears it. One that's still
+    // running keeps at least the time it had left, so a drawing landing right after another
+    // doesn't cut it off.
+    const FADE_MS = 150, MORPH_MS = 220;
+    const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let trans = null, transFrame = 0, lastShownAt = 0;
+
+    const itemOf = (r, opacity = 1) => {
+        if (!r.packed) r.packed = PG.packLayers(r.layers);
+        return { geo: r.packed, xy: r.packed.xy, area: r.area, opacity };
+    };
+    const progress = (tr, now) => Math.min(1, Math.max(0, (now - tr.start) / tr.dur));
+    const smooth = t => t * t * (3 - 2 * t);
+    function lerpPoints(a, b, t) {
+        const out = new Float64Array(b.length);
+        for (let i = 0; i < out.length; i++) out[i] = a[i] + (b[i] - a[i]) * t;
+        return out;
+    }
+
+    // What's on the paper at this moment, as items to draw in order.
+    function frameItems(now) {
+        if (trans && (progress(trans, now) >= 1 || (trans.kind === 'morph' && !result))) trans = null;
+        if (!trans) return result ? [itemOf(result)] : [];
+        const t = progress(trans, now);
+        if (trans.kind === 'morph') {
+            return [{ geo: trans.geo, xy: trans.from, xy2: trans.to, t: trans.steady ? t : smooth(t), area: result.area, opacity: 1 }];
+        }
+        const items = trans.from.map(f => ({ ...f, opacity: f.opacity * (1 - t) }));
+        if (result) items.push(itemOf(result, t));
+        return items;
+    }
+
+    // Call right before draw() puts up a new drawing. prev is the drawing it replaces.
+    function beginTransition(prev) {
         const now = performance.now();
-        // Fade over the time since the last drawing. Dragging a fast design already changes it every
-        // frame, and a long fade there just smears it. A fade that's still running keeps at least the
-        // time it had left, so a drawing landing right after another doesn't cut it off.
-        let dur = Math.min(FADE_MS, now - lastShownAt);
-        if (fade) dur = Math.max(dur, fade.start + fade.dur - now);
+        const since = now - lastShownAt, left = trans ? trans.start + trans.dur - now : 0;
+        const running = trans && progress(trans, now) < 1 ? trans : null;
+        // What's on screen becomes the start of the next transition. Mid-fade the drawing that was
+        // fading in keeps the strength it had got to, and at most two older ones stay behind it.
+        let shown = [];
+        if (running && running.kind === 'morph' && prev) {
+            const t = progress(running, now);
+            shown = [{ geo: running.geo, xy: lerpPoints(running.from, running.to, running.steady ? t : smooth(t)), area: prev.area, opacity: 1 }];
+        } else if (running) {
+            const t = progress(running, now);
+            shown = running.from.map(f => ({ ...f, opacity: f.opacity * (1 - t) }));
+            if (prev) shown.push(itemOf(prev, t));
+            shown = shown.filter(f => f.opacity > 0.02).slice(-3);
+        } else if (prev) shown = [itemOf(prev)];
         lastShownAt = now;
-        fade = null;
-        if (!cw || REDUCED_MOTION.matches || dur < 34) return;
-        // Mid-fade the canvas holds the blend, so the next fade carries on from what's on screen
-        copyCanvas(fadeFrom);
-        fade = { start: now, dur, view: viewSignature() };
+        trans = null;
+        if (!cw || REDUCED_MOTION.matches) return;
+        const morphDur = Math.max(Math.min(MORPH_MS, since), left);
+        if (morphDur >= 34 && beginMorph(prev, running, shown, morphDur, now)) return;
+        const dur = Math.max(Math.min(FADE_MS, since), left);
+        if (dur >= 34 && (shown.length || result)) trans = { kind: 'fade', from: shown, start: now, dur };
     }
 
-    function continueFade() {
-        if (!fade) return;
-        // Zooming, panning or resizing moved the paper, so the old snapshot no longer lines up
-        if (fade.view !== viewSignature()) { fade = null; return; }
-        copyCanvas(fadeTo);
-        paintFade();
+    const paperOf = r => `${r.area.x * 2 + r.area.w}x${r.area.y * 2 + r.area.h}`;
+    function sameShape(a, b) {
+        if (a.pens.length !== b.pens.length || a.ends.length !== b.ends.length) return false;
+        for (let i = 0; i < a.pens.length; i++) if (a.pens[i] !== b.pens[i] || a.layerEnds[i] !== b.layerEnds[i]) return false;
+        return true;
     }
 
-    function paintFade() {
-        cancelAnimationFrame(fadeFrame);
-        fadeFrame = 0;
-        if (!fade) return;
-        const t = Math.min(1, (performance.now() - fade.start) / fade.dur);
-        const ctx = canvas.getContext('2d');
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(fadeTo, 0, 0);
-        if (t >= 1) { fade = null; return; }
-        // Only the paper, both frames are opaque there. Blending the drop shadow would darken it.
-        const v = viewTransform();
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(v.ox, v.oy, state.paper.w * v.scale, state.paper.h * v.scale);
-        ctx.clip();
-        ctx.globalAlpha = 1 - t;
-        ctx.drawImage(fadeFrom, 0, 0);
-        ctx.restore();
-        fadeFrame = requestAnimationFrame(paintFade);
+    // Arc length resample of path s..e (point indices) of xy to n points.
+    function resample(xy, s, e, n, out, at) {
+        const m = e - s;
+        if (m < 2) {
+            for (let i = 0; i < n; i++) { out[(at + i) * 2] = xy[s * 2]; out[(at + i) * 2 + 1] = xy[s * 2 + 1]; }
+            return;
+        }
+        const cum = new Float64Array(m);
+        for (let i = 1; i < m; i++) {
+            const a = (s + i - 1) * 2, b = (s + i) * 2;
+            cum[i] = cum[i - 1] + Math.hypot(xy[b] - xy[a], xy[b + 1] - xy[a + 1]);
+        }
+        const L = cum[m - 1];
+        let j = 1;
+        for (let i = 0; i < n; i++) {
+            const d = n > 1 ? (i / (n - 1)) * L : 0;
+            while (j < m - 1 && cum[j] < d) j++;
+            const t = cum[j] > cum[j - 1] ? (d - cum[j - 1]) / (cum[j] - cum[j - 1]) : 0;
+            const a = (s + j - 1) * 2, b = (s + j) * 2;
+            out[(at + i) * 2] = xy[a] + (xy[b] - xy[a]) * t;
+            out[(at + i) * 2 + 1] = xy[a + 1] + (xy[b + 1] - xy[a + 1]) * t;
+        }
+    }
+
+    // Line up two drawings with the same paths point for point. Paths whose point counts differ
+    // are both resampled to the larger count.
+    function align(a, aXY, b) {
+        let same = true;
+        for (let i = 0; i < a.ends.length && same; i++) same = a.ends[i] === b.ends[i];
+        if (same) return { shape: b, from: aXY, to: b.xy };
+        const ends = new Uint32Array(a.ends.length);
+        let total = 0;
+        for (let i = 0; i < a.ends.length; i++) {
+            total += Math.max(a.ends[i] - (i ? a.ends[i - 1] : 0), b.ends[i] - (i ? b.ends[i - 1] : 0));
+            ends[i] = total;
+        }
+        const from = new Float64Array(total * 2), to = new Float64Array(total * 2);
+        for (let i = 0; i < ends.length; i++) {
+            const at = i ? ends[i - 1] : 0, n = ends[i] - at;
+            resample(aXY, i ? a.ends[i - 1] : 0, a.ends[i], n, from, at);
+            resample(b.xy, i ? b.ends[i - 1] : 0, b.ends[i], n, to, at);
+        }
+        return { shape: { pens: b.pens, layerEnds: b.layerEnds, ends }, from, to };
+    }
+
+    // Starts a morph to the current result, or returns false when it needs a crossfade instead.
+    function beginMorph(prev, running, shown, dur, now) {
+        const next = result;
+        if (!prev || !next || !next.motion || prev.gen !== next.gen || paperOf(prev) !== paperOf(next)) return false;
+        // A morph that's still running carries on from wherever it has got to
+        const chained = !!running && running.kind === 'morph';
+        const base = chained ? { geo: running.geo, xy: shown[0].xy } : prev.motion && { geo: prev.motion, xy: prev.motion.xy };
+        if (!base || !sameShape(base.geo, next.motion)) return false;
+        const { shape, from, to } = align(base.geo, base.xy, next.motion);
+        // Chained morphs while dragging move at a steady speed, a single one eases in and out
+        trans = { kind: 'morph', geo: shape, from, to, start: now, dur, steady: chained };
+        return true;
+    }
+
+    function stepTransition() {
+        transFrame = 0;
+        if (!trans) return;
+        if (!cw) { trans = null; return; }
+        if (useGL()) drawLines(); else draw();
     }
 
     function fitView() {
@@ -1088,7 +1224,7 @@
         const rows = document.querySelectorAll('#penList .pen-row');
         if (!rows.length) return;
         const usage = {};
-        if (result) for (const l of result.layers) usage[l.pen] = PG.optimize.stats([l]);
+        if (result) for (const l of layerStats(result)) usage[l.pen] = l;
         const def = currentDef(), params = currentParams(def);
         const roles = PG.pens.roles(def, params);
         const hint = $('#penAssignmentHint');

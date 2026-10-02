@@ -30,7 +30,7 @@
                             const pending = this.pending;
                             this.pending = null;
                             if (data.error) pending.reject(new Error(data.error));
-                            else pending.resolve(data.result);
+                            else pending.resolve(PG.unpackResult(data.result));
                         };
                         this.worker.onerror = event => {
                             event.preventDefault();

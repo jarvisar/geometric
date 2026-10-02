@@ -25,9 +25,13 @@ const run = job => new Promise((resolve, reject) => {
         for (const def of PG.generators) {
             const params = PG.defaultParams(def);
             const result = PG.run(def, params, settings);
-            const background = await run({ gen: def.id, params, settings, images: {} });
-            assert.deepEqual(background.layers, result.layers, `${def.id}: worker changed geometry`);
+            const background = await run({ gen: def.id, params, settings, images: {}, motion: true });
+            assert.deepEqual(PG.unpackLayers(background.packed), result.layers, `${def.id}: worker changed geometry`);
             assert.deepEqual(background.stats, result.stats);
+            if (background.motion) {
+                const raw = PG.run(def, params, settings, { motion: true }).motion;
+                assert.deepEqual(PG.unpackLayers(background.motion), raw, `${def.id}: worker changed the morph geometry`);
+            }
         }
         console.log(`All ${PG.generators.length} worker results match the synchronous pipeline`);
         const clock = globalThis.performance;
