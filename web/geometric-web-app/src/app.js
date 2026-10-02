@@ -98,7 +98,8 @@
 
     const STORAGE_KEY = 'plotter-geometry:state:v1';
     const SNAPS_KEY = 'plotter-geometry:snapshots:v1';
-    // Scenes stay out of the gallery until unlocked (Konami code, or 6 quick clicks on the logo)
+    // Scenes stay out of the gallery until unlocked (Konami code, or 6 quick clicks on the logo).
+    // The key is true once unlocked, false once a locked browser has had its old saved scene checked.
     const SCENES_KEY = 'plotter-geometry:scenes:v1';
     let scenesUnlocked = storageGet(SCENES_KEY) === true;
     const listedGenerators = () => PG.generators.filter(g => scenesUnlocked || g.category !== 'Scenes');
@@ -503,6 +504,8 @@
     // With WebGL2 the lines go on a second canvas over this one (lib/gl.js). Canvas2D is the fallback.
     const glLines = PG.GLLines ? PG.GLLines.create($('#lines')) : null;
     const useGL = () => !!glLines && glLines.ok;
+    // The lost context blanks the lines canvas, so put the drawing back with Canvas2D straight away
+    $('#lines').addEventListener('webglcontextlost', () => draw());
 
     // While the paper size changes, the last drawing is scaled onto the new sheet until its replacement is in
     function placement(area, v) {
@@ -775,13 +778,14 @@
         if (file.type.startsWith('image/')) {
             let def = currentDef();
             let q = def.params.find(p => p.type === 'image');
+            // Switch to the Image design only once the photo is in, so a bad file leaves the current drawing alone
+            let switchFrom = null;
             if (!q && PG.byId.image) {
-                state.gen = 'image';
-                def = currentDef();
+                switchFrom = state.gen;
+                def = PG.byId.image;
                 q = def.params.find(p => p.type === 'image');
-                designChanged();
             }
-            if (q) loadImageFile(file, def.id, q.id);
+            if (q) loadImageFile(file, def.id, q.id, switchFrom);
             else toast('This design does not use images', true);
         }
     }
@@ -1014,7 +1018,7 @@
         input.click();
     }
 
-    function loadImageFile(file, genId, paramId) {
+    function loadImageFile(file, genId, paramId, switchFrom = null) {
         const version = ++imageLoadVersion;
         const params = currentParams(PG.byId[genId]);
         const url = URL.createObjectURL(file);
@@ -1040,7 +1044,11 @@
                 pushUndo();
                 (state.images[genId] || (state.images[genId] = {}))[paramId] = key;
                 params[paramId] = file.name;
-                if (state.gen === genId) buildParams();
+                // Skip the switch if another design was picked while the photo loaded
+                if (switchFrom && state.gen === switchFrom) {
+                    state.gen = genId;
+                    designChanged();
+                } else if (state.gen === genId) buildParams();
                 commit();
                 requestGenerate();
                 if (saveNow()) toast(`Loaded ${file.name}`);
@@ -1962,12 +1970,15 @@
     // Initial state: share link (#s=…) > saved state > defaults. `#gen=<id>` picks a design.
     async function loadInitialState() {
         const saved = storageGet(STORAGE_KEY);
+        const scenesChecked = storageGet(SCENES_KEY) !== null;
         if (saved) {
             try { state = PG.settings.read(saved, true); }
             catch (err) { toast(`Saved settings could not be restored. Using defaults. ${err.message}`, true); }
-            // saved from before scenes were hidden; share links below can still open one
-            if (!scenesUnlocked && PG.byId[state.gen] && PG.byId[state.gen].category === 'Scenes') state.gen = PG.generators[0].id;
+            // Saved from before scenes were hidden. Only checked once, so a scene opened later from a
+            // share link or settings file is still there after a reload.
+            if (!scenesChecked && PG.byId[state.gen] && PG.byId[state.gen].category === 'Scenes') state.gen = PG.generators[0].id;
         }
+        if (!scenesChecked) storageSet(SCENES_KEY, false);
         const hash = location.hash.slice(1);
         if (hash) {
             const q = new URLSearchParams(hash);

@@ -15,12 +15,15 @@
     "check:examples": "node scripts/check-examples.js",
     "check:state": "node scripts/check-state.js",
     "check:generation": "node scripts/build-worker.js --check && node scripts/check-generation.js",
+    "check:edgecases": "node scripts/check-edgecases.js",
+    "check:boundaries": "node scripts/check-boundaries.js",
     "smoke": "node scripts/drive.js scripts/smoke.steps.js shots",
     "smoke:pens": "node scripts/drive.js scripts/pen-colors.steps.js shots",
     "smoke:alpine": "node scripts/drive.js scripts/alpine.steps.js shots/alpine-refactor",
     "smoke:examples": "node scripts/drive.js scripts/examples.steps.js shots/examples",
     "smoke:state": "node scripts/drive.js scripts/state.steps.js shots/state",
     "smoke:p2": "node scripts/drive.js scripts/p2.steps.js shots/p2",
+    "smoke:edgecases": "node scripts/drive.js scripts/edgecases.steps.js shots/edgecases",
     "sheet": "node scripts/shot.js dev/sheet.html \"variants=2&size=220\" shots/sheet.png 1100 6000"
   },
   "devDependencies": {

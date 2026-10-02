@@ -30,6 +30,13 @@ if (!browser) { console.error('No Chrome/Edge found; set CHROME=/path/to/browser
 
 const SRC = path.resolve(__dirname, '..', 'src');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+let completed = false;
+process.on('exit', () => {
+    if (!completed) {
+        console.error('Browser QA ended before completing the checks');
+        process.exitCode = 1;
+    }
+});
 
 (async () => {
     const port = 9300 + Math.floor(Math.random() * 600);
@@ -51,7 +58,18 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     if (!target) { console.error('Could not connect to the browser'); proc.kill(); process.exit(1); }
 
     const ws = new WebSocket(target.webSocketDebuggerUrl);
-    await new Promise(r => ws.addEventListener('open', r, { once: true }));
+    try {
+        await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('Timed out connecting to the browser debugger')), 10000);
+            ws.addEventListener('open', () => { clearTimeout(timer); resolve(); }, { once: true });
+            ws.addEventListener('error', () => { clearTimeout(timer); reject(new Error('Could not connect to the browser debugger')); }, { once: true });
+        });
+    } catch (err) {
+        ws.close();
+        proc.kill();
+        console.error(err.message);
+        process.exit(1);
+    }
     let nextId = 1;
     const pending = new Map();
     const waiters = [];
@@ -75,6 +93,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         for (let i = waiters.length - 1; i >= 0; i--) {
             if (waiters[i].method === msg.method) { waiters[i].resolve(msg.params); waiters.splice(i, 1); }
         }
+    });
+    ws.addEventListener('close', () => {
+        for (const { reject } of pending.values()) reject(new Error('Browser debugger disconnected'));
+        pending.clear();
     });
     const send = (method, params = {}) => new Promise((resolve, reject) => {
         const id = nextId++;
@@ -153,5 +175,6 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await sleep(300);
     try { fs.rmSync(profile, { recursive: true, force: true }); } catch (e) { /* locked */ }
     console.log(errors ? `${errors} page error(s)` : 'no page errors');
+    completed = true;
     process.exit(failed || errors ? 1 : 0);
 })();

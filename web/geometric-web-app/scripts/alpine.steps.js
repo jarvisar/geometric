@@ -8,6 +8,10 @@ const ready = async () => {
 };
 await open('index.html');
 await ready();
+// Exercise Alpine with Scenes available. Locked shared-scene reloads have a separate regression.
+await evaluate(`localStorage.setItem('plotter-geometry:scenes:v1', 'true')`);
+await open('index.html');
+await ready();
 await evaluate(`plotterApp.resetAll(); plotterApp.select('alpine');`);
 await ready();
 const setup = async () => evaluate(`

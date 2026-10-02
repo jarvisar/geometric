@@ -85,7 +85,7 @@
                 const d = r * hole;
                 if (!epi && r === R) {
                     // a gear as big as the ring can't roll: the pen just circles the centre
-                    if (ring === 0 || p.holeStep) layers[ring % p.pens].push(geo.circle(0, 0, d, 360));
+                    if (ring === 0 || p.holeStep) layers.push([geo.circle(0, 0, d, 360)]);
                     continue;
                 }
                 // with no hole change, rings rotated by a multiple of the P-fold

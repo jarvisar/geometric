@@ -76,7 +76,7 @@ for (const [button, dialog] of [['#designBtn','#gallery'], ['#keysBtn','#keysDia
     await evaluate(`document.querySelector('${opener}').focus()`);
     if (visible) await click(button); else await key('?');
     await check(`document.querySelector('${dialog}').contains(document.activeElement) && document.querySelector('${dialog}').getAttribute('aria-modal')==='true' && document.querySelector('#layout').inert`, 'modal semantics or initial focus missing');
-    await evaluate(`window.__focusable = [...document.querySelector('${dialog}').querySelectorAll('button,input')].filter(n=>!n.disabled&&n.getClientRects().length); __focusable.at(-1).focus();`);
+    await evaluate(`window.__focusable = [...document.querySelector('${dialog}').querySelectorAll('button,input,select,textarea,a[href],[tabindex]')].filter(n=>!n.disabled&&n.tabIndex>=0&&n.getClientRects().length); __focusable.at(-1).focus();`);
     await key('Tab');
     await check(`document.activeElement === __focusable[0]`, 'Tab escaped dialog');
     await key('Tab', {shift:true});
