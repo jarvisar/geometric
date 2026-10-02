@@ -1210,6 +1210,7 @@
             width.addEventListener('change', () => {
                 pen.width = clamp(+width.value || pen.width, 0.05, 5);
                 width.value = pen.width;
+                syncAllWidth();
                 draw();
                 commit();
             });
@@ -1217,6 +1218,24 @@
             list.append(el('div', { class: 'pen-row', 'data-pen': i }, eye, color, name, width, meta));
         });
         body.append(list);
+
+        // blank when the pens have different widths
+        const allWidth = el('input', { type: 'number', class: 'num', min: 0.05, max: 5, step: 0.05, placeholder: 'mixed', title: 'Set the width of every pen in mm' });
+        const syncAllWidth = () => {
+            const w = state.pens[0]?.width;
+            allWidth.value = state.pens.every(p => p.width === w) ? w : '';
+        };
+        allWidth.addEventListener('change', () => {
+            if (allWidth.value === '') return syncAllWidth();
+            const w = clamp(+allWidth.value || state.pens[0].width, 0.05, 5);
+            state.pens.forEach(p => { p.width = w; });
+            list.querySelectorAll('.pen-row .num').forEach(input => { input.value = w; });
+            allWidth.value = w;
+            draw();
+            commit();
+        });
+        syncAllWidth();
+        body.append(el('div', { class: 'pen-row pen-all' }, el('span'), el('span'), el('span', { class: 'pen-all-label', text: 'All pens' }), allWidth));
         body.append(el('p', { class: 'out-note', text: 'Width is in mm — the preview draws true-to-scale line widths. Each pen exports as its own Inkscape layer.' }));
     }
 

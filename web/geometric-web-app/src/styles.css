@@ -587,6 +587,8 @@ select:focus-visible { outline: none; border-color: var(--focus); box-shadow: va
 .pen-row .pen-name:focus { outline: none; border-color: var(--focus); background: var(--input-bg); box-shadow: var(--input-shadow), var(--focus-glow); }
 .pen-row .pen-meta { grid-column: 3 / 5; margin-top: -4px; padding-left: 7px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .pen-row .num { width: 60px; }
+.pen-all { border-top: 1px solid var(--bar-border); margin-top: 2px; }
+.pen-all-label { padding-left: 7px; font-size: 12px; color: var(--text-2); }
 .pen-width-wrap { position: relative; }
 .pen-width-wrap::after { content: "mm"; position: absolute; right: 22px; top: 6px; font-size: 10px; color: var(--muted); pointer-events: none; display: none; }
 
