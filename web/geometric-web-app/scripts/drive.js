@@ -86,6 +86,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await send('Page.enable');
     await send('Runtime.enable');
     await send('Emulation.setDeviceMetricsOverride', { width: +width, height: +height, deviceScaleFactor: 1, mobile: false });
+    // The app skips its preview crossfade with reduced motion, so screenshots never catch two drawings at once
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
 
     const helpers = {
         sleep,

@@ -113,8 +113,10 @@
     let state = defaultState();
     let result = null;
     let lastGenMs = 0;
-    const previewRunner = new PG.GenerationRunner();
-    let generationVersion = 0, resultKey = '';
+    const preview = new PG.PreviewQueue();
+    // Every request gets a version. A drawing only goes up if it's newer than the one on screen.
+    let generationVersion = 0, shownVersion = 0, resultKey = '';
+    const waiters = [];
 
     const currentDef = () => PG.byId[state.gen] || PG.generators[0];
 
@@ -201,8 +203,6 @@
         const previous = { state, result, lastGenMs, resultKey };
         clearTimeout(commitTimer);
         pushUndo();
-        previewRunner.cancel();
-        generationVersion++;
         try {
             state = next;
             result = nextResult;
@@ -214,12 +214,15 @@
             rebuildAll();
             throw err;
         }
+        // Preview jobs still running for the old settings finish, but their versions are now too old to show
+        preview.drop();
         clearTimeout(genTimer);
         genTimer = 0;
         setError(null);
-        setBusy(false);
+        settle(++generationVersion);
         renderStats();
         renderPenUsage();
+        beginFade();
         draw();
         commit();
         scheduleSave();
@@ -290,48 +293,86 @@
         return { gen: s.gen, params: structuredClone(s.params[s.gen]), settings: structuredClone(pipelineSettings(s)), images: PG.images.get(s) };
     }
 
+    // The last drawing stays up while the next one generates. live is set while dragging a slider.
     function requestGenerate(live) {
         clearTimeout(genTimer);
         generationVersion++;
-        previewRunner.cancel();
-        result = null;
-        resultKey = '';
         constrainLayout();
-        const slow = lastGenMs > 90;
         setBusy(true);
-        draw();
+        // Redrawing a big scene takes tens of ms, too slow to repeat on every slider tick for nothing
+        if (lookKey() !== drawnLook) draw();
         scheduleSave();
-        genTimer = setTimeout(regenerate, slow ? (live ? 150 : 20) : 0);
+        genTimer = setTimeout(() => generate(live, false), 0);
     }
 
-    async function regenerate() {
+    // Startup and scripted checks (plotterApp.regenerate) always generate again.
+    function regenerate() {
         clearTimeout(genTimer);
+        generationVersion++;
+        return generate(false, true);
+    }
+
+    // Resolves once the drawing for this version or a newer one is up, or the newest one failed.
+    function generate(live, force) {
         genTimer = 0;
-        const version = ++generationVersion;
+        const version = generationVersion;
+        const done = new Promise(resolve => waiters.push({ version, resolve }));
         const def = currentDef();
-        if (!def) return;
+        if (!def) {
+            settle(version);
+            return done;
+        }
         currentParams(def);
         constrainLayout();
         const key = geometryKey();
+        // e.g. letting go of a slider at the value that's already drawn
+        if (!force && key === resultKey) {
+            settle(version);
+            return done;
+        }
         setBusy(true);
-        try {
-            const nextResult = await previewRunner.run(generationJob());
-            if (version !== generationVersion) return;
-            result = nextResult;
+        let run;
+        // generationJob throws when a saved photo is missing, which should show up like any failed run
+        try { run = preview.run(generationJob(), { live, key: force ? null : key }); }
+        catch (err) { run = Promise.reject(err); }
+        run.then(next => {
+            if (!next || version <= shownVersion) return;
+            // Requests for the same settings share a job, and the first one already put it up
+            if (next === result) {
+                settle(version);
+                return;
+            }
+            result = next;
             resultKey = key;
-            lastGenMs = result.timing.total;
+            lastGenMs = next.timing.total;
             setError(null);
-        } catch (err) {
+            showResult(version);
+        }, err => {
             if (err.name === 'AbortError' || version !== generationVersion) return;
             setError(`${def.name}: ${err.message}`);
             result = null;
             resultKey = '';
-        }
-        setBusy(false);
+            showResult(version);
+        });
+        return done;
+    }
+
+    function showResult(version) {
+        settle(version);
         renderStats();
         renderPenUsage();
+        beginFade();
         draw();
         scheduleSave();
+    }
+
+    // Anything older than a version that's up won't be shown, so its waiters are done too.
+    function settle(version) {
+        shownVersion = Math.max(shownVersion, version);
+        for (let i = waiters.length - 1; i >= 0; i--) {
+            if (waiters[i].version <= shownVersion) waiters.splice(i, 1)[0].resolve();
+        }
+        if (shownVersion >= generationVersion) setBusy(false);
     }
 
     const hiddenPens = () => new Set(state.pens.map((p, i) => (p.visible ? -1 : i)).filter(i => i >= 0));
@@ -416,6 +457,13 @@
         ctx.restore();
     }
 
+    // Everything draw() shows apart from the geometry. requestGenerate only redraws when this changed.
+    let drawnLook = '';
+    function lookKey() {
+        const { margin, ...paper } = state.paper;
+        return JSON.stringify([paper, state.pens, state.view.margin, state.view.penWidth]);
+    }
+
     function draw() {
         if (!cw) return;
         const ctx = canvas.getContext('2d');
@@ -424,8 +472,12 @@
         const v = viewTransform();
         drawPaper(ctx, v);
         if (result) {
-            PG.drawResult(ctx, result, v, {
-                paper: { w: state.paper.w, h: state.paper.h },
+            // While the paper size changes, the last drawing is scaled onto the new sheet until its replacement is in
+            const P = state.paper, pw = result.area.x * 2 + result.area.w, ph = result.area.y * 2 + result.area.h;
+            const k = Math.min(P.w / pw, P.h / ph);
+            const placed = { scale: v.scale * k, ox: v.ox + ((P.w - pw * k) / 2) * v.scale, oy: v.oy + ((P.h - ph * k) / 2) * v.scale };
+            PG.drawResult(ctx, result, placed, {
+                paper: { w: pw, h: ph },
                 pens: state.pens,
                 showMargin: state.view.margin,
                 hidden: hiddenPens(),
@@ -433,7 +485,74 @@
                 hairline: !state.view.penWidth,
             });
         }
+        drawnLook = lookKey();
         $('#zoomLabel').textContent = `${Math.round(v.css.s * MM_PER_CSS_PX * 100)}%`;
+        continueFade();
+    }
+
+    // ---- crossfade
+    // A new drawing fades in over the last one. The old frame is a snapshot of the canvas, so a fade
+    // costs two drawImage calls a frame instead of stroking both drawings again.
+    const FADE_MS = 150;
+    const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const fadeFrom = document.createElement('canvas'), fadeTo = document.createElement('canvas');
+    let fade = null, fadeFrame = 0, lastShownAt = 0;
+
+    const viewSignature = () => { const v = viewTransform(); return [canvas.width, canvas.height, v.scale, v.ox, v.oy].join(); };
+    function copyCanvas(target) {
+        if (target.width !== canvas.width || target.height !== canvas.height) {
+            target.width = canvas.width;
+            target.height = canvas.height;
+        }
+        const g = target.getContext('2d');
+        g.clearRect(0, 0, target.width, target.height);
+        g.drawImage(canvas, 0, 0);
+    }
+
+    // Call right before draw() puts up a new drawing.
+    function beginFade() {
+        const now = performance.now();
+        // Fade over the time since the last drawing. Dragging a fast design already changes it every
+        // frame, and a long fade there just smears it. A fade that's still running keeps at least the
+        // time it had left, so a drawing landing right after another doesn't cut it off.
+        let dur = Math.min(FADE_MS, now - lastShownAt);
+        if (fade) dur = Math.max(dur, fade.start + fade.dur - now);
+        lastShownAt = now;
+        fade = null;
+        if (!cw || REDUCED_MOTION.matches || dur < 34) return;
+        // Mid-fade the canvas holds the blend, so the next fade carries on from what's on screen
+        copyCanvas(fadeFrom);
+        fade = { start: now, dur, view: viewSignature() };
+    }
+
+    function continueFade() {
+        if (!fade) return;
+        // Zooming, panning or resizing moved the paper, so the old snapshot no longer lines up
+        if (fade.view !== viewSignature()) { fade = null; return; }
+        copyCanvas(fadeTo);
+        paintFade();
+    }
+
+    function paintFade() {
+        cancelAnimationFrame(fadeFrame);
+        fadeFrame = 0;
+        if (!fade) return;
+        const t = Math.min(1, (performance.now() - fade.start) / fade.dur);
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(fadeTo, 0, 0);
+        if (t >= 1) { fade = null; return; }
+        // Only the paper, both frames are opaque there. Blending the drop shadow would darken it.
+        const v = viewTransform();
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(v.ox, v.oy, state.paper.w * v.scale, state.paper.h * v.scale);
+        ctx.clip();
+        ctx.globalAlpha = 1 - t;
+        ctx.drawImage(fadeFrom, 0, 0);
+        ctx.restore();
+        fadeFrame = requestAnimationFrame(paintFade);
     }
 
     function fitView() {

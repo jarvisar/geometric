@@ -683,6 +683,9 @@ select:focus-visible { outline: none; border-color: var(--focus); box-shadow: va
     pointer-events: none;
 }
 .stage-msg.error { color: #ffb3b3; border-color: #5b2a2a; background: rgba(50, 20, 20, 0.92); max-width: 70%; pointer-events: auto; }
+/* Fast designs finish within a frame or two, so only show the busy message when it takes a moment. Otherwise it flickers while dragging a slider. */
+#busy { animation: busy-delay 0s 0.2s backwards; }
+@keyframes busy-delay { from { opacity: 0; } }
 .drop-hint {
     position: absolute;
     inset: 16px;
