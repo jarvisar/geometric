@@ -119,6 +119,9 @@ drawings, share the JSON or SVG file instead. Both include the image data.
 ```
 src/
   index.html, styles.css, app.js   UI
+  about/, pages.css                about page
+  designs/         a page per design, built by scripts/build-pages.js
+  images/          design previews and screenshots, from npm run previews
   lib/
     core.js        registry, seeded RNG, geometry helpers (hatching, insetting, …)
     noise.js       seeded simplex noise, fBm, curl noise
@@ -136,6 +139,7 @@ scripts/
   check.js         runs every design through the pipeline (npm run check)
   shot.js          headless-Chrome screenshot of any page
   drive.js         tiny DevTools-protocol driver for UI tests (npm run smoke)
+  build-pages.js   design pages and sitemap (npm run build:pages)
 ```
 
 ## Publishing
@@ -158,3 +162,9 @@ See [GENERATORS.md](GENERATORS.md). In short: add `src/generators/<id>.js` that 
 the app builds its controls automatically. Check it with
 `node scripts/check.js <id>` and
 `node scripts/shot.js dev/sheet.html "gens=<id>&variants=3" out.png`.
+
+Each design also gets a static page under `src/designs/` so search engines have
+something to index. They're built from the generator's name, description and
+params. Run `npm run previews` to render the preview images (needs Chrome or
+Edge), then `npm run build:pages` to rebuild the pages and sitemap. `npm run check`
+fails if the pages are out of date. Scenes are left out of the pages for now.

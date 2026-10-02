@@ -74,9 +74,10 @@ kbd {
     font-weight: 650;
     letter-spacing: 0.01em;
     font-size: 14px;
-    margin-right: 6px;
+    margin: 0 6px 0 0;
     white-space: nowrap;
 }
+.brand a { display: flex; align-items: center; gap: 9px; color: inherit; text-decoration: none; }
 .brand .logo { width: 26px; height: 26px; color: var(--accent); }
 
 .spacer { flex: 1; }
@@ -194,9 +195,12 @@ kbd {
 .panel.right { border-left: 1px solid var(--line); }
 
 .design-info { padding: 16px 16px 6px; }
-.design-info h1 { margin: 0 0 4px; font-size: 18px; font-weight: 650; letter-spacing: -0.01em; }
+.design-info h2 { margin: 0 0 4px; font-size: 18px; font-weight: 650; letter-spacing: -0.01em; }
 .design-info p { margin: 0; color: var(--muted); font-size: 12.5px; }
 .phone-tools { display: none; }
+.panel-foot { display: flex; gap: 14px; padding: 14px 16px 18px; font-size: 12px; }
+.panel-foot a { color: var(--muted); text-decoration: none; }
+.panel-foot a:hover { color: var(--text); }
 
 /* ------------------------------------------------------------------ controls */
 

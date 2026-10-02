@@ -7,6 +7,7 @@ on:
     paths:
       - 'web/geometric-web-app/src/**'
       - 'web/geometric-web-app/scripts/build-worker.js'
+      - 'web/geometric-web-app/scripts/build-pages.js'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -33,6 +34,7 @@ jobs:
       - name: Prepare site
         run: |
           node web/geometric-web-app/scripts/build-worker.js
+          node web/geometric-web-app/scripts/build-pages.js
           cp -r web/geometric-web-app/src _site
           rm -rf _site/dev
 
