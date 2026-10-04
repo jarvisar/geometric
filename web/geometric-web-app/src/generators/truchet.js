@@ -1,17 +1,17 @@
 /*
  * Truchet tiles. Every cell of a square or hexagonal grid holds the same
- * motif in one of a few orientations; neighbouring motifs meet at the cell
+ * motif in one of a few orientations; neighboring motifs meet at the cell
  * edges, so the pattern reads as long meandering curves.
  *
  *  - arcs:      Smith's tiles (1987) — two quarter circles joining the
  *               midpoints of adjacent edges. Concentric bands at radii
  *               s/2 ± k·w stay continuous across tiles.
- *  - hex:       three 120° arcs centred on alternating hexagon vertices.
+ *  - hex:       three 120° arcs centered on alternating hexagon vertices.
  *  - diagonal:  one diagonal per cell ("10 PRINT CHR$(205.5+RND(1))"); with
  *               bands, parallel lines plus matching corner cuts so the
  *               stripes stay continuous.
  *  - triangles: half-square triangles, hatched on a global phase so the
- *               hatching of neighbouring triangles joins into long strokes.
+ *               hatching of neighboring triangles joins into long strokes.
  *
  * Orientation is random, or with "structure" > 0 blended with a smooth noise
  * threshold so large coherent regions appear.
@@ -36,7 +36,7 @@
                 show: p => p.type !== 'triangles' },
             { id: 'bandGap', label: 'Band spacing (mm)', type: 'range', min: 0.4, max: 5, step: 0.1, value: 1.1, random: [0.8, 2.2],
                 show: p => p.type !== 'triangles' && p.bands > 1,
-                hint: 'Clamped so bands of neighbouring arcs never cross' },
+                hint: 'Clamped so bands of neighboring arcs never cross' },
             { id: 'hatch', label: 'Hatch spacing (mm)', type: 'range', min: 0.4, max: 4, step: 0.05, value: 1.1, random: [0.8, 2],
                 show: p => p.type === 'triangles' },
             { id: 'hatchDir', label: 'Hatch direction', type: 'select', value: 'along', random: true, show: p => p.type === 'triangles',
@@ -107,7 +107,7 @@
                     }
                 }
             } else if (p.type === 'hex') {
-                // flat-topped hexagons, centre spacing = cell size, edge e = s / √3
+                // flat-topped hexagons, center spacing = cell size, edge e = s / √3
                 const e = s / SQ3;
                 const dx = 1.5 * e, dy = SQ3 * e;
                 const cols = Math.ceil(W / dx) + 3, rows = Math.ceil(H / dy) + 3;
@@ -119,7 +119,7 @@
                         for (let v = o; v < 6; v += 2) {
                             const a = (v * TAU) / 6;
                             const vx = cx + e * Math.cos(a), vy = cy + e * Math.sin(a);
-                            const a0 = a + (2 * TAU) / 6; // wedge towards the centre, 120° wide
+                            const a0 = a + (2 * TAU) / 6; // wedge towards the center, 120° wide
                             for (const b of bands) arcs.push({ path: geo.arc(vx, vy, b.r, a0, a0 + TAU / 3), o, k: b.k });
                         }
                     }

@@ -9,7 +9,7 @@
  * Walls are emitted as maximal runs (collinear grid walls, whole ring arcs,
  * radial lines spanning several rings) so the plotter draws long strokes; the
  * outer wall is one stroke per side of the openings. The BFS solution goes on
- * pen 2, rounded through the cell centres.
+ * pen 2, rounded through the cell centers.
  */
 (function () {
     'use strict';
@@ -59,7 +59,7 @@
             inTree[start] = 1;
             const order = rng.shuffle(Array.from({ length: N }, (_, i) => i));
             for (const s of order) {
-                if (inTree[s] || !nbrs[s].length) continue; // masked-out cells have no neighbours
+                if (inTree[s] || !nbrs[s].length) continue; // masked-out cells have no neighbors
                 let c = s;
                 while (!inTree[c]) { next[c] = pickW(nbrs[c])[0]; c = next[c]; }
                 for (c = s; !inTree[c]; c = next[c]) { inTree[c] = 1; link(c, next[c]); }
@@ -200,19 +200,19 @@
 
     function thetaMaze(p, ctx) {
         const { width: W, height: H, rng } = ctx;
-        // largest circle about the centre inside the clip shape (rotation enlarges W × H)
+        // largest circle about the center inside the clip shape (rotation enlarges W × H)
         const R = Math.min(W / 2, H / 2, ctx.shape ? Math.max(1, ctx.shape.dist(W / 2, H / 2)) : Infinity);
         const c = Math.min(Math.max(p.cell, R / 120), R / 2); // at least 2 rings, all inside the circle
         const rings = Math.max(2, Math.floor(R / c));
         const cx = W / 2, cy = H / 2;
-        // cells per ring: 1 in the centre, 6 in ring 1, doubling when cells get wider than √2·c
+        // cells per ring: 1 in the center, 6 in ring 1, doubling when cells get wider than √2·c
         const n = [1, 6];
         for (let i = 2; i < rings; i++) n.push((TAU * (i + 0.5)) / n[i - 1] > Math.SQRT2 ? n[i - 1] * 2 : n[i - 1]);
         const base = [0];
         for (let i = 1; i < rings; i++) base.push(base[i - 1] + n[i - 1]);
         const N = base[rings - 1] + n[rings - 1];
         const id = (i, k) => base[i] + (((k % n[i]) + n[i]) % n[i]);
-        const a0 = -Math.PI / 2 - Math.PI / n[rings - 1]; // outer cell 0 centred at the top
+        const a0 = -Math.PI / 2 - Math.PI / n[rings - 1]; // outer cell 0 centered at the top
         const ang = (i, k) => a0 + (TAU * k) / n[i];
 
         const nbrs = Array.from({ length: N }, () => []);
@@ -315,7 +315,7 @@
             { id: 'algorithm', label: 'Algorithm', type: 'select', value: 'backtracker', random: ['backtracker', 'backtracker', 'prim', 'kruskal', 'wilson'],
                 options: [['backtracker', 'Recursive backtracker'], ['prim', "Prim's"], ['kruskal', "Kruskal's"], ['wilson', "Wilson's (uniform)"]] },
             { id: 'bias', label: 'Direction bias', type: 'range', min: -0.9, max: 0.9, step: 0.05, value: 0, random: [-0.6, 0.6],
-                hint: 'Favour horizontal (+) or vertical (−) passages; on circles, around (+) or outwards (−)' },
+                hint: 'Favor horizontal (+) or vertical (−) passages; on circles, around (+) or outwards (−)' },
             { type: 'section', label: 'Solution' },
             { id: 'solution', label: 'Show solution', type: 'checkbox', value: true, random: 0.7 },
             { id: 'round', label: 'Rounded solution', type: 'range', min: 0, max: 0.5, step: 0.01, value: 0.5, random: [0.2, 0.5],

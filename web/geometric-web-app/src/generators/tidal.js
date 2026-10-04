@@ -17,7 +17,7 @@
     // Terrain
     // ------------------------------------------------------------------
 
-    // Neighbour indices on an n x n grid, 8 per node, -1 off the edge
+    // Neighbor indices on an n x n grid, 8 per node, -1 off the edge
     function neighbours(n) {
         const nbr = new Int32Array(n * n * 8).fill(-1);
         for (let i = 0; i < n * n; i++) {
@@ -275,7 +275,7 @@
             }
         }
         // Single node pits (from Catmull-Rom undershoot and the warp) notch every
-        // profile that crosses them, so lift them to their lowest neighbour
+        // profile that crosses them, so lift them to their lowest neighbor
         for (let j = 1; j < rn - 1; j++) for (let i = 1; i < rn - 1; i++) {
             const q = j * rn + i, m = Math.min(out[q - 1], out[q + 1], out[q - rn], out[q + rn]);
             if (out[q] < m) out[q] = m;

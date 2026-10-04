@@ -125,6 +125,6 @@ try {
     label = 'cosmic: cloud masks';
     for (const seed of [1, 2, 3, 17]) PG.run(def, PG.defaultParams(def), { ...settings, seed });
     PG.run(def, { ...PG.defaultParams(def), world: 'skies' }, settings);
-    assert.ok(cloudArea > 0 && Math.abs(cloudArea - maskArea) < 1e-9 * cloudArea, `Cloud masks leave holes: ${maskArea} of ${cloudArea} square millimetres covered`);
+    assert.ok(cloudArea > 0 && Math.abs(cloudArea - maskArea) < 1e-9 * cloudArea, `Cloud masks leave holes: ${maskArea} of ${cloudArea} square millimeters covered`);
 } finally { Object.assign(PG.iso.Scene.prototype, { face, line }); }
 console.log('Cloud masks cover their full silhouettes');

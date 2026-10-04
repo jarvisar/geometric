@@ -57,11 +57,11 @@ See [PEN_COLORS.md](PEN_COLORS.md) for the current assignments.
 
 * `fit: true` — draw around the origin in whatever units are convenient; the
   pipeline rotates, then scales the result to fit the drawing area. Aspect
-  ratio is preserved. Use this for centred, self-contained figures.
-* `fit: false` — draw in millimetres into the rectangle `0..ctx.width × 0..ctx.height`,
+  ratio is preserved. Use this for centered, self-contained figures.
+* `fit: false` — draw in millimeters into the rectangle `0..ctx.width × 0..ctx.height`,
   y pointing down. The pipeline clips anything outside. Use this for designs
   that fill the page (fields, tilings, packings). Design sizes such as spacing
-  or cell size are then real millimetres, which matters for pen width.
+  or cell size are then real millimeters, which matters for pen width.
 
 ## ctx
 
@@ -87,7 +87,7 @@ Always use `ctx.rng` / `ctx.noise`, never `Math.random`, so a seed reproduces a 
 Contours: `PG.sampleField(fn,x0,y0,w,h,cell)`, `PG.isolines(field, level)`, `PG.contourLevels(field, n)`.
 
 Automatic segment counts keep the chord error under `tol` (default 0.02) *in your
-units*: fine for millimetres, too coarse for a fit generator drawing a unit circle —
+units*: fine for millimeters, too coarse for a fit generator drawing a unit circle —
 pass explicit `segs` or a smaller `tol` there.
 
 ## Parameters
@@ -95,9 +95,9 @@ pass explicit `segs` or a smaller `tol` there.
 * `range`: `min max step value`. `random: false` excludes it from Randomize,
   `random: [lo, hi]` narrows the random range. Keep resolution/quality knobs
   `random: false`.
-* `select`: `options: [[value, label], ...]`. Only randomised if `random` is set
+* `select`: `options: [[value, label], ...]`. Only randomized if `random` is set
   (`true` or an array of allowed values).
-* `checkbox`: randomised only if `random` is set (a probability or `true`).
+* `checkbox`: randomized only if `random` is set (a probability or `true`).
 * `section`: a heading, no value.
 * `show: p => bool` hides a control when irrelevant.
 * `randomize(rng, p)` can return curated values (e.g. gear ratios that close nicely).

@@ -38,7 +38,7 @@
         const vEdge = (i, j) => H + j * nx + i;
 
         const points = new Map(); // edge id -> [x, y]
-        const links = new Map();  // edge id -> [neighbour edge ids]
+        const links = new Map();  // edge id -> [neighbor edge ids]
 
         function edgePoint(id) {
             let p = points.get(id);

@@ -20,7 +20,7 @@
             { id: 'R', label: 'Ring teeth', type: 'range', min: 24, max: 160, step: 1, value: 96 },
             { id: 'r', label: 'Gear teeth', type: 'range', min: 5, max: 120, step: 1, value: 52 },
             { id: 'hole', label: 'Pen hole', type: 'range', min: 0.05, max: 1.6, step: 0.01, value: 0.82,
-                hint: 'Distance of the pen from the gear centre, relative to gear radius' },
+                hint: 'Distance of the pen from the gear center, relative to gear radius' },
             { type: 'section', label: 'Rings' },
             { id: 'rings', label: 'Rings', type: 'range', min: 1, max: 16, step: 1, value: 3 },
             { id: 'holeStep', label: 'Hole change', type: 'range', min: -0.3, max: 0.3, step: 0.01, value: -0.14,
@@ -35,7 +35,7 @@
             // Pick the look first: P lobes, Q trips around the ring (coprime,
             // so the curve really has P lobes), then scale both to real tooth
             // counts. The band the pen sweeps (pen offset over the radius of
-            // the gear centre's path) must be wide enough to read as
+            // the gear center's path) must be wide enough to read as
             // interlaced loops rather than a thin ring.
             let epi = false, P = 7, Q = 3, hole = 0.8;
             for (let tries = 0; tries < 300; tries++) {
@@ -84,7 +84,7 @@
                 if (hole < 0.01) break; // further rings would overdraw the same tiny curve
                 const d = r * hole;
                 if (!epi && r === R) {
-                    // a gear as big as the ring can't roll: the pen just circles the centre
+                    // a gear as big as the ring can't roll: the pen just circles the center
                     if (ring === 0 || p.holeStep) layers.push([geo.circle(0, 0, d, 360)]);
                     continue;
                 }

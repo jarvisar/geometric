@@ -1,6 +1,6 @@
 /*
  * Celtic knotwork on a grid of dots (the "breaks" method described by
- * George Bain and formalised by Peter Cromwell). In half-dot units the dots
+ * George Bain and formalized by Peter Cromwell). In half-dot units the dots
  * sit at even (x, y); crossing sites sit at the midpoints of the grid edges,
  * the points with x + y odd, and strands run diagonally from site to site.
  *
@@ -17,7 +17,7 @@
  * times: the knot is always properly alternating, whatever the breaks.
  *
  * Geometry: through a crossing a strand is straight; at a bounce it follows
- * a 90° arc of radius √½ centred half a step beyond the site. Both meet the
+ * a 90° arc of radius √½ centered half a step beyond the site. Both meet the
  * link midpoints along the diagonal, so the band's edges are exact offset
  * curves (parallel lines and concentric arcs). Strands cross at right angles,
  * so the under-strand is cut by arclength: w/2 + gap either side of the site.
@@ -55,7 +55,7 @@
                 show: p => p.breaks === 'rings' },
             { type: 'section', label: 'Band' },
             { id: 'lines', label: 'Lines per band', type: 'range', min: 1, max: 6, step: 1, value: 2, random: [2, 4],
-                hint: '1 draws the centre line only' },
+                hint: '1 draws the center line only' },
             { id: 'width', label: 'Band width (% of spacing)', type: 'range', min: 0, max: 27, step: 0.5, value: 18, random: [12, 26],
                 show: p => p.lines > 1 },
             { id: 'gap', label: 'Crossing gap (mm)', type: 'range', min: 0, max: 5, step: 0.05, value: 1.2, random: [0.6, 1.8] },
@@ -112,7 +112,7 @@
                     }
                 } else {
                     // frames that follow the shape: breaks where the squares' depth from the
-                    // border (4-neighbour steps) passes a multiple of the step
+                    // border (4-neighbor steps) passes a multiple of the step
                     const depth = new Int32Array(m * n), queue = [];
                     for (let j = 0; j < n; j++) for (let i = 0; i < m; i++) {
                         if (sq(i, j) && !(sq(i - 1, j) && sq(i + 1, j) && sq(i, j - 1) && sq(i, j + 1))) { depth[j * m + i] = 1; queue.push(j * m + i); }
@@ -189,7 +189,7 @@
                     };
                     for (const v of visits) {
                         const T = toMM(v.x, v.y);
-                        const dout = DIRS[v.d]; // outgoing travel direction (unnormalised)
+                        const dout = DIRS[v.d]; // outgoing travel direction (unnormalized)
                         const k = kind[idx(v.x, v.y)];
                         if (k === X) {
                             const D = [dout[0] * Math.SQRT1_2, dout[1] * Math.SQRT1_2], N = [-D[1] * o, D[0] * o];

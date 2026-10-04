@@ -1,5 +1,5 @@
 /*
- * Harbour: an isometric fishing town on the water, drawn for four to eight pens.
+ * Harbor: an isometric fishing town on the water, drawn for four to eight pens.
  *
  * It's a 3D scene like Town, with hidden lines removed (lib/iso.js). Rows of
  * blocks face the avenues that run along the quay. Each row gets its own cross
@@ -13,12 +13,12 @@
  * maybe a cargo ship at anchor or a schooner under sail, channel buoys, rocks
  * with a beacon, pot floats, people rowing and gulls.
  *
- * The colour work is in the style of an illustrated map. Lit roof slopes are
+ * The color work is in the style of an illustrated map. Lit roof slopes are
  * hatched in red and shaded ones in black, a low sun casts blue hatched
  * shadows onto the ground and the water, and cart canopies and boat cabin
  * roofs are yellow. The water gets ripple lines following the shore, from
  * the distance field of everything solid in it, and rows of short blue dashes
- * further out. Boats get a coloured stripe and their side out of the sun
+ * further out. Boats get a colored stripe and their side out of the sun
  * hatched. Shadows are cut off at the edge of the lot they fall in, which
  * keeps the streets clean.
  * With six pens trees and hedges go green and people and cars purple, and
@@ -97,7 +97,7 @@
         for (const f of faces) shade(T, f, outward(f, centre));
     }
 
-    // House, 1 to 3 storeys, under a gable roof with the ridge along the street
+    // House, 1 to 3 stories, under a gable roof with the ridge along the street
     // or a hip roof. `twin` makes it a pair of houses sharing the middle wall.
     function house(T, F, fp, rng, o) {
         const S = T.S;
@@ -141,7 +141,7 @@
         return { doors, awning: aw };
     }
 
-    // 3 to 5 storey block of flats with a flat roof inside a parapet
+    // 3 to 5 story block of flats with a flat roof inside a parapet
     function apartment(T, F, fp, rng, o) {
         const S = T.S, P = F.P;
         S.kind = INK;
@@ -223,7 +223,7 @@
         for (let i = 0; i < n; i++) {
             const b = b0 + dv * i;
             S.prism([P(a, b, top), P(a, b, top + ht), P(a, b + dv, top)], F.V(e, 0, 0));
-            // always in the lit colour, as the teeth read better that way
+            // always in the lit color, as the teeth read better that way
             shade(T, [P(a, b, top + ht), P(a + e, b, top + ht), P(a + e, b + dv, top), P(a, b + dv, top)], F.V(0, ht, dv), 'lit');
             if (!T.detail || !T.sees(F.V(0, -1, 0))) continue;
             const m = Math.max(2, Math.round(e / 0.9)), g = 0.12;
@@ -360,7 +360,7 @@
         const S = T.S, h = 0.6, r = wid / 2, cam = T.cam;
         if (a1 - a0 < wid) return;
         const cap = n => Array.from({ length: n + 1 }, (_, i) => i / n);
-        // centre line of the strip and the outline around it, walked by arc length
+        // center line of the strip and the outline around it, walked by arc length
         const base = [];
         for (const t of cap(8)) base.push([a1 - r + r * Math.sin(Math.PI * t), b - r * Math.cos(Math.PI * t)]);
         for (const t of cap(8)) base.push([a0 + r - r * Math.sin(Math.PI * t), b + r * Math.cos(Math.PI * t)]);
@@ -377,7 +377,7 @@
             for (let k = 0; k < m; k++) {
                 const t = k / m, pa = p0[0] + (p1[0] - p0[0]) * t, pb = p0[1] + (p1[1] - p0[1]) * t;
                 const s = run + L * t;
-                // push away from the nearest point of the centre segment
+                // push away from the nearest point of the center segment
                 const ca = geo.clamp(pa, a0 + r, a1 - r), da = pa - ca, db = pb - ctr[1], dl = Math.hypot(da, db) || 1;
                 const bump = 0.09 * Math.abs(Math.sin((Math.PI * s) / 0.45));
                 out.push([pa + (da / dl) * bump, pb + (db / dl) * bump]);
@@ -1097,7 +1097,7 @@
     // page. Pointed at the camera it foreshortens to a stub.
     const across = (T, rng) => Math.atan2(T.cam.fx, -T.cam.fy) + rng.range(-0.3, 0.3);
 
-    // Harbour crane: a portal on four legs, a machinery house on a turntable,
+    // Harbor crane: a portal on four legs, a machinery house on a turntable,
     // and a lattice jib reaching out at `ang` (radians from +x)
     function crane(T, x, y, z, ang, rng) {
         const S = T.S, W = frame(x, y, z, 0), g = 2.1, t = 0.17, h = rng.range(5, 6.2);
@@ -1281,7 +1281,7 @@
             L = Math.min(L, w - 1.2);
             D = Math.min(D, d - setback - back);
             if (L < 3.5 || D < 3.5) return null;
-            // roughly centred, so neighbouring buildings keep a gap between them
+            // roughly centered, so neighboring buildings keep a gap between them
             const room = (w - L) / 2, a = room + rng.range(-1, 1) * Math.max(0, Math.min(1.2, room - 0.6));
             const f = [a, setback, a + L, setback + D];
             occ.add(f[0] - 0.2, f[1] - 0.2, f[2] + 0.2, f[3] + 0.3);
@@ -1661,7 +1661,7 @@
                 }
             }
         }
-        // stone wharves sticking out into the harbour
+        // stone wharves sticking out into the harbor
         const nw = rng.chance(p.wharves) ? (rng.chance(p.wharves * 0.5) ? 2 : 1) : 0;
         for (let tries = 0; tries < 24 && W.wharves.length < nw; tries++) {
             const wd = rng.range(16, 28), y0 = geo.lerp(ya, yb, rng.random()) - wd / 2, y1 = y0 + wd;
@@ -1846,7 +1846,7 @@
         }
     }
 
-    // Stone wharf out in the harbour: a crane on the front, a harbour office
+    // Stone wharf out in the harbor: a crane on the front, a harbor office
     // or cargo, and boats along the sides we can see
     function wharf(T, r, rng, water) {
         const { S, p } = T;
@@ -2272,18 +2272,18 @@
 
     PG.register({
         id: 'harbour',
-        name: 'Harbour',
+        name: 'Harbor',
         category: 'Scenes',
         description: 'An isometric fishing town with a quay, piers and a lighthouse, shaded for four to eight pens.',
         fit: false,
         params: [
             { type: 'section', label: 'View' },
             { id: 'scale', label: 'Scale (mm per m)', type: 'range', min: 1, max: 5, step: 0.05, value: 1.8, random: [1.4, 2.4],
-                hint: 'How big a metre is on paper' },
+                hint: 'How big a meter is on paper' },
             { id: 'yaw', label: 'Camera turn (°)', type: 'range', min: 15, max: 75, step: 0.5, value: 50, random: false },
             { id: 'elev', label: 'Camera height (°)', type: 'range', min: 20, max: 60, step: 0.5, value: 39.5, random: false,
                 hint: '35.3 is true isometric' },
-            { type: 'section', label: 'Harbour' },
+            { type: 'section', label: 'Harbor' },
             { id: 'side', label: 'Water on', type: 'select', value: 'left', random: ['left', 'right'],
                 options: [['left', 'Left'], ['right', 'Right']] },
             { id: 'shore', label: 'Waterline', type: 'range', min: 0, max: 1, step: 0.01, value: 0.45, random: [0.3, 0.6],
@@ -2329,7 +2329,7 @@
             { id: 'windmills', label: 'Windmills', type: 'range', min: 0, max: 1, step: 0.01, value: 0.06, random: [0, 0.15] },
             { id: 'tower', label: 'Clock tower', type: 'checkbox', value: true },
             { id: 'church', label: 'Church', type: 'checkbox', value: true, random: 0.7 },
-            { id: 'floors', label: 'Max storeys', type: 'range', min: 1, max: 6, step: 1, value: 4, random: [3, 4] },
+            { id: 'floors', label: 'Max stories', type: 'range', min: 1, max: 6, step: 1, value: 4, random: [3, 4] },
             { id: 'detail', label: 'Fine details', type: 'checkbox', value: true,
                 hint: 'Window frames, planks, stripes and other small line work' },
             { type: 'section', label: 'Details' },

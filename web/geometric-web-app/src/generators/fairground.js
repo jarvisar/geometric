@@ -1,13 +1,13 @@
 /*
  * Fairground: an isometric funfair drawn for four to eight pens, in the same
- * illustrated-map style as Harbour.
+ * illustrated-map style as Harbor.
  *
  * The park is cut up with a Voronoi diagram. Every ride gets a cell, and each
  * cell is shrunk in by half a path width, which leaves the gaps between them
  * as the paths. So the paths always run between the rides, never through
  * them, and they meet at odd angles like a real park. Big rides go in the
  * roomiest cells and the rest become gardens, game stalls or the food court.
- * The roller coaster takes two neighbouring cells and runs a figure of eight
+ * The roller coaster takes two neighboring cells and runs a figure of eight
  * over the path between them. Where the showpieces sit on the page comes from
  * one of a few layouts, so seeds don't all share the same composition.
  * Around each ride the lawn's edges get rows of stalls, vans and kiosks facing
@@ -30,7 +30,7 @@
     // line kinds. The last four only get pens of their own with six or eight pens.
     const INK = 0, RED = 1, BLUE = 2, YELLOW = 3, GREEN = 4, FIGURE = 5, WATER = 6, PATH = 7;
     const person = withKind(FIGURE, PG.isokit.person), roundTree = withKind(GREEN, PG.isokit.roundTree);
-    const SUN_TURN = geo.rad(65); // as in Harbour: shadows fall along +x, turned this far towards -y
+    const SUN_TURN = geo.rad(65); // as in Harbor: shadows fall along +x, turned this far towards -y
 
     const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
     const mul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
@@ -315,7 +315,7 @@
     }
 
     // Helter skelter: a striped eight-sided tower with a hut and a pointed
-    // roof on top, and a slide spiralling down round it
+    // roof on top, and a slide spiraling down round it
     function helterSkelter(T, x, y, rng) {
         const S = T.S, H = rng.range(11, 14), r0 = 2.4, r1 = 2, rot = rng.range(0, TAU);
         S.lathe(x, y, [[r0, 0], [r1, H]], 8, false, rot);
@@ -580,7 +580,7 @@
         return [p[0] + dx * best, p[1] + dy * best];
     }
 
-    // Figure of eight round two neighbouring lawns: the long way round the
+    // Figure of eight round two neighboring lawns: the long way round the
     // first, over the path, the long way round the second the other way,
     // and back over the path, crossing the first pass. Returns the plan as
     // points about 1 m apart, and where it goes over to the second lawn.
@@ -734,7 +734,7 @@
         }
     }
 
-    // Round flower bed with a low edge and flowers dotted about in colour
+    // Round flower bed with a low edge and flowers dotted about in color
     function flowerBed(T, x, y, r, rng) {
         const S = T.S;
         S.lathe(x, y, [[r, 0], [r, 0.25]], T.segs(r));
@@ -1093,14 +1093,14 @@
         let area = 0;
         for (let i = 0; i < P.length; i++) area += P[i][0] * P[(i + 1) % P.length][1] - P[(i + 1) % P.length][0] * P[i][1];
         const sg = area > 0 ? 1 : -1;
-        // a spot on the edge s metres round, the way along it and the way into the lawn
+        // a spot on the edge s meters round, the way along it and the way into the lawn
         const i0 = rng.int(0, N - 1);
         const spot = s => {
             const i = i0 + Math.round(s / 0.5), a = pts[(i - 3 + 3 * N) % N], b = pts[(i + 3) % N], l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
             const t = [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
             return { q: pts[i % N], t, n: [-t[1] * sg, t[0] * sg] };
         };
-        // long things are checked and claimed as a row of discs
+        // long things are checked and claimed as a row of disks
         const discs = (q, t, n, len, dep) => {
             const out = [], r = dep / 2, m = Math.max(0, Math.ceil((len - dep) / r));
             for (let j = 0; j <= m; j++) {
@@ -1395,7 +1395,7 @@
         return { water, boats };
     }
 
-    // Short blue dashes in rows across the lake, like the water in Harbour
+    // Short blue dashes in rows across the lake, like the water in Harbor
     function waterMarks(T, lakes, shadows) {
         const { S, cam } = T;
         const rng = new PG.RNG(7);
@@ -1428,7 +1428,7 @@
     ];
 
     // What goes where. Showpieces take the cells that suit them on the page,
-    // the coaster a pair of neighbouring cells, then rides, the lake and the
+    // the coaster a pair of neighboring cells, then rides, the lake and the
     // food court, and whatever's left becomes stalls and gardens.
     function assign(T, cells, rng, look) {
         const { S, p } = T;
@@ -1462,7 +1462,7 @@
             }
         }
         if (p.coaster) {
-            // two neighbours: they share an edge of the diagram
+            // two neighbors: they share an edge of the diagram
             const shared = (a, b) => a.cell.filter(q => b.cell.some(v => Math.abs(q[0] - v[0]) + Math.abs(q[1] - v[1]) < 1e-6)).length >= 2;
             let best = null, bs = Infinity;
             for (let i = 0; i < on.length; i++) {
@@ -1787,7 +1787,7 @@
         params: [
             { type: 'section', label: 'View' },
             { id: 'scale', label: 'Scale (mm per m)', type: 'range', min: 1, max: 5, step: 0.05, value: 1.8, random: [1.5, 2.3],
-                hint: 'How big a metre is on paper' },
+                hint: 'How big a meter is on paper' },
             { id: 'yaw', label: 'Camera turn (°)', type: 'range', min: 15, max: 75, step: 0.5, value: 50, random: false },
             { id: 'elev', label: 'Camera height (°)', type: 'range', min: 20, max: 60, step: 0.5, value: 39.5, random: false,
                 hint: '35.3 is true isometric' },

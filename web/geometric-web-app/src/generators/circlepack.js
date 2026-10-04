@@ -1,8 +1,8 @@
 /*
  * Circle packing — random placement in shrinking size classes. Radii step
  * geometrically from the largest size to the smallest; at each size many
- * random centres are tried and a circle is kept, grown until it meets its
- * neighbours, when it clears every placed circle and the clip boundary by the
+ * random centers are tried and a circle is kept, grown until it meets its
+ * neighbors, when it clears every placed circle and the clip boundary by the
  * gap. A bucket grid keeps the overlap tests local. Each circle is then
  * filled: concentric rings, one Archimedean spiral, eccentric "bubble" rings
  * that bunch toward a common direction, or a zig-zag hatch that runs along
@@ -15,7 +15,7 @@
     const STYLES = ['eccentric', 'spiral', 'rings', 'hatch', 'outline'];
 
     function spiral(cx, cy, r, s, a0, dir) {
-        // one lap on the rim, then wind inward to the centre
+        // one lap on the rim, then wind inward to the center
         const pts = [];
         const end = TAU * (1 + r / s);
         let th = 0;

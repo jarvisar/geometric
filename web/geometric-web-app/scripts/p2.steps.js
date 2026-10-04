@@ -197,7 +197,7 @@ await evaluate(`plotterApp.select('fairground'); plotterApp.state.paper={...plot
 await until(`plotterApp.state.gen==='maze' && !!plotterApp.result && document.querySelector('#busy').hidden`, 'cancellation left stale generation busy');
 const finalDrawing = await evaluate(`__hash(plotterApp.result.layers)`);
 await sleep(1200);
-await check(`plotterApp.state.gen==='maze' && __hash(plotterApp.result.layers)===${finalDrawing}`, 'cancelled worker overwrote new drawing');
+await check(`plotterApp.state.gen==='maze' && __hash(plotterApp.result.layers)===${finalDrawing}`, 'canceled worker overwrote new drawing');
 await evaluate(`window.__originalRun=PG.GenerationRunner.prototype.run; PG.GenerationRunner.prototype.run=async()=>{throw new Error('test failure')}; plotterApp.regenerate()`);
 await check(`!document.querySelector('#errorMsg').hidden && document.querySelector('#busy').hidden && !plotterApp.result`, 'worker failure left stale drawing or spinner');
 await evaluate(`plotterApp.exportAs('json')`);
@@ -222,7 +222,7 @@ const gatedImport = async gen => {
 await gatedImport('fairground');
 await click('[data-tab="output"]');
 await evaluate(`PG.GenerationRunner.prototype.run=__runImport; __continueImport()`);
-await until(`plotterApp.state.gen==='fairground' && plotterApp.state.seed===123`, 'changing tabs cancelled import');
+await until(`plotterApp.state.gen==='fairground' && plotterApp.state.seed===123`, 'changing tabs canceled import');
 await check(`plotterApp.state.ui.tab==='output'`, 'import reset the selected tab');
 await gatedImport('harbour');
 await evaluate(`PG.GenerationRunner.prototype.run=__runImport; plotterApp.newSeed(); window.__editedSeed=plotterApp.state.seed; __continueImport()`);

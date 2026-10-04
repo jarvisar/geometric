@@ -31,7 +31,7 @@
             { id: 'peaks', label: 'Peakiness', type: 'range', min: 0.5, max: 3, step: 0.01, value: 1.5, random: [1, 2.2],
                 hint: 'Exponent on height: >1 flattens lowlands and steepens summits' },
             { id: 'island', label: 'Island falloff', type: 'range', min: 0, max: 1, step: 0.01, value: 0, random: false,
-                hint: 'Lift the centre and sink the edges' },
+                hint: 'Lift the center and sink the edges' },
             { id: 'sea', label: 'Sea level', type: 'range', min: 0, max: 0.8, step: 0.01, value: 0, random: false,
                 hint: 'Skip contours below this fraction of the height range' },
             { id: 'terrace', label: 'Terracing', type: 'range', min: 0, max: 1, step: 0.01, value: 0, random: false },
@@ -130,7 +130,7 @@
             const cell = Math.max(p.cell, Math.sqrt((W * H) / 250000));
             const field = PG.sampleField(height, 0, 0, W, H, cell);
 
-            // Normalise to [0, 1], raise to `peaks` (flat lowlands, steep summits),
+            // Normalize to [0, 1], raise to `peaks` (flat lowlands, steep summits),
             // then optionally terrace: within each step f -> f^k / (f^k + (1-f)^k)
             // flattens benches and steepens the risers between them.
             const vals = field.values, span = field.max - field.min || 1;
@@ -158,8 +158,8 @@
                 const level = lo + delta * i;
                 const isIndex = N > 0 && i % N === 0;
                 const out = layers[isIndex ? 0 : reserve + PG.pens.band((i - 1) / L, pens - reserve)];
-                // On steep slopes the gap between neighbouring contours is
-                // delta / |grad h|. A contour of multiplicity m only has neighbours
+                // On steep slopes the gap between neighboring contours is
+                // delta / |grad h|. A contour of multiplicity m only has neighbors
                 // m levels away once finer ones are cut, so it is kept while
                 // m·gap >= minGap: intermediate contours vanish first and index
                 // contours last (without index lines: odd levels, then 2s, 4s...).

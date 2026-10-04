@@ -5,7 +5,7 @@
  * remaining seeds lie further than twice the cell's radius. Lloyd relaxation
  * then moves each seed to its cell's (density-weighted) centroid for even,
  * organic cells. Seeds can be uniform, clustered by noise, or crowd toward the
- * centre. Cells are drawn as nested insets (one joined stroke per cell),
+ * center. Cells are drawn as nested insets (one joined stroke per cell),
  * zig-zag hatching, or outlines, optionally with rounded corners.
  */
 (function () {
@@ -31,7 +31,7 @@
             { id: 'relax', label: 'Relaxation', type: 'range', min: 0, max: 30, step: 1, value: 8, random: [3, 12],
                 hint: 'Lloyd iterations — moves seeds to their cell centroids for even cells' },
             { id: 'dist', label: 'Seeds', type: 'select', value: 'uniform', random: true,
-                options: [['uniform', 'Uniform'], ['noise', 'Noise clusters'], ['radial', 'Dense centre']] },
+                options: [['uniform', 'Uniform'], ['noise', 'Noise clusters'], ['radial', 'Dense center']] },
             { id: 'contrast', label: 'Density contrast', type: 'range', min: 0, max: 1, step: 0.01, value: 0.85, random: [0.5, 0.92],
                 show: p => p.dist !== 'uniform' },
             { id: 'scale', label: 'Cluster size (mm)', type: 'range', min: 20, max: 400, step: 1, value: 90, random: [50, 200],
@@ -42,7 +42,7 @@
             { id: 'spacing', label: 'Line spacing (mm)', type: 'range', min: 0.6, max: 6, step: 0.05, value: 1.5, random: [1, 2.6],
                 show: p => p.style !== 'outline' },
             { id: 'gap', label: 'Gap (mm)', type: 'range', min: 0, max: 10, step: 0.1, value: 3, random: [1.2, 4.5],
-                hint: 'At 0 neighbouring cells share one (sharp) outline and fills start half a spacing in' },
+                hint: 'At 0 neighboring cells share one (sharp) outline and fills start half a spacing in' },
             { id: 'round', label: 'Corner rounding', type: 'range', min: 0, max: 1, step: 0.01, value: 0, random: [0, 1] },
             { id: 'rim', label: 'Outline hatched cells', type: 'checkbox', value: true,
                 show: p => p.style === 'hatch' || p.style === 'mixed' },
@@ -98,7 +98,7 @@
             }
             if (seeds.length < 2) return [geo.close(area)];
 
-            // ---- Voronoi by half-plane clipping, neighbours from a bucket grid
+            // ---- Voronoi by half-plane clipping, neighbors from a bucket grid
             const cs = Math.sqrt((bb.w * bb.h) / seeds.length);
             const gx = Math.max(1, Math.ceil(bb.w / cs)), gy = Math.max(1, Math.ceil(bb.h / cs));
             const whole = area.length === 4 && area.every(v => (v[0] === 0 || v[0] === ctx.width) && (v[1] === 0 || v[1] === ctx.height));
@@ -165,7 +165,7 @@
             const pens = Math.max(1, p.pens);
             const layers = Array.from({ length: pens }, () => []);
             const STY = ['nested', 'hatch', 'outline'];
-            // Gap 0: neighbours share their edges, so outlines are collected as a
+            // Gap 0: neighbors share their edges, so outlines are collected as a
             // deduplicated edge set (sharp corners) and fills start half a spacing
             // inside, which keeps the spacing even across each shared edge.
             const shared = !(p.gap > 0);

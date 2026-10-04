@@ -58,7 +58,7 @@
 
         randomize(rng, p) {
             const out = {};
-            // the set pieces are unit charges huddled round the centre: give them
+            // the set pieces are unit charges huddled round the center: give them
             // more lines and more of the page than a random scatter needs
             if (p.layout === 'dipole' || p.layout === 'like' || p.layout === 'quadrupole') {
                 out.spread = +rng.range(0.6, 0.95).toFixed(2);
@@ -188,7 +188,7 @@
                         const h = geo.clamp(0.25 * dmin, 0.01, off ? 4 * hMax : hMax);
                         const k1 = dir(x, y, sg); if (!k1) break;
                         // the direction flips across a null point (between like charges,
-                        // at a quadrupole's centre): stop instead of dithering on it
+                        // at a quadrupole's center): stop instead of dithering on it
                         if (prev && k1[0] * prev[0] + k1[1] * prev[1] < -0.5) break;
                         prev = k1;
                         const k2 = dir(x + (h / 2) * k1[0], y + (h / 2) * k1[1], sg); if (!k2) break;

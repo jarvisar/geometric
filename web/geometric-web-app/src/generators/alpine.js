@@ -22,7 +22,7 @@
     // The ground
     // ------------------------------------------------------------------
 
-    // Heights on a grid of Lx × Ly metres, split into triangles along whichever
+    // Heights on a grid of Lx × Ly meters, split into triangles along whichever
     // diagonal of each cell is closer to level. The grid starts at world point
     // o and runs along unit vector u, and along u turned a quarter left. W is
     // the water level at each point, a good way under the ground where it's
@@ -357,7 +357,7 @@
     }
 
     // Everything is laid out in plan: u across the valley (0..U) and v up it
-    // from the front (0..V). The river comes in at the front left of centre,
+    // from the front (0..V). The river comes in at the front left of center,
     // swings over to the right and goes back to a gap between the far peaks.
     // The valley is walled in down both sides and closed off by three summits.
     function landscape(G, P, p, rng) {
@@ -480,7 +480,7 @@
         const dry = c => G.sample(W, c[0], c[1]) <= c[2] + 0.02;
         const add = (map, L, e) => { let a = map.get(L); if (!a) map.set(L, (a = [])); a.push(e); };
         const iv = p.contour, snow = V.snow, dz = 0.5, m0 = -8;
-        // tone and steepness come from the ground blurred over a few metres, so they
+        // tone and steepness come from the ground blurred over a few meters, so they
         // change over whole slopes rather than from one triangle to the next
         const hs = G.blurred(Math.max(1, Math.round(3 / G.dx)));
         const strata = geo.lerp(3.6, 2.1, p.rock) / (T.k * cam.ce), steep = geo.lerp(1.8, 1.15, p.rock);
@@ -519,7 +519,7 @@
                     const zs = tri.map(v => h[v]);
                     const B = tri.map((v, q) => [P[q][0], P[q][1], hs[v]]), nb = normal(B[0], B[1], B[2]);
                     const lo = Math.min(...zs), hi = Math.max(...zs);
-                    // Shade: lines along the slope every dz metres of height, only on
+                    // Shade: lines along the slope every dz meters of height, only on
                     // ground turned from the sun. Darker ground keeps more of the
                     // levels, so the gap between them on paper suits the tone there.
                     const tone = T.tone(nb);
@@ -529,7 +529,7 @@
                         if (Math.abs(det) > 1e-9) {
                             const a = ((B[1][2] - B[0][2]) * (R[2][1] - R[0][1]) - (B[2][2] - B[0][2]) * (R[1][1] - R[0][1])) / det;
                             const b = ((B[2][2] - B[0][2]) * (R[1][0] - R[0][0]) - (B[1][2] - B[0][2]) * (R[2][0] - R[0][0])) / det;
-                            // metres of height per mm on paper, and the gap wanted at this tone
+                            // meters of height per mm on paper, and the gap wanted at this tone
                             const grad = Math.hypot(a, b), want = T.shadeGap / tone ** 1.6;
                             let m = 1;
                             while (m <= 32 && (m * dz) / grad < want) m *= 2;
@@ -606,7 +606,7 @@
     }
 
     // A polyline (3D points) cut into dashes of random lengths between a0 and a1
-    // metres, with gaps between g0 and g1
+    // meters, with gaps between g0 and g1
     function dashes(line, rng, a0, a1, g0, g1) {
         const out = [];
         let cur = [line[0]], on = true, left = rng.range(a0, a1);
@@ -1231,7 +1231,7 @@
             return pts;
         };
         for (let k = 0; k + 1 < sup.length; k++) for (const off of [-2, 2]) S.line(cable(off, sup[k][0], sup[k][1], sup[k + 1][0], sup[k + 1][1]));
-        // cabins, one on each track, hanging a few metres under the cable
+        // cabins, one on each track, hanging a few meters under the cable
         for (const [off, f] of [[-2, rng.range(0.25, 0.45)], [2, rng.range(0.55, 0.75)]]) {
             let k = 0;
             while (k + 2 < sup.length && sup[k + 1][0] < f) k++;
@@ -1597,7 +1597,7 @@
         S.kind = INK;
     }
 
-    // Plots on the valley floor, on a grid turned to the main road: ploughed,
+    // Plots on the valley floor, on a grid turned to the main road: plowed,
     // in hay, fenced pasture with cows, orchard or plain meadow with a barn
     function fields(T, G, P, V, E, claims, rng) {
         const { S, p } = T, { x: cx, y: cy, ang } = E.village;
@@ -1617,7 +1617,7 @@
         const kinds = [[3, 'crop'], [2, 'hay'], [2.2, 'pasture'], [1, 'orchard'], [1.6, 'meadow']];
         for (let j = -reach; j <= reach; j++) {
             for (let i = -reach; i <= reach; i++) {
-                // shrunk a little, leaving a track between neighbours
+                // shrunk a little, leaving a track between neighbors
                 const c4 = [at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)];
                 const mx = c4.reduce((s, q) => s + q[0], 0) / 4, my = c4.reduce((s, q) => s + q[1], 0) / 4;
                 const poly = c4.map(([x, y]) => [geo.lerp(x, mx, 0.08), geo.lerp(y, my, 0.08)]);
@@ -1944,7 +1944,7 @@
         if (p.rock > 0) {
             let top = null;
             for (const q of V.peaks.slice(0, 3)) {
-                // the actual summit is near the peak's centre, wherever erosion left it
+                // the actual summit is near the peak's center, wherever erosion left it
                 let best = null;
                 G.near(q.x, q.y, q.r * 0.25, v => { const c = G.pt(v); if (!best || c[2] > best[2]) best = c; });
                 if (!best || !P.seen(best[0], best[1], best[2], 6) || (E.top && Math.hypot(E.top[0] - best[0], E.top[1] - best[1]) < 15)) continue;

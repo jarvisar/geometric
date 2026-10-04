@@ -95,7 +95,7 @@ function designPage(def) {
                 <p>${pens.hint ? esc(pens.hint) + ' ' : ''}Starts with ${count} pen${count === 1 ? '' : 's'} and works with anywhere from 1 to ${PG.MAX_PENS}.</p>
                 <h2>Settings</h2>
                 <p>${esc(settings.join(', '))}.</p>
-                <p class="note">The preview uses the default settings on A4. Press <kbd>R</kbd> in the app for random variations. The SVG export is in millimetres with one Inkscape layer per pen, so it works with the AxiDraw extension, vpype and saxi.</p>${related.length ? `
+                <p class="note">The preview uses the default settings on A4. Press <kbd>R</kbd> in the app for random variations. The SVG export is in millimeters with one Inkscape layer per pen, so it works with the AxiDraw extension, vpype and saxi.</p>${related.length ? `
                 <h2>More ${esc(slug(def.category))}</h2>
                 <ul class="related">
 ${related.map(d => `                    <li><a href="../${d.id}/">${esc(d.name)}</a></li>`).join('\n')}

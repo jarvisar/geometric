@@ -26,7 +26,7 @@
             for (let i = 0; i <= M; i++) {
                 const th = (TAU * i) / M;
                 const u = o.N * th + ph;
-                const rin = Math.max(0, o.ri + o.ai * Math.sin(o.mi * th)); // an inner band dipping below the centre would flip through it
+                const rin = Math.max(0, o.ri + o.ai * Math.sin(o.mi * th)); // an inner band dipping below the center would flip through it
                 const rout = o.ro + o.ao * Math.sin(o.mo * th);
                 const r = rin + (rout - rin) * (0.5 + 0.5 * shaped(Math.sin(u), o.pw));
                 const a = th + o.rot + (o.loop * Math.cos(u)) / o.N;
@@ -64,7 +64,7 @@
             { id: 'ampIn', label: 'Inner depth', type: 'range', min: 0, max: 0.15, step: 0.005, value: 0.025, random: [0, 0.05] },
             { id: 'twist', label: 'Band twist°', type: 'range', min: -180, max: 180, step: 1, value: 0, random: false,
                 hint: 'Rotation of each band relative to the one outside it, in fractions of a lobe (180° = half a lobe)' },
-            { type: 'section', label: 'Centre' },
+            { type: 'section', label: 'Center' },
             { id: 'centre', label: 'Central rosette', type: 'checkbox', value: true, random: 0.7 },
             { id: 'centreWaves', label: 'Rosette petals', type: 'range', min: 3, max: 24, step: 1, value: 12, show: p => p.centre, random: [5, 16] },
             { type: 'section', label: 'Output' },
@@ -94,7 +94,7 @@
             out.lines = geo.clamp(Math.round(rng.range(140, 260) / out.waves), 4, 16);
             out.ampOut = lobes ? p.ampOut : 0;
             out.ampIn = out.lobesIn ? p.ampIn : 0;
-            // Neighbouring bands must not cross. Matching scallops that aren't
+            // Neighboring bands must not cross. Matching scallops that aren't
             // twisted run parallel, so only their difference eats into the gap;
             // otherwise crest can meet trough and the sum must fit inside it.
             const room = p.gap * 0.9;

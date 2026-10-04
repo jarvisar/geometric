@@ -74,7 +74,7 @@
             return 32 * (n0 + n1 + n2 + n3);
         }
 
-        // Fractal Brownian motion, normalised to roughly [-1, 1].
+        // Fractal Brownian motion, normalized to roughly [-1, 1].
         function fbm2(x, y, octaves = 4, lacunarity = 2, gain = 0.5) {
             let sum = 0, amp = 1, norm = 0, f = 1;
             for (let o = 0; o < octaves; o++) {

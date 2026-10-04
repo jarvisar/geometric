@@ -1,6 +1,6 @@
 /*
  * Isometric scenes: a small 3D line drawing engine, shared by the Town and
- * Harbour designs.
+ * Harbor designs.
  *
  * A scene is built from convex solids, flat faces and loose lines, seen
  * through an orthographic camera. Hidden lines are removed exactly. Every
@@ -12,7 +12,7 @@
  * With a sun set, every solid and face also casts a shadow onto the ground of
  * the current shadow group (a lot, the water) and hatchShadows() fills the
  * shadows with lines, merging any that overlap so nothing is drawn twice.
- * Sizes are in metres and the camera scale turns them into millimetres.
+ * Sizes are in meters and the camera scale turns them into millimeters.
  */
 (function () {
     'use strict';
@@ -37,7 +37,7 @@
 
     // Orthographic camera. yaw turns the scene about the vertical, elev tilts the
     // view down from the horizon (35.26° is true isometric). Screen coordinates
-    // are mm with y down, depth is metres away from the camera.
+    // are mm with y down, depth is meters away from the camera.
     iso.makeCamera = function (yaw, elev, k, W, H, cx, cy) {
         const th = geo.rad(yaw), el = geo.rad(elev);
         const fx = Math.sin(th), fy = Math.cos(th); // view direction along the ground
@@ -152,7 +152,7 @@
             this.faces = [];
             this.lines = [];
             this.kind = 0;
-            // shadow offset on the ground per metre of height, null for no shadows
+            // shadow offset on the ground per meter of height, null for no shadows
             this.sun = null;
             this.shadow = null;
             this.shadowGroups = [];
@@ -374,7 +374,7 @@
         hatch(pts, dir, gap, phase = 0.5) {
             const pf = planeFrame(pts, dir);
             if (!pf || !(gap > 0)) return;
-            // paper distance between neighbouring lines per metre of spacing
+            // paper distance between neighboring lines per meter of spacing
             const c = this.cam, o = c.project(0, 0, 0);
             const scr = v => { const q = c.project(v[0], v[1], v[2]); return [q[0] - o[0], q[1] - o[1]]; };
             const s1 = scr(pf.e1), s2 = scr(pf.e2), l1 = Math.hypot(s1[0], s1[1]);
@@ -408,7 +408,7 @@
 
         // Fill every shadow group with lines `gap` mm apart on paper, merging
         // shadows that overlap. Lines of groups with the same angle line up, so
-        // neighbouring shadows hatch as one.
+        // neighboring shadows hatch as one.
         hatchShadows(gap) {
             const cam = this.cam;
             for (const g of this.shadowGroups) {

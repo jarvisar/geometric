@@ -1,8 +1,8 @@
 /*
- * Superformula (Johan Gielis, 2003), a generalised superellipse:
+ * Superformula (Johan Gielis, 2003), a generalized superellipse:
  *   r(φ) = (|cos(mφ/4)|^n2 + |sin(mφ/4)|^n3)^(−1/n1)
  * A stack of shapes shrinks from the outer set of parameters to the inner
- * set, turning a little at every step. Each shape is normalised by its own
+ * set, turning a little at every step. Each shape is normalized by its own
  * largest radius (computed in log space, since the raw formula can overflow).
  * Half-integer or odd m with n2 ≠ n3 need 4π or 8π of φ before the curve
  * closes, so the sweep is chosen per shape. The default is Paul Bourke's

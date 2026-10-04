@@ -29,7 +29,7 @@
             { id: 'spacing', label: 'Spacing (mm)', type: 'range', min: 0.6, max: 12, step: 0.1, value: 2.2, random: [1.5, 4.5] },
             { id: 'variation', label: 'Density variation', type: 'range', min: 0, max: 0.9, step: 0.01, value: 0, random: [0, 0.45] },
             { id: 'test', label: 'Closeness', type: 'range', min: 0.2, max: 0.95, step: 0.01, value: 0.55, random: [0.4, 0.75],
-                hint: 'How close a line may approach its neighbours before stopping (× spacing)' },
+                hint: 'How close a line may approach its neighbors before stopping (× spacing)' },
             { id: 'minLen', label: 'Min length (mm)', type: 'range', min: 0, max: 80, step: 1, value: 8, random: [2, 24] },
             { id: 'maxLen', label: 'Max length (mm)', type: 'range', min: 10, max: 2000, step: 10, value: 600, random: [250, 1500] },
             { id: 'step', label: 'Step (mm)', type: 'range', min: 0.2, max: 2, step: 0.05, value: 0.5, random: false },
@@ -224,7 +224,7 @@
                 return work;
             }
 
-            // Seed from the centre, flood outwards, then sweep a jittered grid for gaps.
+            // Seed from the center, flood outwards, then sweep a jittered grid for gaps.
             tryLine(W / 2, H / 2);
             const sweepStep = Math.max(p.spacing * 2, 2);
             const sweep = [];

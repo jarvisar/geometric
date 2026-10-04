@@ -196,7 +196,7 @@
         const shadeFace = (quad, n, tone) => {
             if (!p.shade) return;
             const lit = (n[0] * LIGHT[0] + n[1] * LIGHT[1]) / (Math.hypot(n[0], n[1]) || 1) + tone;
-            // spacings double so the lines of neighbouring faces meet up
+            // spacings double so the lines of neighboring faces meet up
             if (lit < 0.35) hatch(quad, lit < -0.25 ? 0.45 : 0.9, up ? 0.35 : -0.95, SHADE);
         };
         // step edges thin out in powers of two so they stay GAP apart on paper
@@ -464,7 +464,7 @@
             { id: 'bottom', label: 'Far end', type: 'select', value: 'compass', random: ['compass', 'checker', 'compass', 'void'],
               options: [['compass', 'Compass floor / lantern'], ['checker', 'Checkered floor / lantern'], ['void', 'Open']] },
             { id: 'fov', label: 'Field of view (°)', type: 'range', min: 40, max: 120, step: 1, value: 80, random: [70, 95] },
-            { id: 'shift', label: 'Camera off centre (%)', type: 'range', min: 0, max: 100, step: 1, value: 30, random: [0, 60] },
+            { id: 'shift', label: 'Camera off center (%)', type: 'range', min: 0, max: 100, step: 1, value: 30, random: [0, 60] },
             { id: 'cx', label: 'Vanishing point X (%)', type: 'range', min: 30, max: 70, step: 1, value: 50, random: [44, 56] },
             { id: 'cy', label: 'Vanishing point Y (%)', type: 'range', min: 30, max: 70, step: 1, value: 50, random: [44, 56] },
             { type: 'section', label: 'Pens' }, { id: 'pens' },

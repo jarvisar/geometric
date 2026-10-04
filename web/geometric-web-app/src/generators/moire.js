@@ -3,7 +3,7 @@
  * rotation or stretch. Where the sets fall in and out of step the eye sees
  * large, slow interference fringes: hyperbolae and ellipses for offset
  * circles, broad bands for rotated gratings, rosettes for spirals and rays.
- * Each set goes on its own pen; two colours make the fringes glow.
+ * Each set goes on its own pen; two colors make the fringes glow.
  *
  * "Wobble" displaces the later sets by a smooth noise field. Overlaying a
  * grating with a distorted copy of itself makes the moiré trace contour lines
@@ -28,7 +28,7 @@
                 hint: 'Rays: gap at a quarter of the page width from the hub' },
             { id: 'sets', label: 'Sets', type: 'range', min: 2, max: 3, step: 1, value: 2 },
             { id: 'offset', label: 'Offset (mm)', type: 'range', min: 0, max: 150, step: 0.5, value: 12, random: [6, 30],
-                hint: 'Distance between the set centres', show: p => p.pattern !== 'lines' },
+                hint: 'Distance between the set centers', show: p => p.pattern !== 'lines' },
             { id: 'direction', label: 'Offset direction°', type: 'range', min: 0, max: 180, step: 1, value: 90,
                 show: p => p.pattern !== 'lines' },
             { id: 'rotation', label: 'Rotation between sets°', type: 'range', min: -30, max: 30, step: 0.1, value: 4, random: [-8, 8],
@@ -60,7 +60,7 @@
             } else if (p.pattern === 'spirals') {
                 out.rotation = +rng.range(-30, 30).toFixed(1);
                 out.offset = rng.chance(0.3) ? 0 : +rng.range(4, 20).toFixed(1);
-                if (out.offset < 3) out.mirror = true; // co-centred, same-handed spirals don't interfere
+                if (out.offset < 3) out.mirror = true; // co-centered, same-handed spirals don't interfere
             } else {
                 out.offset = +rng.range(5, three ? 14 : 22).toFixed(1);
                 if (rng.chance(0.3)) out.stretch = +(rng.sign() * rng.range(1, 3)).toFixed(1);
@@ -77,14 +77,14 @@
             const dirA = geo.rad(p.direction);
             const rotStep = geo.rad(p.rotation);
 
-            // Centres on a circle of radius offset/2 (2 sets: `offset` apart).
+            // Centers on a circle of radius offset/2 (2 sets: `offset` apart).
             const centres = [];
             for (let k = 0; k < sets; k++) {
                 const a = dirA + (TAU * k) / sets;
                 const r = sets === 2 ? p.offset / 2 : p.offset / Math.sqrt(3);
                 centres.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
             }
-            // Radius that reaches every corner of the area from a centre.
+            // Radius that reaches every corner of the area from a center.
             const reach = c => Math.max(
                 Math.hypot(c[0], c[1]), Math.hypot(W - c[0], c[1]),
                 Math.hypot(c[0], H - c[1]), Math.hypot(W - c[0], H - c[1])) + 1;
@@ -101,7 +101,7 @@
                 if (p.pattern === 'circles') {
                     for (let r = sp; r <= R; r += sp) paths.push(geo.circle(c[0], c[1], r));
                 } else if (p.pattern === 'lines') {
-                    // grating through the centre, rotated about it, long enough to cover
+                    // grating through the center, rotated about it, long enough to cover
                     const n = Math.ceil(R / sp);
                     const cs = Math.cos(rot), sn = Math.sin(rot);
                     for (let i = -n; i <= n; i++) {
@@ -125,7 +125,7 @@
                     paths.push(pts);
                 } else {
                     // rays: n spokes; spoke i starts where it and its surviving
-                    // neighbours are far enough apart (by powers of two) that the
+                    // neighbors are far enough apart (by powers of two) that the
                     // overlapping hubs of all sets together stay below ~1 ink line/mm
                     const ref = Math.max(10, ctx.shape.dist(cx, cy) / 2);
                     const n = Math.max(8, Math.round((TAU * ref) / sp / 8) * 8);

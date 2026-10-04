@@ -1,5 +1,5 @@
 /*
- * Plot optimisation: point simplification, path merging and pen-up travel
+ * Plot optimization: point simplification, path merging and pen-up travel
  * ordering, plus length statistics. Operates on paper coordinates (mm).
  */
 (function () {
@@ -141,7 +141,7 @@
         return out;
     };
 
-    // Greedy nearest-neighbour ordering with path reversal. Closed loops are
+    // Greedy nearest-neighbor ordering with path reversal. Closed loops are
     // re-started at the vertex nearest the pen. Returns { paths, end }.
     opt.sort = function (paths, start = [0, 0], rotateLoops = true) {
         const n = paths.length;

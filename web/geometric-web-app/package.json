@@ -1,7 +1,7 @@
 {
   "name": "geometric-web-app",
   "version": "2.0.0",
-  "description": "Plotter Geometry: generative geometric line art for pen plotters, with plot-optimised SVG export.",
+  "description": "Plotter Geometry: generative geometric line art for pen plotters, with plot-optimized SVG export.",
   "private": true,
   "scripts": {
     "start": "live-server src",

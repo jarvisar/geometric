@@ -1,12 +1,12 @@
 /*
  * Flower — the original design of this app. Every petal owns an equal sector
  * of the circle and is filled with nested copies of one curve, growing out of
- * the centre circle (radius c, 0 when the centre isn't kept clear). Along a
+ * the center circle (radius c, 0 when the center isn't kept clear). Along a
  * petal (t = 0..1 across its sector):
  *   r = c + (R − c) · (j / lines) · rose · sin(πt)^sharpness · (1 + organic·sin(3·nθ + πt))
  * where rose = (1 − width) + width·cos(nθ) dips in the middle of the sector,
  * which splits each petal into two lobes (and past width 0.5 pushes the
- * middle through the centre). Extras: a twist that turns the outer lines,
+ * middle through the center). Extras: a twist that turns the outer lines,
  * and an optional second ring of petals, offset by half a petal.
  */
 (function () {
@@ -35,12 +35,12 @@
                     const fall = Math.pow(Math.sin(Math.PI * t), p.sharpness);
                     const organic = 1 + p.organic * Math.sin(3 * pa + t * Math.PI);
                     const r = base + (scale - base) * ratio * rose * fall * organic;
-                    // keep the centre disc clear so the lines don't pile up in one spot
+                    // keep the center disk clear so the lines don't pile up in one spot
                     const inside = clearR > 0 && Math.abs(r) < clearR;
-                    // A line crosses the centre disc when it goes in or out, or when r changes sign
+                    // A line crosses the center disk when it goes in or out, or when r changes sign
                     // between two samples outside it (it runs through the middle).
                     if (prev && (inside !== prev.inside || (!inside && prev.r * r < 0))) {
-                        // end or start the line exactly on the centre circle, on the side it's on
+                        // end or start the line exactly on the center circle, on the side it's on
                         const edge = er => {
                             const ea = geo.lerp(prev.ang, ang, (er - prev.r) / (r - prev.r));
                             return [er * Math.cos(ea), er * Math.sin(ea)];
@@ -62,7 +62,7 @@
         id: 'flower',
         name: 'Flower',
         category: 'Curves',
-        description: 'Petals filled with nested contour lines around a round centre.',
+        description: 'Petals filled with nested contour lines around a round center.',
         fit: true,
         params: [
             { type: 'section', label: 'Petals' },
@@ -73,10 +73,10 @@
             { id: 'organic', label: 'Organic variation', type: 'range', min: 0, max: 0.3, step: 0.01, value: 0.1, random: [0, 0.25] },
             { id: 'twist', label: 'Twist°', type: 'range', min: -90, max: 90, step: 1, value: 0, random: [-30, 30],
                 hint: 'Turns each line by this much times its size, so outer lines swirl' },
-            { type: 'section', label: 'Centre' },
-            { id: 'centre', label: 'Centre size', type: 'range', min: 0, max: 0.3, step: 0.01, value: 0.1 },
-            { id: 'clear', label: 'Keep centre clear', type: 'checkbox', value: true, random: false,
-                hint: 'Stop the petal lines at the centre circle instead of meeting in one point' },
+            { type: 'section', label: 'Center' },
+            { id: 'centre', label: 'Center size', type: 'range', min: 0, max: 0.3, step: 0.01, value: 0.1 },
+            { id: 'clear', label: 'Keep center clear', type: 'checkbox', value: true, random: false,
+                hint: 'Stop the petal lines at the center circle instead of meeting in one point' },
             { type: 'section', label: 'Second ring' },
             { id: 'ring2', label: 'Second ring (pen 2)', type: 'checkbox', value: false },
             { id: 'ring2Scale', label: 'Size', type: 'range', min: 0.2, max: 1.2, step: 0.01, value: 0.6, show: p => p.ring2 },
@@ -108,8 +108,8 @@
             const perLine = (n * len / Math.max(reach, 1e-3)) * 90 * 0.4; // mm, averaged over nested sizes
             const budget = out.ring2 ? 17000 : 22000;
             out.lines = geo.clamp(Math.round(budget / perLine), 4, 30);
-            // centre radius as a share of the whole flower (cr + (1 − cr)·reach); a small
-            // centre crowds every petal's lines into a few points on its rim
+            // center radius as a share of the whole flower (cr + (1 − cr)·reach); a small
+            // center crowds every petal's lines into a few points on its rim
             const share = rng.range(0.15, 0.3);
             out.centre = +geo.clamp((share * reach) / (1 - share + share * reach), 0.02, 0.3).toFixed(2);
             if (out.ring2) {

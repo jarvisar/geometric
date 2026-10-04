@@ -1,9 +1,9 @@
 /*
  * Skyline District: a crowded city seen from above, after the dense ink
  * drawings of cyberpunk cities. Blocks are cut into lots and every lot gets
- * one of about fifteen building types. Neighbouring blocks share a district
+ * one of about fifteen building types. Neighboring blocks share a district
  * (downtown glass, midtown deco, the old Kowloon quarter or a leafy one) so
- * the page reads as parts of a city rather than a catalogue of towers.
+ * the page reads as parts of a city rather than a catalog of towers.
  * Walls facing away from the sun are hatched to match the ground shadows,
  * a river with bridges and boats opens up the middle distance, and viaducts,
  * skybridges and overhead cables tie the blocks together.
@@ -17,7 +17,7 @@
 
     // line kinds, mapped to pens by P.scenes.skyline in pens.js
     const ARCH = 0, SIGN = 1, SHADE = 2, PAD = 3, GLASS = 4, CABLE = 5, PARK = 6, LIFE = 7, ROAD = 8, WATER = 9, ROOF = 10;
-    const FL = 3.6; // storey (m)
+    const FL = 3.6; // story (m)
     const WALK = 2.6; // sidewalk (m)
     const PROM = 6; // riverside promenade (m)
     const ZW = -2.6; // river surface, below the streets so the quay walls show
@@ -77,7 +77,7 @@
             W.at(s0, z1, o0), W.at(s1, z1, o0), W.at(s1, z1, o1), W.at(s0, z1, o1)], BOX);
     }
 
-    // paper mm per metre along a wall
+    // paper mm per meter along a wall
     const across = (T, W) => T.k * Math.max(0.15, Math.abs(W.u[0] * T.cam.rx + W.u[1] * T.cam.ry));
 
     // A plane standing at (x, y) facing n, w wide, for signs: at(s, z, o)
@@ -287,7 +287,7 @@
         S.kind = ARCH;
     }
 
-    // Height of the neighbour standing in front of wall W of lot L, between s0 and s1 along it
+    // Height of the neighbor standing in front of wall W of lot L, between s0 and s1 along it
     function cover(L, W, s0, s1) {
         const spans = L.cover && L.cover[W.n[0] < -0.5 ? 0 : W.n[0] > 0.5 ? 1 : W.n[1] < -0.5 ? 2 : 3];
         if (!spans) return 0;
@@ -311,7 +311,7 @@
             const w = rng.int(2, 3), c = rng.int(0, cols - w), r = rng.int(0, rows - 1), n = Math.min(rows - r, rng.weighted([[4, 1], [2, 2], [1, 3]]));
             if (c < 0 || !free(c, c + w, r, r + n)) continue;
             const s0 = 0.2 + c * cw + 0.12, s1 = 0.2 + (c + w) * cw - 0.12, zb = z0 + r * FL + 0.5;
-            // below the roof of a close neighbour it's hidden anyway, or pokes up through it
+            // below the roof of a close neighbor it's hidden anyway, or pokes up through it
             if (zb < cover(L, W, s0 - 0.5, s1 + 0.5)) continue;
             for (let rr = r; rr < r + n; rr++) for (let cc = c; cc < c + w; cc++) used[rr * cols + cc] = 1;
             room(T, W, s0, s1, zb, z0 + (r + n) * FL - 0.4, rng.range(0.8, 1.8), rng);
@@ -951,7 +951,7 @@
                 }
             }
         });
-        // built once every lot is standing, so the jib can swing clear of the neighbours
+        // built once every lot is standing, so the jib can swing clear of the neighbors
         const hm = floors * FL + rng.range(10, 18), ang = rng.range(0, TAU);
         T.cranes.push(() => crane(T, cx + cr + 1.6, cy + cr + 1.6, 0, hm, ang, rng, floors * FL, L.id));
     }
@@ -1476,7 +1476,7 @@
         T.solids.add(x - L / 2, y - L / 2, x + L / 2, y + L / 2, 1e4, -7);
     }
 
-    // Helicopter hovering over a helipad, the rotor drawn as a blurred disc
+    // Helicopter hovering over a helipad, the rotor drawn as a blurred disk
     function helicopter(T, x, y, z, ang, rng) {
         const S = T.S, F = turned(x, y, z, ang);
         S.kind = ARCH;
@@ -1512,7 +1512,7 @@
     }
 
     // Markings, crossings, lamps, cars and people along one street, from a to b
-    // along its axis (0 runs along x) and centred on c
+    // along its axis (0 runs along x) and centered on c
     function street(T, axis, c, a, b, w, rng) {
         const S = T.S, busy = [], P = (u, v, z = 0.02) => axis === 0 ? [u, c + v, z] : [c + v, u, z], len = b - a, p = T.p;
         if (len < 3) return;
@@ -1755,7 +1755,7 @@
             for (let w = 0; w < wires; w++) {
                 const sag = sag0 * (1 + 0.45 * w);
                 const at = f => [a.p[0] + (b.p[0] - a.p[0]) * f, a.p[1] + (b.p[1] - a.p[1]) * f, a.p[2] + (b.p[2] - a.p[2]) * f - 4 * sag * f * (1 - f)];
-                // tested every metre, finer than it's drawn, or it cuts through building corners
+                // tested every meter, finer than it's drawn, or it cuts through building corners
                 let ok = true;
                 for (let k = 1, n = Math.ceil(L); k < n && ok; k++) {
                     const q = at(k / n);
@@ -1980,7 +1980,7 @@
                 patches.push({ x, r: 6 });
             }
         });
-        // ripples as short dashes along the page, the way Harbour does its water
+        // ripples as short dashes along the page, the way Harbor does its water
         const r = [T.cam.rx, T.cam.ry];
         inKind(S, WATER, () => {
             for (let k = Math.round((hi - lo + 40) * span / 85); k > 0; k--) {
@@ -2094,7 +2094,7 @@
             h = Math.max(type === 'low' || type === 'parking' || type === 'church' ? h : 14, Math.min(h, cap));
             return { id: hash(i, j, k), x0: a0, y0: b0, x1: a1, y1: b1, h: Math.round(h / FL) * FL + 0.4, type, facade, rng: new PG.RNG(hash(T.seed, i, j, k, 9)), i, j };
         });
-        // Neighbours right beside each side (-x, +x, -y, +y) as [from, to, height] along it,
+        // Neighbors right beside each side (-x, +x, -y, +y) as [from, to, height] along it,
         // so rooms and blade signs don't hang into them
         for (const L of lots) L.cover = [0, 1, 2, 3].map(s => lots.filter(M => {
             const d = [L.x0 - M.x1, M.x0 - L.x1, L.y0 - M.y1, M.y0 - L.y1][s];
@@ -2226,7 +2226,7 @@
                 const x0 = i * B + widthX(i) / 2, x1 = ie * B - widthX(ie) / 2, y0 = j * B + widthY(j) / 2, y1 = je * B - widthY(je) / 2;
                 if (!visible(x0, y0, x1, y1, sb ? lm.H * 1.2 : p.height * 2.2 + 10)) continue;
                 const brng = new PG.RNG(hash(seed, i, j, 3));
-                // tall lots behind the top edge can still reach into the page, their kerbs can't
+                // tall lots behind the top edge can still reach into the page, their curbs can't
                 if (visible(x0, y0, x1, y1, 8)) sidewalk(T, x0, y0, x1, y1, brng, [widthX(i) >= 15, widthX(ie) >= 15, widthY(j) >= 15, widthY(je) >= 15]);
                 if (sb) {
                     lm.R = Math.min(x1 - x0, y1 - y0) * 0.3;
@@ -2239,7 +2239,7 @@
                 }
                 for (const L of blockLots(T, i, j, x0 + WALK, y0 + WALK, x1 - WALK, y1 - WALK, hw)) {
                     if (!visible(L.x0, L.y0, L.x1, L.y1, L.h + 20)) continue;
-                    // everything on a lot stands on the kerb
+                    // everything on a lot stands on the curb
                     withBase(T, 0.2, () => TYPES[L.type](T, L));
                     lots.push(L);
                 }
@@ -2300,7 +2300,7 @@
                 airship(T, q[0], q[1], z, len, Math.atan2(cam.ry, cam.rx) + arng.range(-0.4, 0.4) + (arng.chance(0.5) ? Math.PI : 0), arng);
             }
             cables(T, rng, paths);
-            // street shadows sparser than the walls, or the whole ground goes grey
+            // street shadows sparser than the walls, or the whole ground goes gray
             if (p.shadows) { S.kind = SHADE; S.hatchShadows(Math.max(1.2, p.gap * 2.8)); }
             return PG.pens.renderScene('skyline', S, p);
         },

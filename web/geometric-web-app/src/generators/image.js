@@ -2,7 +2,7 @@
  * Image — a photo translated into plotter lines. The luminance raster is
  * sampled bilinearly ('cover' or 'contain' fit), then shaped by contrast,
  * gamma and invert. Renderings:
- *   spiral   — one Archimedean spiral from the centre whose sideways squiggle
+ *   spiral   — one Archimedean spiral from the center whose sideways squiggle
  *              grows with darkness (the "SpiralBetty" look), one stroke;
  *   squiggle — horizontal rows with the same darkness-driven squiggle;
  *   waves    — rows lifted by darkness with floating-horizon hidden lines,
@@ -18,8 +18,8 @@
  *   tsp      — TSP art (after Kaplan & Bosch, 2005): darkness-weighted
  *              stipples by dart throwing, evened out by weighted Lloyd
  *              relaxation (Secord, 2002), then a single tour built by
- *              nearest-neighbour and improved with 2-opt and Or-opt moves on
- *              neighbour lists with a fixed work budget;
+ *              nearest-neighbor and improved with 2-opt and Or-opt moves on
+ *              neighbor lists with a fixed work budget;
  *   scribble — the same tour drawn as a run of overlapping loops;
  *   hilbert  — an adaptive Hilbert curve, subdivided deeper where darker;
  *   string   — string art (after Petros Vrellis): one thread wound between
@@ -311,7 +311,7 @@
         return out;
     }
 
-    // A filled dot as one stroke: a spiral out from the centre, closed by a circle at r.
+    // A filled dot as one stroke: a spiral out from the center, closed by a circle at r.
     function spiralDot(x, y, r, pitch, seg) {
         const b = pitch / TAU, pts = [];
         let th = 0;
@@ -407,7 +407,7 @@
     }
 
     // Weighted Lloyd relaxation on the raster (after Secord, 2002): every pixel
-    // goes to its nearest stipple (each stipple claims a disc about its local
+    // goes to its nearest stipple (each stipple claims a disk about its local
     // spacing, z-buffer style) and stipples move to the weighted centroid of
     // their pixels. A few rounds turn dart-throwing clumps into even flow.
     function relax(X, Y, R, maxReach, k) {
@@ -487,12 +487,12 @@
             return best.map(q => q[1]);
         }
 
-        // neighbour lists
+        // neighbor lists
         const KN = 8;
         const nbrs = new Array(N);
         for (let i = 0; i < N; i++) nbrs[i] = nearest(i, KN);
 
-        // greedy nearest-neighbour tour; visited points leave their buckets
+        // greedy nearest-neighbor tour; visited points leave their buckets
         const T = new Int32Array(N), pos = new Int32Array(N);
         const where = new Int32Array(N);
         buckets.forEach(bk => bk.forEach((id, k) => { where[id] = k; }));
@@ -511,7 +511,7 @@
             cur = nx;
         }
 
-        // 2-opt and Or-opt with neighbour lists and don't-look bits
+        // 2-opt and Or-opt with neighbor lists and don't-look bits
         const reverse = (i, j) => { // reverse tour positions i..j (cyclic, inclusive)
             let len = ((j - i + N) % N) + 1;
             if (len * 2 > N) { const t = i; i = (j + 1) % N; j = (t - 1 + N) % N; len = N - len; }
@@ -914,7 +914,7 @@
     }
 
     // Adaptive Hilbert curve: a cell splits into four while it's larger than
-    // the size its darkest corner asks for. Neighbouring leaves of different
+    // the size its darkest corner asks for. Neighboring leaves of different
     // sizes join with short diagonals, which is part of the look.
     function hilbert(p, dark, bb, ctx, cx, cy) {
         const tone = darkField(dark, bb, 1.5e5, 0.6).at;
@@ -996,7 +996,7 @@
         fit: false,
         // One gallery card per mode. They all open this design, so a loaded photo carries across.
         gallery: [
-            ['spiral', 'spheres', 'Squiggle Spiral', 'One spiral from the centre that squiggles harder where the photo is darker.'],
+            ['spiral', 'spheres', 'Squiggle Spiral', 'One spiral from the center that squiggles harder where the photo is darker.'],
             ['squiggle', 'moon', 'Squiggle Rows', 'Rows of squiggles whose height and pace follow the tones.'],
             ['waves', 'moon', 'Waves', 'Rows lifted by darkness with hidden lines removed, like the Unknown Pleasures cover.'],
             ['hatch', 'saturn', 'Cross-Hatch', 'Up to four layers of hatching, each one starting at a darker tone.'],
@@ -1113,7 +1113,7 @@
                 // when the point cap coarsens the step, a short wave would alias into a much longer one
                 const wave = Math.max(p.wave, 4 * step);
                 if (p.mode === 'spiral') {
-                    // 'circle': the largest circle inside the clip shape around its centre
+                    // 'circle': the largest circle inside the clip shape around its center
                     const inR = ctx.shape.dist(cx, cy) > s ? ctx.shape.dist(cx, cy) : Math.min(bb.w, bb.h) / 2;
                     const R = p.extent === 'page' ? Math.hypot(bb.w, bb.h) / 2 : inR - s / 2;
                     const b = s / TAU;

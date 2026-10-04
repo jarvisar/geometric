@@ -1,6 +1,6 @@
 /*
  * Pipeline: run a generator, place its output on the paper (fit / rotate /
- * offset), clip to the drawing area, optionally frame it, then optimise the
+ * offset), clip to the drawing area, optionally frame it, then optimize the
  * pen path per layer and collect statistics.
  */
 (function () {
@@ -133,7 +133,7 @@
         return out.filter(p => p.length > 1);
     };
 
-    // Normalise generator output to [{ pen, paths }], one entry per used pen.
+    // Normalize generator output to [{ pen, paths }], one entry per used pen.
     PG.normalizeOutput = function (out) {
         let layers;
         if (!out) layers = [];
@@ -275,7 +275,7 @@
     //   cellVary: 'seed' | 'params' | 'none', locks: [param ids kept when varying params]
     //   opt: { merge, mergeTol, sort, simplify, simplifyTol, minLength }
     // }
-    // extra: { images } – non-serialisable inputs handed to the generator.
+    // extra: { images } – non-serializable inputs handed to the generator.
     // ------------------------------------------------------------------
     PG.layoutSizes = function (S) {
         if (!Number.isFinite(S.paperW) || !Number.isFinite(S.paperH) || S.paperW < 1 || S.paperH < 1) {
@@ -323,14 +323,14 @@
             }
         }
         let layers = [...byPen.entries()].sort((a, b) => a[0] - b[0]).map(([pen, paths]) => ({ pen, paths }));
-        // The preview morphs between drawings using the geometry from before optimising, since
+        // The preview morphs between drawings using the geometry from before optimizing, since
         // merging and sorting change the path order from one drawing to the next
         const motion = extra.motion ? layers : null;
 
         const T3 = performance.now();
         const rawStats = PG.optimize.stats(layers);
 
-        // ---- optimise
+        // ---- optimize
         const o = S.opt || {};
         const O = PG.optimize;
         const paperBounds = shapes.rect(m, m, m + W, m + H);

@@ -18,7 +18,7 @@
  * dropped as soon as they do, since their descendants stay inside them.
  *
  * Matching arcs are circular arcs about tile corners that cross every edge
- * at right angles, so arcs of neighbouring tiles join into smooth curves.
+ * at right angles, so arcs of neighboring tiles join into smooth curves.
  * On kites and darts they are Penrose's own (radii 1 and ψ about the kite's
  * tip and tail, ψ and ψ² about the dart's nose and notch, in short-edge
  * units), cutting every edge in the golden ratio. The two families touch on
@@ -55,14 +55,14 @@
     function startPatch(kind, cx, cy, R, rot) {
         const T = [], at = (r, a) => [cx + r * Math.cos(a + rot), cy + r * Math.sin(a + rot)];
         if (kind === 'P3') {
-            // wheel of ten thin half-rhombs, alternately mirrored so neighbours share like legs
+            // wheel of ten thin half-rhombs, alternately mirrored so neighbors share like legs
             for (let i = 0; i < 10; i++) {
                 let B = at(R, ((2 * i - 1) * Math.PI) / 10), C = at(R, ((2 * i + 1) * Math.PI) / 10);
                 if (i % 2 === 0) [B, C] = [C, B];
                 T.push([0, [cx, cy], B, C]);
             }
         } else {
-            // sun: five kites with their tips at the centre (long edge R)
+            // sun: five kites with their tips at the center (long edge R)
             for (let i = 0; i < 5; i++) {
                 const a = (i * TAU) / 5;
                 for (const s of [-1, 1]) T.push([0, [cx, cy], at(R, a + (s * Math.PI) / 5), at(R, a)]);
@@ -76,13 +76,13 @@
         return kind === 'P3' ? [[A, B], [A, C]] : [[A, B], [B, C]];
     }
 
-    // Matching arcs of a half-tile: { c: centre, from, to: points fixing the start/end
+    // Matching arcs of a half-tile: { c: center, from, to: points fixing the start/end
     // directions, r, fam }. Each arc runs from a tile edge to the internal axis.
     function tileArcs(kind, [t, A, B, C]) {
         if (kind === 'P3') {
             const e = geo.dist(A, B);
-            // family 0 about B: thin ψ³, thick 1 − ψ³ (their centres sit at opposite ends
-            // of shared edges); family 1 about C: ψ³ on both (same centres).
+            // family 0 about B: thin ψ³, thick 1 − ψ³ (their centers sit at opposite ends
+            // of shared edges); family 1 about C: ψ³ on both (same centers).
             return [
                 { c: B, from: A, to: C, r: e * (t === 0 ? PSI3 : 1 - PSI3), fam: 0 },
                 { c: C, from: A, to: B, r: e * PSI3, fam: 1 },
@@ -97,7 +97,7 @@
     }
 
     // Inset a simple polygon (convex or not, like a dart) by moving every edge
-    // inward by d and meeting neighbouring edges again. Returns [] once an edge
+    // inward by d and meeting neighboring edges again. Returns [] once an edge
     // would flip over, i.e. the polygon has collapsed.
     function insetPoly(poly, d) {
         const n = poly.length, s = geo.polygonArea(poly) > 0 ? 1 : -1;
@@ -140,8 +140,8 @@
                 options: [['P3', 'Rhombs (P3)'], ['P2', 'Kites & darts (P2)']] },
             { id: 'edge', label: 'Edge length (mm)', type: 'range', min: 3, max: 60, step: 0.5, value: 14, random: [8, 24],
                 hint: 'Long edge for kites and darts' },
-            { id: 'centre', label: 'Centre', type: 'select', value: 'sun', random: ['sun', 'sun', 'random'],
-                options: [['sun', 'Five-fold centre'], ['random', 'Anywhere']] },
+            { id: 'centre', label: 'Center', type: 'select', value: 'sun', random: ['sun', 'sun', 'random'],
+                options: [['sun', 'Five-fold center'], ['random', 'Anywhere']] },
             { type: 'section', label: 'Style' },
             { id: 'outline', label: 'Tile outlines', type: 'checkbox', value: true },
             { id: 'decor', label: 'Decoration', type: 'select', value: 'arcs', random: ['arcs', 'arcs', 'hatch', 'nested', 'none'],
@@ -245,7 +245,7 @@
                     poly = geo.cleanPolygon(poly);
                     if (poly.length < 3) continue;
                     const out = layers[orientPen(A, B, type)];
-                    // at 0 the first fill ring is the tile edge, which the neighbouring tile draws too
+                    // at 0 the first fill ring is the tile edge, which the neighboring tile draws too
                     const inner = insetPoly(poly, Math.max(0.3, p.gap));
                     if (inner.length < 3) continue;
                     const convex = !(kind === 'P2' && type === 1 && poly.length === 4); // a whole dart is concave

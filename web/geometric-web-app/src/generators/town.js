@@ -5,15 +5,15 @@
  * sidewalks, lots with houses, apartments, A-frames and the odd windmill,
  * plus cars, fences, trees and yard clutter. The rows don't have to line up
  * (see plan), some streets are boulevards or meet at roundabouts, and a river
- * with bridges can run through. Round a town centre the lots get denser, with
- * terraces and shops, squares and a church in its churchyard. The town centre
- * buildings, boats and bridges are shared with Harbour (lib/isokit.js).
+ * with bridges can run through. Round a town center the lots get denser, with
+ * terraces and shops, squares and a church in its churchyard. The town center
+ * buildings, boats and bridges are shared with Harbor (lib/isokit.js).
  * Everything is built from boxes, prisms and faceted cylinders, with flat
  * upright cut-outs for trees and people, and viewed through an orthographic
  * camera.
  *
  * Hidden lines are removed exactly (see lib/iso.js), so the plot has just the
- * visible outlines. Sizes are in metres and Scale turns them into millimetres
+ * visible outlines. Sizes are in meters and Scale turns them into millimeters
  * on paper.
  */
 (function () {
@@ -117,7 +117,7 @@
         fence(T, P(a0 - 0.5, b0 - 2.1, deck), P(a1 + 0.5, b0 - 2.1, deck), 0.9, true);
     }
 
-    // Flat-roofed modern house: a two-storey box with a lower wing (garage)
+    // Flat-roofed modern house: a two-story box with a lower wing (garage)
     function modern(T, F, fp, rng, o) {
         const S = T.S;
         S.kind = BUILDING;
@@ -188,7 +188,7 @@
             S.box(F, a0 + doorS - 0.9, b0 - 0.9, base + 3.0, a0 + doorS + 0.9, b0, base + 3.15);
             downpipe(T, front, front.len - 0.25, 0, top);
         }
-        // in the town centre the ground floor is shops, with awnings either side of the door
+        // in the town center the ground floor is shops, with awnings either side of the door
         const shops = o.shops && T.sees(front.n);
         for (let side = 0; side < 4; side++) {
             const sh = shops && side === 0;
@@ -787,7 +787,7 @@
     function fillLot(T, lot, keys) {
         const { p } = T;
         const rng = new PG.RNG(hash(...keys, 3));
-        // 1 in the middle of the town centre, 0 out in the suburbs
+        // 1 in the middle of the town center, 0 out in the suburbs
         lot.t = centreness(T, (lot.x0 + lot.x1) / 2, (lot.y0 + lot.y1) / 2);
         if (lot.dir < 0) return yard(T, lot, keys, 'court');
         const big = lot.w >= 7.5 && lot.d >= 8.8, t = lot.t, out = 1 - t;
@@ -1065,7 +1065,7 @@
     }
 
     // Street between two blocks: lane dashes, crosswalks and parked cars.
-    // (x, y) is the start of the centre line, (dx, dy) its direction and st its
+    // (x, y) is the start of the center line, (dx, dy) its direction and st its
     // width. A boulevard gets a planted strip down the middle instead of dashes.
     function street(T, x, y, dx, dy, len, keys, st = T.p.street, boulevard = false) {
         const { S, p } = T;
@@ -1136,7 +1136,7 @@
     // Squares, the churchyard and roundabouts
     // ------------------------------------------------------------------
 
-    // How far (x, y) is into the town centre: 1 in the middle, 0 outside it
+    // How far (x, y) is into the town center: 1 in the middle, 0 outside it
     function centreness(T, x, y) {
         if (!T.centre || !T.p.downtown) return 0;
         return T.p.downtown * geo.smoothstep(1, 0.2, Math.hypot(x - T.centre[0], y - T.centre[1]) / T.centreR);
@@ -1508,13 +1508,13 @@
             for (const v of q) { a = Math.min(a, v[0]); c = Math.max(c, v[0]); b = Math.min(b, v[1]); e = Math.max(e, v[1]); }
             return c > -pad && e > -pad && a < S.W + pad && b < S.H + pad;
         };
-        // the town centre, where it's built up most
+        // the town center, where it's built up most
         T.centre = cam.ground(S.W * ph.range(0.3, 0.7), S.H * ph.range(0.3, 0.6));
         T.centreR = ph.range(55, 90);
         const { mains, rows, R } = plan(T, ph, X0, X1, Y0, Y1, cam.ground(S.W / 2, S.H / 2));
         // can't happen within the parameter limits, but don't loop forever if it does
         if (rows.reduce((n, r) => n + r.blocks.length, 0) > 20000) return;
-        // squares near the centre, then a church a little way off
+        // squares near the center, then a church a little way off
         const near = b => Math.hypot((b.x0 + b.x1) / 2 - T.centre[0], (b.y0 + b.y1) / 2 - T.centre[1]);
         const cands = [];
         for (const row of rows) for (const b of row.blocks) if (seen(b.x0 + 4, b.y0 + 4, b.x1 - 4, b.y1 - 4, 0)) cands.push({ b, d: near(b) + ph.range(0, 50) });
@@ -1597,7 +1597,7 @@
         params: [
             { type: 'section', label: 'View' },
             { id: 'scale', label: 'Scale (mm per m)', type: 'range', min: 1, max: 5, step: 0.05, value: 1.6, random: [1.2, 2.4],
-                hint: 'How big a metre is on paper. Small details drop out when they get too small to plot' },
+                hint: 'How big a meter is on paper. Small details drop out when they get too small to plot' },
             { id: 'yaw', label: 'Camera turn (°)', type: 'range', min: 15, max: 75, step: 0.5, value: 52, random: false,
                 hint: '45 is a classic symmetric isometric view' },
             { id: 'elev', label: 'Camera height (°)', type: 'range', min: 20, max: 60, step: 0.5, value: 38.5, random: false,
@@ -1617,7 +1617,7 @@
                 hint: 'Wide streets with trees down the middle' },
             { id: 'roundabouts', label: 'Roundabouts', type: 'range', min: 0, max: 1, step: 0.01, value: 0.3, random: [0, 0.7] },
             { type: 'section', label: 'Town' },
-            { id: 'downtown', label: 'Town centre', type: 'range', min: 0, max: 1, step: 0.01, value: 0.7, random: [0.3, 1],
+            { id: 'downtown', label: 'Town center', type: 'range', min: 0, max: 1, step: 0.01, value: 0.7, random: [0.3, 1],
                 hint: 'How built up the middle of town gets: apartments, terraces and shops' },
             { id: 'plazas', label: 'Squares', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.2, 1] },
             { id: 'tower', label: 'Clock tower', type: 'checkbox', value: true, random: 0.6, hint: 'On a square, when there is one' },
@@ -1631,10 +1631,10 @@
             { id: 'aframes', label: 'A-frames', type: 'range', min: 0, max: 1, step: 0.01, value: 0.2, random: [0, 0.4] },
             { id: 'apartments', label: 'Apartments', type: 'range', min: 0, max: 1, step: 0.01, value: 0.35, random: [0, 0.6] },
             { id: 'terraces', label: 'Terraced rows', type: 'range', min: 0, max: 1, step: 0.01, value: 0.35, random: [0, 0.7],
-                hint: 'Narrow gable-fronted houses in a row, mostly in the town centre' },
+                hint: 'Narrow gable-fronted houses in a row, mostly in the town center' },
             { id: 'windmills', label: 'Windmills', type: 'range', min: 0, max: 1, step: 0.01, value: 0.05, random: [0, 0.12] },
             { id: 'parks', label: 'Parks & gardens', type: 'range', min: 0, max: 1, step: 0.01, value: 0.1, random: [0, 0.25] },
-            { id: 'floors', label: 'Max storeys', type: 'range', min: 1, max: 8, step: 1, value: 4, random: [3, 5] },
+            { id: 'floors', label: 'Max stories', type: 'range', min: 1, max: 8, step: 1, value: 4, random: [3, 5] },
             { id: 'detail', label: 'Fine details', type: 'checkbox', value: true,
                 hint: 'Window panes, car windows, sail lattices and other small line work' },
             { type: 'section', label: 'Details' },

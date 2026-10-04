@@ -5,7 +5,7 @@
  *
  *   p' = c + (p − c)·(1 + s·(1 − (d/R)²)³)     for d = |p − c| < R
  *
- * The centre is magnified by 1 + s and the rim compressed, which the eye reads
+ * The center is magnified by 1 + s and the rim compressed, which the eye reads
  * as a sphere swelling out of the page (s < 0 pinches a dimple instead). The
  * profile joins the flat surround smoothly and stays monotonic for
  * −1 < s < 1.5, so lines never fold or cross.
@@ -32,12 +32,12 @@
                 show: p => p.style === 'checker', hint: 'Fill the other cells with perpendicular hatching instead of leaving them blank' },
             { type: 'section', label: 'Bulge' },
             { id: 'bulges', label: 'Bulges', type: 'range', min: 1, max: 3, step: 1, value: 1,
-                hint: 'The first sits at the centre; extra ones are placed at random' },
+                hint: 'The first sits at the center; extra ones are placed at random' },
             { id: 'strength', label: 'Strength', type: 'range', min: -0.9, max: 1.4, step: 0.01, value: 0.85, random: [-0.5, 1.1],
-                hint: 'Centre magnification − 1; negative pinches' },
+                hint: 'Center magnification − 1; negative pinches' },
             { id: 'radius', label: 'Radius (% of short side)', type: 'range', min: 10, max: 100, step: 1, value: 44, random: [28, 55] },
-            { id: 'cx', label: 'Centre x (%)', type: 'range', min: 0, max: 100, step: 1, value: 50, random: false },
-            { id: 'cy', label: 'Centre y (%)', type: 'range', min: 0, max: 100, step: 1, value: 50, random: false },
+            { id: 'cx', label: 'Center x (%)', type: 'range', min: 0, max: 100, step: 1, value: 50, random: false },
+            { id: 'cy', label: 'Center y (%)', type: 'range', min: 0, max: 100, step: 1, value: 50, random: false },
             { type: 'section', label: 'Pens' },
             { id: 'pens' },
         ],
@@ -49,7 +49,7 @@
             // blank-cell checkers need dense hatching to read as black squares
             if (p.style === 'checker' && !p.weave) out.spacing = +rng.range(1.1, 1.6).toFixed(2);
             out.radius = p.bulges > 1 ? rng.int(24, 40) : rng.int(34, 55);
-            // usually centred, sometimes nudged off-centre for a less static composition
+            // usually centered, sometimes nudged off-center for a less static composition
             const off = rng.chance(0.35);
             out.cx = off ? rng.int(32, 68) : 50;
             out.cy = off ? rng.int(32, 68) : 50;
@@ -94,7 +94,7 @@
             const m = Math.max(...bulges.map(b => b.r)) * 0.3 + 2;
             const X0 = -m, Y0 = -m, X1 = W + m, Y1 = H + m;
             const A = [], B = []; // pen 1 / pen 2
-            const ox = W / 2, oy = H / 2; // structure is centred on the page
+            const ox = W / 2, oy = H / 2; // structure is centered on the page
 
             if (p.style === 'checker' || p.style === 'grid') {
                 const cell = W / Math.max(1, p.cells);
@@ -104,7 +104,7 @@
                     for (let i = i0; i <= i1; i++) A.push([[ox + i * cell, Y0], [ox + i * cell, Y1]]);
                     for (let j = j0; j <= j1; j++) B.push([[X0, oy + j * cell], [X1, oy + j * cell]]);
                 } else {
-                    // an integer number of hatch lines per cell, evenly centred
+                    // an integer number of hatch lines per cell, evenly centered
                     const n = Math.max(1, Math.round(cell / p.spacing)), hs = cell / n;
                     for (let j = j0; j < j1; j++) {
                         for (let i = i0; i < i1; i++) {

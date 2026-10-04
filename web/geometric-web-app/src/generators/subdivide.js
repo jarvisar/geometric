@@ -152,7 +152,7 @@
                 const out = layers[PG.pens.band(0.8 * tonePosition + 0.2 * tint, layers.length)];
                 if (kind === 'nested') {
                     // at gap 0 the first ring sits one spacing inside the cut lines
-                    // (half a spacing without them, so neighbours' rings stay one apart)
+                    // (half a spacing without them, so neighbors' rings stay one apart)
                     const ring = shared ? geo.cleanPolygon(geo.insetConvex(poly, p.outline ? s : s / 2)) : poly;
                     if (ring.length >= 3) out.push(geo.insetSpiral(ring, s));
                     continue;

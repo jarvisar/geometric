@@ -127,7 +127,7 @@
             // Detune from the total drift it causes: the figure should turn by
             // a fraction of a revolution to about a turn while it decays,
             // however long the drawing is, but short drawings drift less so
-            // neighbouring swings stay close enough to shade rather than scribble.
+            // neighboring swings stay close enough to shade rather than scribble.
             const drift = rng.range(0.25, 1.6) * Math.PI, rdrift = rng.range(0.25, 1.5) * Math.PI, rsign = rng.sign();
             const setDuration = cycles => {
                 const T = TAU * cycles, cap = 0.12 * cycles;

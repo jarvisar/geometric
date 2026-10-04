@@ -14,7 +14,7 @@
     const S2 = Math.SQRT2, S3 = Math.sqrt(3), D = Math.PI / 180;
     const ngon = (cx, cy, n, rotDeg) => geo.ngon(cx, cy, 1 / (2 * Math.sin(Math.PI / n)), n, rotDeg * D);
 
-    // Unit-edge tilings: lattice a, b; polygons with a colour class;
+    // Unit-edge tilings: lattice a, b; polygons with a color class;
     // class of a copy at lattice (i, j) = (cls + ci·i + cj·j) mod m.
     const TILINGS = {
         square: { a: [1, 0], b: [0, 1], ci: 1, cj: 1, m: 2, polys: [[ngon(0, 0, 4, 45), 0]] },
@@ -50,7 +50,7 @@
         id: 'whirl',
         name: 'Whirls',
         category: 'Tiles',
-        description: 'Pursuit polygons spiralling inwards, alone or tiled with alternating chirality.',
+        description: 'Pursuit polygons spiraling inwards, alone or tiled with alternating chirality.',
         fit: false,
         params: [
             { type: 'section', label: 'Layout' },
@@ -61,7 +61,7 @@
             { id: 'cell', label: 'Edge length (mm)', type: 'range', min: 6, max: 120, step: 1, value: 44, random: false,
                 show: p => p.layout !== 'single' },
             { id: 'chirality', label: 'Direction', type: 'select', value: 'alternate', show: p => p.layout !== 'single',
-                options: [['alternate', 'Alternate neighbours'], ['same', 'All the same'], ['random', 'Random']] },
+                options: [['alternate', 'Alternate neighbors'], ['same', 'All the same'], ['random', 'Random']] },
             { type: 'section', label: 'Pursuit' },
             { id: 't', label: 'Step (t)', type: 'range', min: 0.02, max: 0.5, step: 0.005, value: 0.12, random: false,
                 hint: 'How far each vertex moves towards the next one per step' },

@@ -3,7 +3,7 @@
  * about as long as generating it, which made panning and per-frame morphs choppy.
  *
  * Each segment is a quad shaded as a capsule, so caps and joins come out round. Every pen is
- * drawn into a coverage texture with max blending and then composited in its colour, which
+ * drawn into a coverage texture with max blending and then composited in its color, which
  * matches one Canvas2D stroke per pen: segments overlapping at a join don't darken it.
  * Morphs blend two point buffers in the vertex shader. Exports and thumbnails still use Canvas2D.
  */
@@ -69,7 +69,7 @@ void main() { o = color * texelFetch(cov, ivec2(gl_FragCoord.xy), 0).r; }`;
         return { p, loc };
     }
 
-    // Any CSS colour as premultiplied-ready [r, g, b, a] in 0..1, using the 2D canvas parser
+    // Any CSS color as premultiplied-ready [r, g, b, a] in 0..1, using the 2D canvas parser
     const parser = document.createElement('canvas').getContext('2d');
     const colors = new Map();
     function rgba(css) {

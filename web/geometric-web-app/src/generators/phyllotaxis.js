@@ -49,7 +49,7 @@
                 options: [['circle', 'Circle'], ['polygon', 'Polygon'], ['aligned', 'Polygon facing out']] },
             { id: 'sides', label: 'Sides', type: 'range', min: 3, max: 8, step: 1, value: 4, show: p => p.style !== 'spirals' && p.shape !== 'circle' },
             { id: 'size', label: 'Dot size', type: 'range', min: 0.05, max: 1.2, step: 0.01, value: 0.7, show: p => p.style !== 'spirals', random: [0.5, 0.9],
-                hint: 'Relative to the gap between neighbouring seeds' },
+                hint: 'Relative to the gap between neighboring seeds' },
             { id: 'growth', label: 'Growth', type: 'range', min: -1, max: 2, step: 0.05, value: 0.3, show: p => p.style !== 'spirals', random: [0, 0.7],
                 hint: 'Dots grow towards the rim as (k/N)^growth' },
             { id: 'rings', label: 'Rings per dot', type: 'range', min: 1, max: 4, step: 1, value: 1, show: p => p.style !== 'spirals', random: [1, 2] },
@@ -80,7 +80,7 @@
                 const r = Math.pow(k + 0.5, e), a = k * alpha;
                 X[k] = r * Math.cos(a); Y[k] = r * Math.sin(a); A[k] = a;
             }
-            // nearest-neighbour gap for hexagonal packing at seed k
+            // nearest-neighbor gap for hexagonal packing at seed k
             const gap = k => Math.sqrt((4 * Math.PI * e * Math.pow(k + 0.5, 2 * e - 1)) / Math.sqrt(3));
 
             const pens = Math.max(1, Math.round(p.pens));

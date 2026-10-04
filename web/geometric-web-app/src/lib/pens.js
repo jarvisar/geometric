@@ -45,7 +45,7 @@
         truchet: profile(4, 'Connected curves keep one color. Triangle tiles form colored patches.', jewel),
         islamic: profile(4, 'Whole woven strands keep their color. Optional outlines and the second pattern share the selected pens.'),
         penrose: profile(4, 'Tile orientation and decoration family choose the color.', [INK, BLUE, RED, GOLD, GREEN, PURPLE, CYAN, BROWN]),
-        hyperbolic: profile(4, 'Color bands radiate from the centre toward the disk edge.', cool),
+        hyperbolic: profile(4, 'Color bands radiate from the center toward the disk edge.', cool),
         celtic: profile(4, 'Each continuous woven loop keeps one color.'),
         whirl: profile(4, 'Colors follow pursuit depth, including in a single cell.', cool),
         maze: profile(3, 'Walls form broad bands. The solution gets a separate color.', [BLUE, CYAN, PURPLE, GREEN, GOLD, BROWN, INK, RED], 'maze'),
@@ -74,7 +74,7 @@
     ];
     const scene = (maps, groups, roles) => ({ maps, groups, roles });
     P.scenes = {
-        // Water shares the shade pen like Harbour, and church roofs get the red of Town and Harbour's roofs
+        // Water shares the shade pen like Harbor, and church roofs get the red of Town and Harbor's roofs
         skyline: scene([
             [INK, INK, INK, INK, INK, INK, INK, INK, INK, INK, INK],
             [INK, RED, INK, RED, INK, INK, INK, INK, INK, INK, RED],
@@ -138,7 +138,7 @@
         return p;
     };
 
-    // Split at equal travelled distances, retaining the shared boundary point.
+    // Split at equal traveled distances, retaining the shared boundary point.
     P.sequence = (paths, n) => {
         const layers = P.layers(n);
         n = layers.length;

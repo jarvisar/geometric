@@ -1,7 +1,7 @@
 /*
  * Parts for building towns in an isometric scene (see iso.js): walls,
  * windows, doors and roofs, plus vehicles, fences, furniture and people.
- * Further down are the bigger pieces Town and Harbour share: the church,
+ * Further down are the bigger pieces Town and Harbor share: the church,
  * clock tower, terraces, market hall, things for a square, boats and bridges.
  *
  * Builders take a context T with S (the scene), cam, k (mm per m), detail
@@ -16,7 +16,7 @@
     const { BOX, DIRS, frame, newell, card, ring, hull } = PG.iso;
     const inset3 = PG.iso.inset3;
 
-    const FLOOR = 2.9; // storey height (m)
+    const FLOOR = 2.9; // story height (m)
 
     // One wall of a footprint (0 front, 1 right, 2 back, 3 left). at(s, c) gives
     // the world point, with s running left to right seen from outside.
@@ -72,7 +72,7 @@
     }
 
     // Windows on every floor of a wall the camera can see, leaving room for doors.
-    // o: { base, floors, style, winW, winH, sill, gap, doors: [s centre...], skip: [[s0, s1]...] }
+    // o: { base, floors, style, winW, winH, sill, gap, doors: [s center...], skip: [[s0, s1]...] }
     function windows(T, W, o) {
         if (!T.sees(W.n)) return false;
         const ww = o.winW || 1.1, wh = o.winH || 1.35, sill = o.sill || 0.9, gap = o.gap || 1.1;
@@ -516,7 +516,7 @@
     }
 
     // ------------------------------------------------------------------
-    // Shading. A scene that hatches its roofs (Harbour) sets T.tones to the
+    // Shading. A scene that hatches its roofs (Harbor) sets T.tones to the
     // line kinds for lit faces, shaded faces and canopies, with T.hLit and
     // T.hDark (spacing in mm) and T.lit(n). Without T.tones nothing is hatched.
     // T.waterKind is the kind for water (fountain jets, wakes).
@@ -583,7 +583,7 @@
     }
 
     // ------------------------------------------------------------------
-    // Town centre buildings, shared by Town and Harbour
+    // Town center buildings, shared by Town and Harbor
     // ------------------------------------------------------------------
 
     // Striped canvas awning over a shop front, with a scalloped valance. Every
@@ -1113,7 +1113,7 @@
         };
     }
 
-    // Paint for Harbour's boats. T.hulls is a list of [weight, kind] for the
+    // Paint for Harbor's boats. T.hulls is a list of [weight, kind] for the
     // stripe under the deck edge (null for none), and the side out of the sun
     // gets hatched down to the water. Scenes without T.hulls keep plain boats.
     function paintHull(T, Hl, L, rng) {
@@ -1324,7 +1324,7 @@
         }
     }
 
-    // How far a bridge over `span` metres of water runs on over the land each side
+    // How far a bridge over `span` meters of water runs on over the land each side
     const bridgeRamp = span => Math.min(3.5, 1 + span * 0.2);
 
     // Humped stone bridge. F is a frame with a along the road, b across it and

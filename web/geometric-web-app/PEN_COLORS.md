@@ -28,13 +28,13 @@ preview, clipping and export. Custom pen colors still belong to the user.
 | Warp | Woven directions and successive warped stripes |
 | Truchet, Celtic, Islamic | Connected strands, keeping each strand together |
 | Penrose | Tile orientation and decoration family |
-| Hyperbolic | Distance from the centre of the disk |
+| Hyperbolic | Distance from the center of the disk |
 | Whirl | Pursuit depth, including the single-cell layout |
 | Maze | Bands of walls, with a distinct solution route |
 | L-system | Branch depth or progress along an unbranched curve |
 | Circle Packing, Apollonian | Circle size or recursive generation |
 | Subdivision, Voronoi | Quilt tones or coherent patches of neighboring cells |
-| Town, Harbour, Fairground, Trainyard, Alpine, Skyline District | Scene materials and objects |
+| Town, Harbor, Fairground, Trainyard, Alpine, Skyline District | Scene materials and objects |
 | Infinite Stairwell | Steps and walls, the handrail and shading, then the floor or skylight, balusters, string, walls and every other turn |
 | Tidal Atlas | Water and land, then the cut block, elevation bands, survey marks and the sea surface |
 | Cosmic Comics | Dark outlines, a warm sun and cool skies, then sand, distant ranges, plants, crystals and rock |

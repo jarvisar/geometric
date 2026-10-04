@@ -1,5 +1,5 @@
 /*
- * Times-table chord diagram (popularised by Mathologer): N points on a circle,
+ * Times-table chord diagram (popularized by Mathologer): N points on a circle,
  * a chord from point i to point i·k (mod N). The chords envelope a cardioid
  * for k = 2, a nephroid for k = 3 and, in general, an epicycloid with k − 1
  * cusps. Fractional k simply ends each chord at angle 2π·i·k/N. For integer k

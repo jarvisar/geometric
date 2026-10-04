@@ -134,7 +134,7 @@
             const raw = integrate(sys, steps, dt, transient, jitter);
             if (raw.length < 2) return [];
 
-            // classic view axes, centred on the bounding box and scaled to unit size
+            // classic view axes, centered on the bounding box and scaled to unit size
             const [ax, ay, az] = sys.view;
             let lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
             for (const q of raw) for (let i = 0; i < 3; i++) { if (q[i] < lo[i]) lo[i] = q[i]; if (q[i] > hi[i]) hi[i] = q[i]; }

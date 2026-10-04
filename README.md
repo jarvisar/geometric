@@ -12,7 +12,7 @@ Currently supports 40 designs:
 - Fields: flow fields, ridgelines, topographic contour maps, an island drowning as the sea rises, Chladni patterns, electric and magnetic field lines, moiré and op-art warp
 - Tiles: Truchet tiles, Islamic star patterns, Penrose tiling, hyperbolic tiling, Celtic knots, whirls, mazes and L-system fractals
 - Packing: circle packing, Apollonian gaskets, recursive subdivision and Voronoi
-- Scenes: an isometric town of houses, apartments, A-frames, windmills, cars and trees, a harbour town with boats and a lighthouse, a fairground of rides and tents, a railway yard with a roundhouse and steam engines, an alpine valley cut out like a topographic model, a cyberpunk skyline and a spiral stairwell in one-point perspective, all with hidden lines removed. There are also comic pages of little alien landscapes.
+- Scenes: an isometric town of houses, apartments, A-frames, windmills, cars and trees, a harbor town with boats and a lighthouse, a fairground of rides and tents, a railway yard with a roundhouse and steam engines, an alpine valley cut out like a topographic model, a cyberpunk skyline and a spiral stairwell in one-point perspective, all with hidden lines removed. There are also comic pages of little alien landscapes.
 - Image: converts photos into line art in 12 styles, including squiggle spirals, waves, halftone, stipples, TSP art and string art
 
 ## Usage

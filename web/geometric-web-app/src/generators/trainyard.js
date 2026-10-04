@@ -1,6 +1,6 @@
 /*
  * Trainyard: an isometric railway yard drawn for four to eight pens, in the
- * same illustrated-map style as Harbour and Fairground.
+ * same illustrated-map style as Harbor and Fairground.
  *
  * Everything runs along x. From the near side of the page to the far side
  * there's the town, a station or a goods yard, the main line, the yard, the
@@ -14,7 +14,7 @@
  * separate steps (see buildYard), so everything knows where everything
  * else goes before anything is drawn.
  *
- * Track is centre lines (see Track). Sleepers merge where tracks run close,
+ * Track is center lines (see Track). Sleepers merge where tracks run close,
  * which gives the long timbers through a set of points for free. Most of the
  * rolling stock is boxes, prisms and solids of revolution along the track,
  * with the paint as hatching on the roofs, ribs down the sides or bands round
@@ -35,7 +35,7 @@
     // line kinds. Track gets a pen of its own from five pens, plants, people and steam after that.
     const INK = 0, RED = 1, BLUE = 2, GOLD = 3, GREEN = 4, FIGURE = 5, STEAM = 6, TRACK = 7;
     const person = withKind(FIGURE, kit.person);
-    const SUN_TURN = geo.rad(65); // as in Harbour: shadows fall along +x, turned this far towards -y
+    const SUN_TURN = geo.rad(65); // as in Harbor: shadows fall along +x, turned this far towards -y
     const HG = 0.7175;            // half the gauge (m)
     const RAIL = 0.18;            // rail tops above the ground, where the wheels sit
     const TIE = 1.3;              // half a sleeper
@@ -54,7 +54,7 @@
         };
     }
 
-    // Fill a flat face with lines in a paint colour, or 'dark' for close ink
+    // Fill a flat face with lines in a paint color, or 'dark' for close ink
     // lines. Only with hatching on, and only when the camera sees it (n is the
     // outward normal).
     function paint(T, pts, n, lv, dir, gap = 1) {
@@ -97,7 +97,7 @@
     // Track geometry
     // ------------------------------------------------------------------
 
-    // Walks a centre line in plan: straight runs and arcs, points about a metre apart
+    // Walks a center line in plan: straight runs and arcs, points about a meter apart
     class Path {
         constructor(x, y, h = 0) {
             this.x = x;
@@ -132,7 +132,7 @@
         }
     }
 
-    // Centre line of a track. `from` and `to` are the tracks it leaves at its
+    // Center line of a track. `from` and `to` are the tracks it leaves at its
     // start and joins at its end, `tie(s)` overrides the sleeper length and
     // `own` keeps its sleepers out of the merging where tracks meet (the
     // turntable spokes).
@@ -908,8 +908,8 @@
     // ------------------------------------------------------------------
 
     // Puffs of steam from (x, y, z), each a lumpy round cut-out facing the
-    // camera. They drift off along `drift` (world, per metre travelled),
-    // rising `rise` for each metre and growing as they go.
+    // camera. They drift off along `drift` (world, per meter traveled),
+    // rising `rise` for each meter and growing as they go.
     function plume(T, x, y, z, drift, n, rng, r0 = 0.55, grow = 1.2, rise = 1) {
         const S = T.S, ce = T.cam.ce, keep = S.kind;
         S.kind = STEAM;
@@ -1280,7 +1280,7 @@
     }
 
     // Lever and target beside a set of points, on the side away from the
-    // branch. The target is a disc on a short post, painted.
+    // branch. The target is a disk on a short post, painted.
     function switchStand(T, x, y, lv) {
         const S = T.S, P = card(T, x, y, 0, 0);
         S.kind = INK;
@@ -1317,7 +1317,7 @@
     }
 
     // Signal gantry: lattice masts either side and a braced girder across
-    // from y0 to y1 at x, with a colour light signal over each track at ys.
+    // from y0 to y1 at x, with a color light signal over each track at ys.
     // The lit lamp is painted, the others left dark.
     function gantry(T, x, y0, y1, ys, rng) {
         const S = T.S, W = frame(0, 0, 0, 0), h = 6.4, gh = 1.1;
@@ -1471,7 +1471,7 @@
     }
 
     // Station building facing the street (-v), platform behind it: a
-    // two-storey middle with a clock in a front gable, and lower wings
+    // two-story middle with a clock in a front gable, and lower wings
     function stationHouse(T, F, L, D, rng) {
         const S = T.S, base = 0.3, wing = L * 0.3, m0 = wing, m1 = L - wing, FLOOR = kit.FLOOR;
         S.kind = INK;
@@ -1901,7 +1901,7 @@
         S.loop(pts);
     }
 
-    // Everything already standing, as discs and boxes on the ground, and the
+    // Everything already standing, as disks and boxes on the ground, and the
     // edges of the town on either side
     class Claims {
         constructor() { this.discs = []; this.rects = []; this.lo = -Infinity; this.hi = Infinity; }
@@ -2536,7 +2536,7 @@
         params: [
             { type: 'section', label: 'View' },
             { id: 'scale', label: 'Scale (mm per m)', type: 'range', min: 1, max: 5, step: 0.05, value: 1.7, random: [1.4, 2.2],
-                hint: 'How big a metre is on paper' },
+                hint: 'How big a meter is on paper' },
             { id: 'yaw', label: 'Camera turn (°)', type: 'range', min: 15, max: 75, step: 0.5, value: 50, random: false },
             { id: 'elev', label: 'Camera height (°)', type: 'range', min: 20, max: 60, step: 0.5, value: 39.5, random: false,
                 hint: '35.3 is true isometric' },
@@ -2559,7 +2559,7 @@
             { id: 'spacing', label: 'Track spacing (m)', type: 'range', min: 4.2, max: 7, step: 0.1, value: 4.8, random: false },
             { id: 'mains', label: 'Main line tracks', type: 'range', min: 1, max: 4, step: 1, value: 2, random: [1, 3] },
             { id: 'ties', label: 'Sleeper spacing (m)', type: 'range', min: 0, max: 3, step: 0.05, value: 1.1, random: false,
-                hint: 'Spacing of the sleepers under the rails, 0 for none. They never get closer than about a millimetre on paper' },
+                hint: 'Spacing of the sleepers under the rails, 0 for none. They never get closer than about a millimeter on paper' },
             { type: 'section', label: 'Trains' },
             { id: 'cars', label: 'Wagons', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.3, 0.9],
                 hint: 'How full the yard tracks are' },

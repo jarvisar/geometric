@@ -7,7 +7,7 @@
  * curvatures k (negative for the enclosing one) satisfy
  * (Σk)² = 2·Σk², so given three of them the two possible fourth circles
  * have k + k' = 2(k₁ + k₂ + k₃); the complex form gives the same relation
- * for centre × curvature. Each new circle is therefore the "reflection" of
+ * for center × curvature. Each new circle is therefore the "reflection" of
  * the circle on the other side of its gap:
  *   k' = 2(k₁ + k₂ + k₃) − k,   k'z' = 2(k₁z₁ + k₂z₂ + k₃z₃) − kz,
  * which is exact and numerically stable, and the gap it fills splits into
@@ -26,7 +26,7 @@
         [6, 10, 15], [6, 11, 14], [7, 12, 17], [8, 12, 25], [9, 18, 19], [10, 14, 35]];
 
     function spiral(cx, cy, r, s, a0, dir) {
-        // one lap on the rim, then wind inward to the centre
+        // one lap on the rim, then wind inward to the center
         const pts = [];
         const end = TAU * (1 + r / s);
         for (let th = 0; ; ) {
@@ -62,9 +62,9 @@
             { id: 'spacing', label: 'Fill spacing (mm)', type: 'range', min: 0.5, max: 6, step: 0.05, value: 1.6, random: [1.1, 2.6],
                 show: p => p.style !== 'outline' },
             { id: 'ecc', label: 'Eccentricity', type: 'range', min: 0, max: 1, step: 0.01, value: 0.7, random: [0.4, 0.85],
-                show: p => p.style === 'eccentric' || p.style === 'mixed', hint: 'Rings bunch toward the centre of the gasket' },
+                show: p => p.style === 'eccentric' || p.style === 'mixed', hint: 'Rings bunch toward the center of the gasket' },
             { id: 'gap', label: 'Gap (mm)', type: 'range', min: 0, max: 4, step: 0.05, value: 0, random: [0, 1],
-                hint: 'Shrinks every circle so neighbours no longer touch' },
+                hint: 'Shrinks every circle so neighbors no longer touch' },
             { type: 'section', label: 'Pens' },
             { id: 'pens' },
             { id: 'penMode', label: 'Pen per', type: 'select', value: 'generation', show: p => p.pens > 1,
@@ -87,7 +87,7 @@
             const bb = geo.bbox([ctx.shape.polygon()]);
             const ox = (bb.minX + bb.maxX) / 2, oy = (bb.minY + bb.maxY) / 2;
             // the largest circle the visible area holds; the gasket sits half a gap
-            // inside it so the outer ring keeps the same clearance as neighbours do
+            // inside it so the outer ring keeps the same clearance as neighbors do
             const gap = p.gap / 2;
             const R = Math.max(1, ctx.shape.dist(ox, oy) - gap);
 
@@ -168,7 +168,7 @@
                 if (style === 'rings') {
                     for (let rr = r; rr > s * 0.3; rr -= s) out.push(geo.circle(c.x, c.y, rr));
                 } else if (style === 'eccentric') {
-                    // rings bunch toward the gasket's centre (the first circles bunch toward their own)
+                    // rings bunch toward the gasket's center (the first circles bunch toward their own)
                     const d = Math.hypot(ox - c.x, oy - c.y);
                     const ux = d > 1e-9 ? (ox - c.x) / d : 0, uy = d > 1e-9 ? (oy - c.y) / d : 0;
                     for (let rr = r; rr > s * 0.3; rr -= s) out.push(geo.circle(c.x + (r - rr) * ux * p.ecc, c.y + (r - rr) * uy * p.ecc, rr));

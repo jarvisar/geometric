@@ -1,7 +1,7 @@
 /*
  * Ribbon sculptures: linked chains, knots and twisted bands built from fine
  * ribs, with hidden lines removed exactly. Each band is a ruled surface around
- * a closed centre curve. Its frame comes from the ring plane or torus it sits
+ * a closed center curve. Its frame comes from the ring plane or torus it sits
  * on, or from a rotation minimizing frame, so the twist always closes up.
  * Ribs are spaced evenly along the band and thinned where it turns away, and
  * the side of the band facing the viewer picks the pen.
@@ -64,7 +64,7 @@
     const torusNormal = (a, b) => t => { const u = TAU * t; return [Math.cos(b * u) * Math.cos(a * u), Math.cos(b * u) * Math.sin(a * u), Math.sin(b * u)]; };
     const torusKnot = (a, b, R, r) => t => { const u = TAU * t, rr = R + r * Math.cos(b * u); return [rr * Math.cos(a * u), rr * Math.sin(a * u), r * Math.sin(b * u)]; };
 
-    // Centre curves on t in [0, 1). ref is the normal of the plane or torus the band leans
+    // Center curves on t in [0, 1). ref is the normal of the plane or torus the band leans
     // against (angle 0 lies flat on it), null for a rotation minimizing frame. base is the
     // band angle each form looks best at, the lean param turns it from there.
     const BASE = { chain: 90, mobius: 30, knot: 30, eight: 20, borromean: 90, coil: 80, infinity: 110, hopf: 0, rosette: 0 };
@@ -75,7 +75,7 @@
         let pre = rot(0, 0), long = null;
         const add = (at, ref, hw, kk = k, centres = spread(kk, jit), wf = null) => strands.push({ at, ref, hw, k: kk, centres, wf });
         if (p.form === 'chain') {
-            // Neighbouring links meet where each one's band crosses the other's plane. Space them so the
+            // Neighboring links meet where each one's band crosses the other's plane. Space them so the
             // bands clear each other there, whatever the twist has done to the band by then.
             const n = p.loops, wide = 1.1, centres = spread(k, jit), g = twist(M, k, centres, p.folds);
             const flat = t => Math.abs(Math.cos(lean + Math.PI * k * g[Math.round(t * M) % M]));
@@ -186,7 +186,7 @@
               show: p => p.form !== 'hopf' && (p.twists > 0 || p.form === 'mobius'),
               hint: 'Gathers the twists into sharp folds instead of spreading them evenly' },
             { id: 'lean', label: 'Band angle (°)', type: 'range', min: -90, max: 90, step: 5, value: 0, random: [-40, 40],
-              hint: 'Turns the band about its centre line' },
+              hint: 'Turns the band about its center line' },
             { id: 'swell', label: 'Width swell', type: 'range', min: 0, max: 0.8, step: 0.05, value: 0, random: [0, 0.5] },
             { id: 'waves', label: 'Swells per loop', type: 'range', min: 1, max: 8, step: 1, value: 3, random: [1, 5], show: p => p.swell > 0 },
             { type: 'section', label: 'Ribs' },
@@ -299,10 +299,10 @@
                 // side 0 is whichever side shows most (a Möbius band just swaps colors at its seam)
                 if (f0.reduce((a, b) => a + b, 0) < 0) for (let i = 0; i <= M; i++) { f0[i] = -f0[i]; f1[i] = -f1[i]; }
                 // Slanted arms lie along the band where it turns edge-on and would pile up there, so
-                // flatten them (alpha < 1) just enough to keep neighbours `soft` apart on paper
+                // flatten them (alpha < 1) just enough to keep neighbors `soft` apart on paper
                 const len = new Float64Array(M + 1), need = arms.map(() => [0, 1, 2].map(() => new Float64Array(M + 1))), alpha = new Float64Array(M + 1);
                 for (let i = 0; i < M; i++) {
-                    // ribs are spaced by whichever of the edges and centre line runs fastest, so a fan
+                    // ribs are spaced by whichever of the edges and center line runs fastest, so a fan
                     // around a fold stays dense at its wide end
                     const dC = sub(B.C[i + 1], B.C[i]), dD = sub(B.D[i + 1], B.D[i]);
                     const l3 = K * Math.max(Math.hypot(...dC), Math.hypot(...mad(dC, dD, 1)), Math.hypot(...mad(dC, dD, -1))) || 1e-9;
@@ -355,14 +355,14 @@
                 const lerp = (a, u) => { const x = X(((u % N) + N) % N), i = Math.min(M - 1, Math.floor(x)); return a[i] + (a[i + 1] - a[i]) * (x - i); };
                 const hw = Float64Array.from(e, v => Math.hypot(...v)), ph = rng.random();
                 // Slant offset of each rib in rib units for a full half width. It may only change a little
-                // from one rib to the next, so the tips of neighbouring ribs never cross.
+                // from one rib to the next, so the tips of neighboring ribs never cross.
                 const dr = Float64Array.from({ length: N }, (_, r) => slant * lerp(hw, r + ph) * lerp(alpha, r + ph) / step);
                 for (let pass = 0; pass < 2; pass++) for (let r = 0; r < 2 * N; r++) {
                     const a = r % N, b = (r + 1) % N, c2 = (N - 1 - a + N) % N, d2 = (N - 1 - b + N) % N;
                     dr[b] = Math.min(dr[b], dr[a] + 0.4);
                     dr[d2] = Math.min(dr[d2], dr[c2] + 0.4);
                 }
-                // ogee tips sway forward and back, slowly enough that neighbouring tips never cross
+                // ogee tips sway forward and back, slowly enough that neighboring tips never cross
                 const sway = N / Math.max(1, Math.floor(N / (TAU * 2.2 * Math.max(...dr)))) / TAU;
                 const at = (x, v) => {
                     const i = Math.min(M - 1, Math.floor(x)), t = x - i, a = c[i], b = c[i + 1], ea = e[i], eb = e[i + 1];
@@ -463,7 +463,7 @@
                 const skip = r => pattern === 'stripes' && r % period >= G;
                 const sparse = r => back === 'sparse' && r % 2 === 1;
                 const only = back === 'bare' ? 0 : undefined;
-                // One zigzag stroke along the band, stepping along the edges between neighbouring ribs. With
+                // One zigzag stroke along the band, stepping along the edges between neighboring ribs. With
                 // odd = 0 or 1 each rib's direction follows its index, so two families that share rib ends
                 // step along opposite halves of the edges and never draw the same bit twice.
                 const stitch = (use, make, side, n, odd, gap = 1, bridge = null) => {

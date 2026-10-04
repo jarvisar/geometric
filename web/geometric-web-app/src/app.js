@@ -1,7 +1,7 @@
 /*
  * Plotter Geometry — application UI.
  *
- * state (persisted) -> PG.run (generate + place + clip + optimise) -> result
+ * state (persisted) -> PG.run (generate + place + clip + optimize) -> result
  * result -> canvas preview / SVG and PNG export
  */
 (function () {
@@ -559,7 +559,7 @@
 
     // ---- transitions
     // A new drawing morphs from the last one when both have the same paths (most curves while
-    // dragging, some Randomize results), otherwise it crossfades. Morphs use the unoptimised
+    // dragging, some Randomize results), otherwise it crossfades. Morphs use the unoptimized
     // geometry from the worker and the real drawing goes up when they end.
     //
     // Each lasts as long as the time since the last drawing. Dragging a fast design already
@@ -1081,7 +1081,7 @@
                     { key: 'paper.w', label: 'Width (mm)', type: 'range', min: 50, max: 1200, step: 0.5, show: s => s.paper.size === 'custom' },
                     { key: 'paper.h', label: 'Height (mm)', type: 'range', min: 50, max: 1200, step: 0.5, show: s => s.paper.size === 'custom' },
                     { key: 'paper.margin', label: 'Margin (mm)', type: 'range', min: 0, max: 80, step: 0.5 },
-                    { key: 'paper.color', label: 'Paper colour (preview only)', type: 'color', effect: 'draw' },
+                    { key: 'paper.color', label: 'Paper color (preview only)', type: 'color', effect: 'draw' },
                 ],
             },
             {
@@ -1204,7 +1204,7 @@
                 renderStats();
                 commit();
             });
-            const color = el('input', { type: 'color', class: 'color-input', value: pen.color, title: 'Pen colour' });
+            const color = el('input', { type: 'color', class: 'color-input', value: pen.color, title: 'Pen color' });
             color.addEventListener('input', () => { pen.color = color.value; draw(); });
             color.addEventListener('change', commit);
             const name = el('input', { class: 'pen-name', value: pen.name, spellcheck: 'false', maxlength: 200, title: 'Pen name (used for SVG layer names)' });
@@ -1391,7 +1391,7 @@
         const body = $('#galleryBody');
         body.replaceChildren();
         thumbQueue = [];
-        // Thumbnails use the current pen and paper colours, which can also change through undo or loaded settings
+        // Thumbnails use the current pen and paper colors, which can also change through undo or loaded settings
         const colors = JSON.stringify([state.paper.color, state.pens.map(p => p.color)]);
         if (colors !== thumbColors) { thumbCache.clear(); thumbColors = colors; }
         const listed = listedGenerators();
@@ -1446,7 +1446,7 @@
     }
 
     async function renderThumb(def, canvasEl, params = PG.defaultParams(def), key = def.id) {
-        // near-A4 scale, since fill designs size their features in real millimetres
+        // near-A4 scale, since fill designs size their features in real millimeters
         const size = 190;
         const S = {
             seed: 1, paperW: size, paperH: size, margin: 10, scale: 100, rotate: 0, clip: 'rect',

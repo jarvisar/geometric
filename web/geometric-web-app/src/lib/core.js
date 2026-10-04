@@ -2,7 +2,7 @@
  * Plotter Geometry — core: generator registry, seeded RNG and geometry helpers.
  *
  * Everything lives on the global `PG` namespace so the app works from file://
- * (no modules, no build step). Units are millimetres unless a generator is
+ * (no modules, no build step). Units are millimeters unless a generator is
  * marked `fit: true`, in which case it may draw in any unit and the pipeline
  * scales the result to the drawing area.
  */
@@ -23,7 +23,7 @@
     //   params: [ { id, label, type: 'range'|'select'|'checkbox'|'text'|'image'|'section',
     //               min, max, step, value, options: [[value, label]...], show: p => bool,
     //               random: false | [min, max], hint } ],
-    //   randomize(rng, params) -> partial params   (optional, curated randomisation)
+    //   randomize(rng, params) -> partial params   (optional, curated randomization)
     //   generate(params, ctx) -> paths | { layers: [paths, paths, ...] }
     // })
     PG.generators = [];
@@ -49,7 +49,7 @@
         return p;
     };
 
-    // Uniformly randomise every param that allows it, then apply the generator's
+    // Uniformly randomize every param that allows it, then apply the generator's
     // curated overrides. `rng` only needs a random() method. Locked ids keep their
     // current value, and they're already in place when randomize() runs so values
     // it derives from them (e.g. amplitudes that must fit a gap) still fit.
@@ -394,7 +394,7 @@
         const chains = [[], []];
         for (let i = top; ; i = (i + 1) % n) { chains[0].push(P[i]); if (i === bot) break; }
         for (let i = top; ; i = (i + n - 1) % n) { chains[1].push(P[i]); if (i === bot) break; }
-        // Centre the lines between the extremes, so the first and last sit 0.75 to 1.25
+        // Center the lines between the extremes, so the first and last sit 0.75 to 1.25
         // spacings in from the rim. On a fixed k * spacing grid they could land 0.1 mm off
         // it and merge with the outline into one thick line.
         const L = v1 - v0;

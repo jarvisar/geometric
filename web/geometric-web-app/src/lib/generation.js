@@ -8,7 +8,7 @@
             if (!this.pending) return;
             this.worker.terminate();
             this.worker = null;
-            this.pending.reject(new DOMException('Generation cancelled', 'AbortError'));
+            this.pending.reject(new DOMException('Generation canceled', 'AbortError'));
             this.pending = null;
         }
         dispose() {
@@ -63,7 +63,7 @@
      * Live preview on two workers that are kept warm. A newer request doesn't cancel a running
      * job. The job finishes, the newest request waits for a free worker and anything requested
      * in between is skipped. A new worker takes about 20 ms to parse the bundle and runs 1.5 to
-     * 2.5x slower until V8 has optimised it, so cancelling on every slider tick meant designs
+     * 2.5x slower until V8 has optimized it, so canceling on every slider tick meant designs
      * slower than a frame never finished while dragging.
      *
      * Only one live (dragging) job runs at a time. That keeps the other worker free for whatever
@@ -120,7 +120,7 @@
         }
         // A job that has run for over a second is usually a big grid or paper size. A cold worker is
         // cheaper than waiting for it, so a click or a released slider cancels it. Live requests never
-        // do, or every job would be cancelled before it finished while dragging a slow design.
+        // do, or every job would be canceled before it finished while dragging a slow design.
         watch() {
             const job = this.waiting;
             if (job.live) return;

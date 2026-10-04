@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /*
  * Headless sanity check: runs every generator through the full pipeline with
- * default and randomised parameters, and exercises the exporters.
+ * default and randomized parameters, and exercises the exporters.
  *
  *   node scripts/check.js            # all generators
  *   node scripts/check.js truchet    # just some

@@ -4,20 +4,20 @@
  * hyperbolic plane when (p − 2)(q − 2) > 4.
  *
  * The central p-gon has its vertices at hyperbolic distance R from the
- * centre, cosh R = cot(π/p)·cot(π/q), which the disk shows at Euclidean
+ * center, cosh R = cot(π/p)·cot(π/q), which the disk shows at Euclidean
  * radius tanh(R/2). Every other tile is reached by reflecting a tile in one
  * of its edges; a geodesic is a diameter or a circle orthogonal to the
  * boundary, and reflection in it is a circle inversion. Each tile carries
- * the images of a few key points of the central tile (centre, vertices,
+ * the images of a few key points of the central tile (center, vertices,
  * edge midpoints, vertices of nested copies), and every line drawn is the
  * geodesic between two of them, so arcs are exact rather than sampled
  * copies. Tiles smaller than the cutoff are drawn but not expanded.
  *
  * Styles: the tiling's edges; its (2, p, q) triangle subdivision (the
  * kaleidoscope of mirrors that generates it); concentric hyperbolic copies
- * of each tile; or every other triangle hatched, which two-colours the
- * tiling the way Escher did. The view can be centred on a tile, a vertex or
- * the midpoint of an edge (a hyperbolic translation moves it to the centre).
+ * of each tile; or every other triangle hatched, which two-colors the
+ * tiling the way Escher did. The view can be centered on a tile, a vertex or
+ * the midpoint of an edge (a hyperbolic translation moves it to the center).
  */
 (function () {
     'use strict';
@@ -89,7 +89,7 @@
             { id: 'p', label: 'Polygon sides p', type: 'range', min: 3, max: 12, step: 1, value: 7 },
             { id: 'q', label: 'Polygons per vertex q', type: 'range', min: 3, max: 12, step: 1, value: 3,
                 hint: 'Needs (p − 2)(q − 2) > 4; q is raised until it is' },
-            { id: 'centre', label: 'Centre on', type: 'select', value: 'tile', random: ['tile', 'tile', 'vertex', 'edge'],
+            { id: 'centre', label: 'Center on', type: 'select', value: 'tile', random: ['tile', 'tile', 'vertex', 'edge'],
                 options: [['tile', 'Tile'], ['vertex', 'Vertex'], ['edge', 'Edge']] },
             { id: 'spin', label: 'Spin°', type: 'range', min: 0, max: 360, step: 1, value: 0 },
             { id: 'minSize', label: 'Smallest tile (mm)', type: 'range', min: 0.5, max: 10, step: 0.1, value: 1.6, random: [1.2, 3],
@@ -132,7 +132,7 @@
             const V = i => 1 + (i % p), M = i => 1 + p + (i % p);
             for (let i = 0; i < p; i++) pts.push([rv * Math.cos(rot + (TAU * i) / p), rv * Math.sin(rot + (TAU * i) / p)]);
             for (let i = 0; i < p; i++) {
-                // edge midpoint: where the edge's geodesic crosses the bisecting ray, |c| − r from the centre
+                // edge midpoint: where the edge's geodesic crosses the bisecting ray, |c| − r from the center
                 const g = geodesic(pts[V(i)], pts[V(i + 1)]);
                 const d = g.line ? rv * Math.cos(Math.PI / p) : Math.hypot(g.c[0], g.c[1]) - g.r;
                 const a = rot + (TAU * (i + 0.5)) / p;
@@ -158,7 +158,7 @@
             }
             const drawEdges = prm.style === 'edges' || prm.edges;
 
-            // ---- move the chosen centre to the origin
+            // ---- move the chosen center to the origin
             let shift = null;
             if (prm.centre === 'vertex') shift = pts[V(0)];
             else if (prm.centre === 'edge') shift = pts[M(0)];
@@ -194,7 +194,7 @@
                 while (da < -Math.PI) da += TAU;
                 const C = toMM(g.c);
                 const path = geo.arc(C[0], C[1], g.r * Rd, a0, a0 + da);
-                path[0] = A; path[path.length - 1] = B; // exact ends so neighbouring arcs join
+                path[0] = A; path[path.length - 1] = B; // exact ends so neighboring arcs join
                 return path;
             };
             const done = new Set();
@@ -211,7 +211,7 @@
                 const L0 = layers[tilePen(t)], L1 = L0;
                 if (drawEdges) for (const [i, j] of edges) emit(t.pts[i], t.pts[j], L0);
                 // rim tiles under the cut-off only get their outline: 2p spokes in a 0.5 mm
-                // tile just retrace its centre into a blob of ink
+                // tile just retrace its center into a blob of ink
                 if (tileSize(t) < minSize) continue;
                 for (const [i, j] of detail) emit(t.pts[i], t.pts[j], L1);
                 if (!rings) continue;
@@ -223,7 +223,7 @@
                 }
             }
             if (prm.style === 'checker') {
-                // the 2p triangles (centre, vertex, midpoint) of every tile, alternately coloured
+                // the 2p triangles (center, vertex, midpoint) of every tile, alternately colored
                 const sp = Math.max(0.2, prm.spacing), ang = geo.rad(prm.hatchAngle);
                 for (const t of tiles) {
                     const L1 = layers[tilePen(t)];

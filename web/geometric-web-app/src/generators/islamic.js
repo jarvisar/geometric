@@ -7,7 +7,7 @@
  * enters the polygon at the contact angle θ, one leaning towards each end of
  * the edge. The ray heading for vertex P(i+1) meets the ray from the next edge
  * heading back to the same vertex; each such pair becomes a "V"
- * (contact → meeting point → contact). Rays of neighbouring polygons meet on
+ * (contact → meeting point → contact). Rays of neighboring polygons meet on
  * the shared edge, so the V's chain into long strands that are joined here
  * (straightest continuation first) before they reach the pipeline.
  *
@@ -188,8 +188,8 @@
         return s;
     }
 
-    // Offset a polyline sideways by o (mitred joins, bevelled past a limit).
-    // Returns the points and, per centreline segment, the index of its first offset point.
+    // Offset a polyline sideways by o (mitred joins, beveled past a limit).
+    // Returns the points and, per centerline segment, the index of its first offset point.
     function offsetPath(path, o, closed) {
         const pts = closed ? path.slice(0, -1) : path;
         const n = pts.length, m = closed ? n : n - 1;

@@ -561,7 +561,7 @@
             }
             return v;
         };
-        // Sample each lump at a few angles (the low-poly look) plus the cusps between neighbours
+        // Sample each lump at a few angles (the low-poly look) plus the cusps between neighbors
         const xs = [], F = 6;
         for (const [x, , r] of lumps.concat(lit)) for (let j = 0; j <= F; j++) xs.push(x - r * Math.cos(PI * j / F));
         for (let i = 1; i < lumps.length; i++) {
@@ -922,7 +922,7 @@
                     list.push([x, heightAt(pts, x) + depth * clamp(f + rng.range(-0.2, 0.2) * (j > 0), 0.05, 1)]);
                 }
             }
-            // Outlines sit 0.01 in front of their masks and a pine's tiers span 0.06, so neighbours need
+            // Outlines sit 0.01 in front of their masks and a pine's tiers span 0.06, so neighbors need
             // more depth than that between them or they show through each other
             const step = Math.min(0.08, 1.3 / list.length);
             list.sort((a, b) => a[1] - b[1]).forEach(([x, y], k) => add(make(x, y, z + 0.3 + k * step)));
@@ -1296,7 +1296,7 @@
             chapters.push(...crng.shuffle(['peaks', 'lake', 'hills', 'desert', 'snow', 'alien', 'moon'].filter(c => c !== chapters[0])).slice(0, 1 + (n > 8) + (n > 16)));
             // The airless moon is always dark, so it goes where the story reaches night
             if (chapters.includes('moon') && p.story !== 'free') { chapters.splice(chapters.indexOf('moon'), 1); if (p.story === 'dawn') chapters.unshift('moon'); else chapters.push('moon'); }
-            // Neighbours in one tier can share a landscape, like one view cut into panels
+            // Neighbors in one tier can share a landscape, like one view cut into panels
             const groups = [], grng = rngOf(seed, 3);
             const same = (a, b) => Math.abs(a[1] - b[1]) < 1e-6 && Math.abs(a[3] - b[3]) < 1e-6 && Math.abs(b[0] - a[0] - a[2] - gap) < 1e-6;
             for (let i = 0; i < n;) {

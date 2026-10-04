@@ -32,7 +32,7 @@
             { id: 'jitter', label: 'Fine jitter', type: 'range', min: 0, max: 0.1, step: 0.005, value: 0.02, random: [0, 0.04],
                 hint: 'Tiny high-frequency wobble along every line (fraction of amplitude)' },
             { id: 'coherence', label: 'Line coherence', type: 'range', min: 0, max: 1, step: 0.01, value: 0.55, show: p => p.mode !== 'terrain',
-                hint: 'How similar neighbouring lines are' },
+                hint: 'How similar neighboring lines are' },
             { type: 'section', label: 'Layout' },
             { id: 'lines', label: 'Lines', type: 'range', min: 5, max: 250, step: 1, value: 80, random: [40, 120] },
             { id: 'padX', label: 'Side padding (mm)', type: 'range', min: 0, max: 80, step: 0.5, value: 30, random: [10, 45] },
@@ -94,7 +94,7 @@
             const yBack = Math.min(top + A * 0.85 * depthScale(1), yFront - 0.3 * (yFront - top));
 
             const sc = 1 / p.scale;
-            // how far apart neighbouring lines are in noise space
+            // how far apart neighboring lines are in noise space
             const lineStep = geo.lerp(0.9, 0.03, p.coherence);
             const envW = p.envelope * L / 2;
             const envPow = p.mode === 'pulsar' ? 2 : 6;
@@ -115,14 +115,14 @@
                     });
                 }
             }
-            // Pulsar: each line has its own gain and a slightly wandering centre.
+            // Pulsar: each line has its own gain and a slightly wandering center.
             const lineGain = [], lineShift = [];
             for (let i = 0; i < N; i++) {
                 lineGain.push(0.35 + 0.65 * geo.smoothstep(-0.6, 0.6, noise.noise2(i * lineStep * 0.7, 71.3)));
                 lineShift.push(noise.noise2(i * lineStep * 0.5, -33.1) * envW * 0.18);
             }
 
-            // Raw heights, normalised afterwards so that typical line maxima reach A
+            // Raw heights, normalized afterwards so that typical line maxima reach A
             // (a high percentile rather than the single tallest spike).
             const heights = [], lineMax = [];
             for (let i = 0; i < N; i++) {
