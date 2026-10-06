@@ -88,7 +88,26 @@ Any design can also be laid out as a **grid** on one sheet. Each cell gets its o
      Each pen's strokes are written as one compound path, so Bambu Suite and
      similar importers bring in one object per pen instead of thousands. Use
      `Path > Break Apart` in Inkscape if you want to edit single strokes.
+   * **PDF**: vector strokes on a page matching the selected paper size. Keeps
+     pen colors, widths and round ends. Use `Actual size` or `100%` when printing.
+     Good for printing, placing artwork in a layout and opening in a vector editor.
+   * **DXF**: AutoCAD 2004 ASCII DXF, with one numbered layer per pen, RGB colors
+     and millimeter units. Each stroke is a zero-width polyline for CAD, laser
+     engraving and cutter software. Pen widths do not become cut outlines.
+     Select millimeters if the importer asks. Importers that ignore RGB colors
+     use an approximate indexed color. Layer names use ASCII and replace special
+     characters with underscores. DXF has no paper background or artboard.
+   * **EPS**: EPSF 3.0, PostScript Level 2, with RGB strokes and pen widths. Its
+     bounds include the ink rather than the full paper, so placing it usually
+     crops away the margins. Use PDF when the full page size matters.
    * **PNG**: a 600 dpi picture of the preview.
+
+Vector exports contain the visible pens only, without the preview's paper color,
+travel lines or guides. PDF and EPS retain colors but do not retain named pen
+layers. Use SVG for layered editing and plotter workflows. The artwork stays as
+centerlines with open strokes, so choose a draw/score/engrave operation in cutter
+software as needed. It is not automatically converted to closed cutting contours.
+PDF and EPS use RGB, without a CMYK profile or PDF/X prepress setup.
 
 Every exported SVG carries its full recipe (design, parameters, seed, paper,
 pens). Drop an SVG or a saved `.json` back onto the preview to restore it. **Copy share link**
@@ -134,7 +153,7 @@ src/
     isokit.js      walls, windows, roofs, cars, fences and people shared by the Scenes designs
     pipeline.js    fit / rotate / clip to the drawing area / frame
     optimize.js    simplify, merge, travel ordering, stats
-    export.js      SVG export
+    export.js      SVG, PDF, DXF and EPS export
     render.js      canvas preview
     loader.js      list of design files
   generators/      one file per design
@@ -151,6 +170,39 @@ scripts/
 `.github/workflows/pages.yml` (at the repo root) publishes `src/` to GitHub Pages
 on every push to `master` that touches it, or on demand from the Actions tab.
 One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+
+## Export Checks
+
+Run `npm run check:exports` for format checks and fixtures from every design,
+including long strokes, closed loops, Unicode metadata, page edges, individual
+pens and custom paper sizes. Files go in the ignored `shots/exports/fixtures/`
+folder. Run `npm run smoke:exports` for downloads, hidden pens, pending edits and
+the mobile menu in Chrome or Edge.
+
+For independent readers, install Python packages `ezdxf==1.4.3`, `pypdf==6.19.0`,
+`pypdfium2==5.13.0` and Pillow in a test environment, and install Ghostscript.
+Run `python scripts/validate-exports.py` after generating the fixtures. This
+checks each DXF with ezdxf's auditor, compares imported geometry against the
+source, reads each PDF with pypdf and PDFium, and renders PDF/EPS with Ghostscript.
+Set `GS` to the Ghostscript executable if it is not on `PATH`.
+
+The writers follow the [Adobe PDF reference](https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/pdfreference1.7old.pdf),
+[Adobe EPS specification](https://printtechnologies.org/standards/files/epsf_spec_v3_0.pdf)
+and Autodesk's [DXF header](https://help.autodesk.com/cloudhelp/2020/ENU/AutoCAD-DXF/files/GUID-A85E8E67-27CD-4C59-BE61-4DC9FADBE74A.htm)
+and [polyline](https://help.autodesk.com/cloudhelp/2015/ENU/AutoCAD-DXF/files/GUID-748FC305-F3F2-4F74-825A-61F04D757A50.htm)
+references. Format choices cover [Illustrator's supported formats](https://helpx.adobe.com/illustrator/desktop/get-started/learn-the-basics/supported-file-formats.html)
+and [LightBurn's vector imports](https://docs.lightburnsoftware.com/latest/Reference/FileManagement/).
+LightBurn's [DXF unit settings](https://docs.lightburnsoftware.com/1.7/Reference/SettingsPreferences/)
+can override file units. Silhouette documents [DXF import limitations](https://silhouetteamerica.freshdesk.com/support/solutions/articles/35000276938-importing-and-exporting-troubleshooting)
+and recommends an older dialect for some workflows, so this export is not a
+promise of compatibility with every cutter. SVG remains the default for Cricut.
+These automated checks do not replace testing in specific versions of commercial
+editors and machine software.
+
+Also checked with Inkscape 1.3's Poppler PDF importer and its EPS/DXF import
+extensions. The sample remains vector artwork in all three. DXF keeps its pen
+layers and a measured 50 mm line, but this Inkscape version uses indexed colors
+instead of the stored RGB colors.
 
 ## Adding a design
 

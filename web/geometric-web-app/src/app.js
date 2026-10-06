@@ -1638,8 +1638,11 @@
         const paper = { w: recipe.paper.w, h: recipe.paper.h };
         const meta = { title: `${PG.byId[recipe.gen].name} — seed ${recipe.seed}`,
             description: 'plotter-geometry:' + JSON.stringify(recipe) };
-        if (kind === 'svg') {
-            download(`${base}.svg`, PG.exporters.svg(res, paper, recipe.pens, meta), 'image/svg+xml');
+        const vectorTypes = { svg: 'image/svg+xml', pdf: 'application/pdf', dxf: 'image/vnd.dxf', eps: 'application/postscript' };
+        if (Object.hasOwn(vectorTypes, kind)) {
+            try {
+                download(`${base}.${kind}`, PG.exporters[kind](res, paper, recipe.pens, meta), vectorTypes[kind]);
+            } catch (err) { toast(`Could not export: ${err.message}`, true); }
         } else if (kind === 'svg-split') {
             res.layers.forEach((l, i) => setTimeout(() => {
                 download(`${base}-pen${l.pen + 1}.svg`, PG.exporters.svg(res, paper, recipe.pens, meta, l.pen), 'image/svg+xml');

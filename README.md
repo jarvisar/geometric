@@ -21,7 +21,7 @@ Select a design from the menu and use the sliders to adjust it. Click `Randomize
 
 Set the paper size (A6 to A2, Letter, Legal, Tabloid or custom), margins and pen widths to match your plotter setup. Designs can be scaled, rotated or arranged in a grid. Every design supports one to eight pens, with color defaults based on its geometry. Change the pen count in the design controls and edit the colors under `Paper & Output`. The pen list shows which parts of a scene each pen draws.
 
-Click `Export SVG` to download the drawing. Exported SVGs use millimeter units and a separate Inkscape layer for each pen, so they work with the AxiDraw Inkscape extension, vpype and saxi. The export menu also includes PNG export, one SVG file per pen, and a link for sharing the current design. Drop an exported SVG back onto the preview to restore its settings.
+Click `Export SVG` to download the drawing. Exported SVGs use millimeter units and a separate Inkscape layer for each pen, so they work with the AxiDraw Inkscape extension, vpype and saxi. The export menu also includes vector PDF for printing, DXF for CAD and engraving, EPS for graphics software, PNG, one SVG file per pen, and a share link. Print PDF at actual size. Import DXF in millimeters. EPS crops to the artwork. See the [export notes](web/geometric-web-app/README.md#export-checks) for format details and checks. Drop an exported SVG back onto the preview to restore its settings.
 
 Press `?` to view the keyboard shortcuts.
 

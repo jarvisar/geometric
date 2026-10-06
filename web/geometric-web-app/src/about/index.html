@@ -55,7 +55,7 @@
             <li>One to eight pens per design. Each design has its own default colors and the pen list shows what each pen draws.</li>
             <li>The same seed and settings always give the same drawing.</li>
             <li>Scale, rotate or crop the drawing to a circle, hexagon or diamond, or lay out a grid of variations on one sheet.</li>
-            <li>SVG export in millimeters with one Inkscape layer per pen. You can also export one SVG per pen, a PNG or a share link.</li>
+            <li>SVG export in millimeters with one Inkscape layer per pen. You can also export PDF for printing, DXF for CAD and engraving, EPS for graphics software, one SVG per pen, a PNG or a share link.</li>
             <li>Drop an exported SVG back onto the preview to restore its settings.</li>
         </ul>
 
@@ -80,6 +80,7 @@
         <p>Before export the lines are cleaned up for the plotter. Close points are simplified, lines that meet end to end are joined and the order is sorted to cut down pen-up travel. The settings are also saved inside the SVG, which is why dropping one back in restores the drawing.</p>
 
         <h2>Plotting</h2>
+        <p>Use PDF for a full page with the selected pen colors and widths. Print at actual size. DXF exports centerlines in millimeters with separate pen layers. Select millimeters if your importer asks. EPS keeps colors and widths but crops to the ink. Vector exports leave out the preview's paper color. For cutters, choose a draw, score or engrave operation for these line drawings.</p>
         <p>Set the paper size, margin and pen widths to match your setup before exporting. Layer names start with the pen number (<code>1 Pen 1</code>, <code>2 Pen 2</code> and so on), so with the AxiDraw Inkscape extension you can plot one pen at a time from the Layers tab and swap pens in between. vpype and saxi read the same file.</p>
         <p>For street maps of real cities, try <a href="https://svgmap.jarvisar.com/">SVGmap</a>. It builds an SVG from OpenStreetMap data for pen plotters or laser engraving.</p>
 

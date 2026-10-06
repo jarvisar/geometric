@@ -255,6 +255,7 @@ kbd {
 .menu button small { display: block; color: var(--muted); font-size: 11px; }
 .menu button:hover small, .menu button:focus-visible small { color: rgba(26, 13, 8, 0.75); }
 .menu hr { border: 0; border-top: 1px solid var(--bar-border); border-bottom: 1px solid var(--bar-highlight); margin: 4px 0; }
+#exportMenu { max-height: calc(100dvh - 76px); overflow-y: auto; }
 
 /* ------------------------------------------------------------------ layout */
 
