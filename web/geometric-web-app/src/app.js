@@ -1645,7 +1645,7 @@
                 download(`${base}-pen${l.pen + 1}.svg`, PG.exporters.svg(res, paper, recipe.pens, meta, l.pen), 'image/svg+xml');
             }, i * 300));
         } else if (kind === 'png') {
-            const k = 200 / 25.4;
+            const k = 600 / 25.4;
             const c = el('canvas', { width: Math.round(paper.w * k), height: Math.round(paper.h * k) });
             PG.drawResult(c.getContext('2d'), res, { scale: k, ox: 0, oy: 0 },
                 { paper, paperColor: recipe.paper.color, pens: recipe.pens, minLinePx: 1, hairline: !recipe.view.penWidth });

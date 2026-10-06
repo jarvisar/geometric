@@ -88,7 +88,7 @@ Any design can also be laid out as a **grid** on one sheet. Each cell gets its o
      Each pen's strokes are written as one compound path, so Bambu Suite and
      similar importers bring in one object per pen instead of thousands. Use
      `Path > Break Apart` in Inkscape if you want to edit single strokes.
-   * **PNG**: a 200 dpi picture of the preview.
+   * **PNG**: a 600 dpi picture of the preview.
 
 Every exported SVG carries its full recipe (design, parameters, seed, paper,
 pens). Drop an SVG or a saved `.json` back onto the preview to restore it. **Copy share link**
