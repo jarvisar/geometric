@@ -28,6 +28,50 @@ const installHelpers = async () => evaluate(`
     window.__recipe = text => JSON.parse(new DOMParser().parseFromString(text, 'image/svg+xml').querySelector('desc').textContent.slice('plotter-geometry:'.length));
 `);
 await installHelpers();
+await evaluate(`
+    plotterApp.resetAll();
+    plotterApp.select('flower', { pens: 7 });
+    plotterApp.select('spirograph');
+    __set('[data-param="pens"] input[type=number]', 2);
+`);
+await click('[data-param="R"] .lock-btn');
+await click('[data-param="pens"] .lock-btn');
+await evaluate(`plotterApp.select('flower', { pens: 8 })`);
+await check(`plotterApp.state.params.flower.pens === 2 && document.querySelector('[data-param="pens"] .lock-btn').classList.contains('locked')`, 'switching to a visited design or preset lost the locked pen count');
+await evaluate(`plotterApp.select('moire')`);
+await check(`plotterApp.state.params.moire.pens === 2 && JSON.stringify(plotterApp.state.locks.moire) === '["pens"]' && plotterApp.state.locks.spirograph.includes('R')`, 'switching to a new design lost the pen lock or copied other locks');
+await evaluate(`plotterApp.randomize(); plotterApp.surprise()`);
+await check(`plotterApp.state.params[plotterApp.state.gen].pens === 2 && document.querySelector('[data-param="pens"] .lock-btn').classList.contains('locked')`, 'Surprise lost the locked pen count');
+await evaluate(`__set('[data-param="pens"] input[type=number]', 5); plotterApp.select('spirograph');`);
+await check(`plotterApp.state.params.spirograph.pens === 5 && plotterApp.state.locks.spirograph.includes('R')`, 'editing a locked pen count did not carry to the next design');
+await sleep(650);
+await open('index.html');
+await installHelpers();
+await check(`plotterApp.state.params.spirograph.pens === 5 && document.querySelector('[data-param="pens"] .lock-btn').classList.contains('locked')`, 'reload lost the locked pen count');
+await evaluate(`plotterApp.select('moire')`);
+await check(`plotterApp.state.params.moire.pens === 5`, 'switching designs after reload lost the locked pen count');
+await evaluate(`(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 16;
+    canvas.getContext('2d').fillRect(0, 0, 16, 16);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve));
+    const dt = new DataTransfer();
+    dt.items.add(new File([blob], 'pen-lock.png', { type: 'image/png' }));
+    document.querySelector('#stage').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true }));
+    for (let i = 0; i < 100; i++) {
+        if (plotterApp.state.gen === 'image') return;
+        await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    throw new Error('Image upload did not switch designs');
+})()`);
+await check(`plotterApp.state.params.image.pens === 5 && document.querySelector('[data-param="pens"] .lock-btn').classList.contains('locked')`, 'image upload lost the locked pen count');
+await click('[data-param="pens"] .lock-btn');
+await evaluate(`plotterApp.select('flower', { pens: 8 })`);
+await check(`plotterApp.state.params.flower.pens === 8 && !document.querySelector('[data-param="pens"] .lock-btn').classList.contains('locked')`, 'unlocking failed to restore independent pen counts');
+await evaluate(`plotterApp.select('moire')`);
+await check(`plotterApp.state.params.moire.pens === 5 && !document.querySelector('[data-param="pens"] .lock-btn').classList.contains('locked')`, 'returning to a design reactivated the pen lock');
+log('Locked pen counts follow new and visited designs, presets, Surprise and image uploads, survive reload, and stop following after unlocking');
+
 await evaluate(`plotterApp.resetAll(); plotterApp.select('spirograph'); localStorage.removeItem('plotter-geometry:snapshots:v1');`);
 await sleep(400);
 await evaluate(`plotterApp.resetParams()`);

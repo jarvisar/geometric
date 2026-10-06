@@ -811,7 +811,8 @@
             label.addEventListener('dblclick', opts.onReset);
         }
         if (opts.lockable) {
-            const lock = el('button', { class: 'lock-btn' + (opts.locked ? ' locked' : ''), title: 'Keep fixed when randomizing', type: 'button' });
+            const lock = el('button', { class: 'lock-btn' + (opts.locked ? ' locked' : ''),
+                title: q.id === 'pens' ? 'Keep fixed when randomizing or switching designs' : 'Keep fixed when randomizing', type: 'button' });
             lock.append(icon(opts.locked ? 'lock' : 'unlock'));
             lock.addEventListener('click', () => {
                 const on = opts.onLock();
@@ -1053,7 +1054,7 @@
                 params[paramId] = file.name;
                 // Skip the switch if another design was picked while the photo loaded
                 if (switchFrom && state.gen === switchFrom) {
-                    state.gen = genId;
+                    switchGenerator(genId);
                     designChanged();
                 } else if (state.gen === genId) buildParams();
                 commit();
@@ -1488,10 +1489,22 @@
         });
     }
 
+    // The pen count lock follows design switches; other parameter locks belong to their design.
+    function switchGenerator(id, preset) {
+        const pensLocked = (state.locks[state.gen] || []).includes('pens');
+        const pens = currentParams().pens;
+        state.gen = id;
+        const params = currentParams();
+        if (preset) Object.assign(params, preset);
+        if (pensLocked) params.pens = pens;
+        const locks = new Set(state.locks[id] || []);
+        pensLocked ? locks.add('pens') : locks.delete('pens');
+        state.locks[id] = [...locks];
+    }
+
     function selectGenerator(id, preset) {
         if (!PG.byId[id]) return;
-        state.gen = id;
-        if (preset) Object.assign(currentParams(PG.byId[id]), preset);
+        switchGenerator(id, preset);
         closeGallery();
         designChanged();
         requestGenerate();
@@ -1509,7 +1522,7 @@
     function surprise() {
         const others = listedGenerators().filter(g => g.id !== state.gen);
         const def = others[Math.floor(Math.random() * others.length)] || currentDef();
-        state.gen = def.id;
+        switchGenerator(def.id);
         closeGallery();
         designChanged();
         randomize();

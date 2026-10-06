@@ -101,7 +101,8 @@ drawings, share the JSON or SVG file instead. Both include the image data.
   always give the same drawing. `Space` rolls a new seed; `R` randomizes the
   parameters too. `Shift+R` jumps to a random design and randomizes that.
 * **Locks**: hover a parameter and click the lock to keep it fixed while
-  randomizing.
+  randomizing. Locking **Pens** also keeps the pen count when switching designs,
+  including gallery presets and `Shift+R`. Unlock it to use each design's own count.
 * **Snapshots** (`S`): keep designs you like, with thumbnails, in the browser.
 * **Undo / redo**: `Ctrl+Z` / `Ctrl+Shift+Z`. Double-click a parameter label to reset it.
   `Reset` puts the design's parameters back to defaults. The arrow next to it has
