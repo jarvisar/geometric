@@ -98,11 +98,14 @@
 
     const STORAGE_KEY = 'plotter-geometry:state:v1';
     const SNAPS_KEY = 'plotter-geometry:snapshots:v1';
-    // Scenes stay out of the gallery until unlocked (Konami code, or 6 quick clicks on the logo).
+    // Other scenes stay out of the gallery until unlocked (Konami code, or 6 quick clicks on the logo).
     // The key is true once unlocked, false once a locked browser has had its old saved scene checked.
     const SCENES_KEY = 'plotter-geometry:scenes:v1';
     let scenesUnlocked = storageGet(SCENES_KEY) === true;
-    const listedGenerators = () => PG.generators.filter(g => scenesUnlocked || g.category !== 'Scenes');
+    const publicScenes = new Set(['fairground', 'trainyard', 'stairwell', 'alpine', 'tidal', 'skyline']);
+    const isListedGenerator = g => scenesUnlocked || g.category !== 'Scenes' || publicScenes.has(g.id);
+    const listedGenerators = () => PG.generators.filter(isListedGenerator);
+    const lockedSceneParams = id => !scenesUnlocked && id === 'skyline' ? { landmark: 'none', airship: false } : {};
     const MM_PER_CSS_PX = 25.4 / 96;
 
     const PAPERS = PG.settings.papers;
@@ -122,11 +125,11 @@
     const currentDef = () => PG.byId[state.gen] || PG.generators[0];
 
     // Params for a design, with defaults filled in place (controls hold on to this object).
-    function currentParams(def = currentDef()) {
-        const p = state.params[def.id] || (state.params[def.id] = {});
+    function currentParams(def = currentDef(), s = state) {
+        const p = s.params[def.id] || (s.params[def.id] = {});
         PG.pens.migrate(def, p);
         for (const q of def.params) if (q.id && !(q.id in p)) p[q.id] = q.value;
-        return p;
+        return Object.assign(p, lockedSceneParams(def.id));
     }
 
     function applyPaperSize() {
@@ -149,7 +152,9 @@
             seed: s.seed, paperW: s.paper.w, paperH: s.paper.h, margin: s.paper.margin,
             scale: c.scale, rotate: c.rotate, offsetX: c.offsetX, offsetY: c.offsetY, clip: c.clip,
             frame: c.frame, framePen: c.framePen, frameInset: c.frameInset, opt: s.opt,
-            cols: c.cols, rows: c.rows, gutter: c.gutter, cellVary: c.cellVary, locks: s.locks[s.gen] || [],
+            cols: c.cols, rows: c.rows, gutter: c.gutter, cellVary: c.cellVary,
+            // Grid variation must keep the hidden Skyline options off too.
+            locks: [...new Set([...(s.locks[s.gen] || []), ...Object.keys(lockedSceneParams(s.gen))])],
             sweep: c.sweepId ? { id: c.sweepId, amount: c.sweepAmount / 100 } : null,
         };
     }
@@ -292,7 +297,7 @@
         return JSON.stringify([s.gen, s.params[s.gen], pipelineSettings(s), s.images[s.gen] || {}]);
     }
     function generationJob(s = state) {
-        return { gen: s.gen, params: structuredClone(s.params[s.gen]), settings: structuredClone(pipelineSettings(s)), images: PG.images.get(s) };
+        return { gen: s.gen, params: structuredClone(currentParams(PG.byId[s.gen], s)), settings: structuredClone(pipelineSettings(s)), images: PG.images.get(s) };
     }
 
     // The last drawing stays up while the next one generates. live is set while dragging a slider.
@@ -934,10 +939,12 @@
         document.title = `${def.name} · Plotter Geometry`;
 
         const locks = new Set(state.locks[def.id] || []);
+        const restricted = lockedSceneParams(def.id);
         const groups = [{ label: 'Pens', controls: def.params.filter(q => q.id === 'pens') }];
         let group = { label: 'Parameters', controls: [] };
         groups.push(group);
         for (const q of def.params) {
+            if (Object.hasOwn(restricted, q.id)) continue;
             if (q.type === 'section') {
                 if (q.label === 'Pens') group = groups[0];
                 else { group = { label: q.label, controls: [] }; groups.push(group); }
@@ -1446,6 +1453,7 @@
     }
 
     async function renderThumb(def, canvasEl, params = PG.defaultParams(def), key = def.id) {
+        Object.assign(params, lockedSceneParams(def.id));
         // near-A4 scale, since fill designs size their features in real millimeters
         const size = 190;
         const S = {
@@ -1942,6 +1950,8 @@
         if (scenesUnlocked) return;
         scenesUnlocked = true;
         storageSet(SCENES_KEY, true);
+        thumbCache.delete('skyline');
+        if (state.gen === 'skyline') buildParams();
         toast('Scenes unlocked');
         if (!$('#gallery').hidden) { buildGallery(); filterGallery($('#gallerySearch').value); }
     }
@@ -1976,7 +1986,7 @@
             catch (err) { toast(`Saved settings could not be restored. Using defaults. ${err.message}`, true); }
             // Saved from before scenes were hidden. Only checked once, so a scene opened later from a
             // share link or settings file is still there after a reload.
-            if (!scenesChecked && PG.byId[state.gen] && PG.byId[state.gen].category === 'Scenes') state.gen = PG.generators[0].id;
+            if (!scenesChecked && PG.byId[state.gen] && !isListedGenerator(PG.byId[state.gen])) state.gen = PG.generators[0].id;
         }
         if (!scenesChecked) storageSet(SCENES_KEY, false);
         const hash = location.hash.slice(1);
