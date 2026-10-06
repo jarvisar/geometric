@@ -11,7 +11,7 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 
 ## Designs
 
-40 designs, each with its own controls, seeded randomness and a curated **Randomize**.
+41 designs, each with its own controls, seeded randomness and a curated **Randomize**.
 
 **Curves** — centered figures, mostly single continuous strokes
 * **Spirograph**: hypotrochoids and epitrochoids with real tooth counts, so every curve closes exactly. Nested pen-hole rings.
@@ -53,6 +53,7 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 * **Voronoi**: relaxed Voronoi cells with spiral insets, hatching or rounded "pebble" outlines.
 
 **Scenes**
+* **Moon Base**: a dense lunar settlement of geodesic garden biospheres and barrel-vault greenhouses, paired pressure habitats, workshops and a tall control tower, connected by ribbed tunnels and service roads. A shuttle stands beside its launch gantry, a four-legged lander waits on an octagonal pad, and rovers travel between solar fields, oxygen tanks, cargo cranes and a crater drilling rig. Clear front glazing reveals growing beds and trees. Three colony plans, adjustable density, crater terrain and camera controls use the same isometric hidden-line engine as Town and Harbor. Six pens separate black structures, red collars, blue shadows and solar cells, gold equipment, green gardens and light blue glass; seven add astronauts and eight lunar dust.
 * **Town**: an isometric town built as a small 3D scene, with houses, apartments, A-frames, windmills, cars, fences, trees and yard clutter. The middle gets built up with terraces, shops and squares, and there can be a church, a clock tower, boulevards, roundabouts and a river with bridges and boats. Hidden lines are removed exactly, so only the visible outlines get plotted. The camera angle, scale, block size and how busy the streets are can all be changed. Up to eight pens, where 5 to 8 give cars, people, the river and fences a pen each.
 * **Harbor**: a fishing town on the quay with piers, moored boats, canals, docks, wharves with cranes, canal houses, a church and a clock tower. The lighthouse sits on a straight or bent breakwater or on its own island, and can have red bands. Out in the bay there are boats on moorings, a cargo ship at anchor or a schooner under full sail, channel buoys, rocks with a beacon, people rowing and gulls. Boats get painted stripes, some sails are tan, and ripple lines follow the shore like on an old chart. Drawn for four pens: red and black roof hatching, blue shadows and water, yellow canopies. Six pens make the trees green and the people and cars purple, and eight add light blue water and brown piers and boats.
 * **Fairground**: a funfair with a big wheel, a figure-of-eight roller coaster, a striped big top, a carousel, a helter skelter, swing rides, a drop tower, a pirate ship, teacups, bumper cars, a boating lake with swan pedalos, game stalls and bunting. The paths come from a Voronoi diagram, so they wind between the rides. Drawn for the same pens as Harbor, except with eight it's the paths that go brown.

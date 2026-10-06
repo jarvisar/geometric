@@ -58,6 +58,7 @@
         harbour: profile(4, 'Roofs, shadows and awnings use separate inks. More pens separate plants, figures, water and wood.'),
         fairground: profile(4, 'Rides, tents and shadows use separate inks. More pens separate plants, people, water and paths.'),
         trainyard: profile(5, 'Black trains and buildings, red roofs and paint, blue shadows, gold trim and brown track. More pens separate plants, people and steam.'),
+        moonbase: profile(6, 'Black structures, red pressure collars, blue shadows and solar cells, gold equipment, green gardens and light blue glazing. Seven pens separate astronauts; eight add brown lunar dust.'),
         alpine: profile(4, 'Dark architecture, red roofs, blue shade and gold details. More pens separate fir woods, people, water and timber.'),
         image: profile(3, 'Colors follow image darkness in every drawing mode.', [BLUE, PURPLE, INK, RED, BROWN, GREEN, CYAN, GOLD]),
     };
@@ -97,6 +98,12 @@
         ], [0, 1, 2, 3, 3, 3, 1, 3], ['Buildings', 'Streets', 'Plants', 'Details', 'Vehicles', 'People', 'Water', 'Fences & benches']),
         harbour: scene(illustrated, [0, 1, 2, 3, 0, 0, 2, 0], ['Structure', 'Roofs', 'Shadows', 'Awnings', 'Plants', 'Figures', 'Water', 'Wood']),
         fairground: scene(illustrated, [0, 1, 2, 3, 0, 0, 2, 0], ['Structure', 'Tents', 'Shadows', 'Rides & flags', 'Plants', 'People', 'Water', 'Paths']),
+        moonbase: scene([
+            ...illustrated.slice(0, 5),
+            [INK, RED, BLUE, GOLD, GREEN, INK, CYAN, INK],
+            [INK, RED, BLUE, GOLD, GREEN, PURPLE, CYAN, INK],
+            illustrated[7],
+        ], [0, 1, 2, 3, 4, 5, 6, 7], ['Structures & tunnels', 'Pressure collars & markings', 'Shadows & solar cells', 'Lander & equipment', 'Biosphere gardens', 'Astronauts', 'Glazing', 'Regolith & tracks']),
         // Track is most of the drawing, so it gets its own pen before plants and people do
         trainyard: scene([
             [INK, INK, INK, INK, INK, INK, INK, INK],
