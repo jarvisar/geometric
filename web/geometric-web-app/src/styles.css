@@ -131,7 +131,7 @@ kbd {
     margin: 0 6px 0 0;
     white-space: nowrap;
 }
-.brand a { display: flex; align-items: center; gap: 8px; color: #fff; text-decoration: none; text-shadow: 0 -1px 0 #000; touch-action: manipulation; }
+.brand button { display: flex; align-items: center; gap: 8px; border: 0; padding: 0; background: none; color: #fff; text-shadow: 0 -1px 0 #000; touch-action: manipulation; }
 .brand .logo { width: 26px; height: 26px; color: var(--accent); filter: drop-shadow(0 -1px 0 rgba(0, 0, 0, 0.7)); }
 
 .spacer { flex: 1; }

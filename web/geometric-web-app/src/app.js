@@ -1981,15 +1981,13 @@
             if (pos === code.length) { pos = 0; unlockScenes(); }
         });
 
-        // The logo links to the about page, so hold a plain click briefly to see if more follow
-        const link = $('.brand a');
+        const logoButton = $('.brand button');
         let clicks = 0, timer = 0;
-        link.addEventListener('click', e => {
+        logoButton.addEventListener('click', e => {
             if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
-            e.preventDefault();
             clearTimeout(timer);
             if (++clicks >= 6) { clicks = 0; unlockScenes(); return; }
-            timer = setTimeout(() => { clicks = 0; location.href = link.href; }, 350);
+            timer = setTimeout(() => { clicks = 0; }, 350);
         });
     }
 
