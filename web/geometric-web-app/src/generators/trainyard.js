@@ -872,6 +872,15 @@
         crane: { L: 11, build: crane },
     };
 
+    // Drop cars off the end of the list until the train fits in `room`
+    // meters, and return its length. A train that's too long would otherwise
+    // trail back onto the points and into the cars on the next track.
+    function fit(cars, room) {
+        let len = cars.reduce((a, [k]) => a + STOCK[k].L + 0.85, 0);
+        while (cars.length && len > room) len -= STOCK[cars.pop()[0]].L + 0.85;
+        return len;
+    }
+
     // Frame on the rails of track t at arc length s, along the chord between
     // points `half` either side so a car on a curve sits across it
     function onTrack(t, s, half, back) {
@@ -1349,13 +1358,15 @@
         }
     }
 
-    // Telegraph poles along a line from x0 to x1 at y, with wires sagging between them
-    function telegraph(T, x0, x1, y, rng) {
+    // Telegraph poles along a line from x0 to x1 at y, with wires sagging
+    // between them. Poles step along to the next spot `free` allows.
+    function telegraph(T, x0, x1, y, rng, free) {
         const S = T.S, gap = 32, n = Math.max(1, Math.round((x1 - x0) / gap)), h = 7.5;
         S.kind = INK;
         const tops = [];
         for (let i = 0; i <= n; i++) {
-            const x = x0 + ((x1 - x0) * i) / n + rng.range(-1.5, 1.5);
+            let x = x0 + ((x1 - x0) * i) / n + rng.range(-1.5, 1.5);
+            for (let k = 1; k < 8 && !free(x); k++) x += k % 2 ? 2 * k : -2 * k;
             S.line([[x, y, 0], [x, y, h + 0.4]]);
             for (const c of [h, h - 0.7]) S.line([[x, y - 1, c], [x, y + 1, c]]);
             tops.push(x);
@@ -1374,16 +1385,20 @@
     // Overhead wires along the main line from x0 to x1: a portal over all
     // the tracks at `ys` every so often, and for each track a sagging
     // messenger wire with the contact wire hung level under it on droppers.
-    // Portals keep clear of anything at `avoid`.
+    // Portals move out of the [a, b] stretches in `avoid`, and two that end
+    // up together become one.
     function catenary(T, x0, x1, ys, avoid) {
-        const S = T.S, W = frame(0, 0, 0, 0), n = Math.max(1, Math.round((x1 - x0) / 46)), yA = Math.min(...ys) - 3, yB = Math.max(...ys) + 3;
+        const S = T.S, W = frame(0, 0, 0, 0), yA = Math.min(...ys) - 3, yB = Math.max(...ys) + 3;
         const hc = WIRE, hm = WIRE + 1.5;
         S.kind = INK;
         const xs = [];
-        for (let i = 0; i <= n; i++) {
-            let x = x0 + ((x1 - x0) * i) / n;
-            for (const a of avoid) if (Math.abs(x - a) < 5) x = a + (x < a ? -5 : 5);
-            xs.push(x);
+        for (let i = 0, m = Math.max(1, Math.round((x1 - x0) / 46)); i <= m; i++) {
+            let x = x0 + ((x1 - x0) * i) / m;
+            for (const [a, b] of avoid) if (x > a && x < b) x = x - a < b - x ? a : b;
+            if (!xs.length || x > xs[xs.length - 1] + 12) xs.push(x);
+        }
+        const n = xs.length - 1;
+        for (const x of xs) {
             for (const y of [yA, yB]) {
                 S.box(W, x - 0.18, y - 0.18, 0, x + 0.18, y + 0.18, hm + 0.9);
                 if (T.detail) for (let c = 0.4; c + 1.1 < hm; c += 1.1) S.line([[x - 0.19, y - 0.18, c], [x - 0.19, y + 0.18, c + 1.1]]);
@@ -1636,10 +1651,12 @@
         }
     }
 
-    // Rail-mounted gantry crane from yA to yB over whatever's between, legs
-    // running on their own rails along x. The trolley hangs a container off
-    // its spreader. Returns nothing, it's just big.
-    function gantryCrane(T, x, yA, yB, rng) {
+    // Rail-mounted gantry crane with legs at yA and yB (yA < yB) over whatever's
+    // between, running on their own rails along x. The girder sticks out 4 m
+    // past yA and only 1 m past yB, which is the main line side. The trolley
+    // stands over yt with a container on its spreader, lifted clear of a
+    // double-stacked wagon under it.
+    function gantryCrane(T, x, yA, yB, yt, rng) {
         const S = T.S, W = frame(0, 0, 0, 0), h = 14.5, e = 4.5;
         S.kind = INK;
         for (const y of [yA, yB]) {
@@ -1650,19 +1667,19 @@
             S.line([[x - 40, y, 0.1], [x + 40, y, 0.1]]);
             S.kind = INK;
         }
-        S.box(W, x - 1.4, yA - 5, h, x + 1.4, yB + 5, h + 1.8);
+        const g0 = yA - 4, g1 = yB + 1;
+        S.box(W, x - 1.4, g0, h, x + 1.4, g1, h + 1.8);
         if (T.detail) {
-            const k = Math.round((yB - yA + 10) / 1.8), zig = [];
-            for (let i = 0; i <= k; i++) zig.push([x - 1.41, yA - 5 + ((yB - yA + 10) * i) / k, i % 2 ? h + 1.7 : h + 0.1]);
+            const k = Math.round((g1 - g0) / 1.8), zig = [];
+            for (let i = 0; i <= k; i++) zig.push([x - 1.41, g0 + ((g1 - g0) * i) / k, i % 2 ? h + 1.7 : h + 0.1]);
             S.line(zig);
         }
-        // cab and trolley partway across, with a box coming up on the spreader
-        const yt = geo.lerp(yA + 3, yB - 3, rng.range(0.2, 0.8)), zs = rng.range(5, 9);
+        // cab and trolley, with a box coming up on the spreader
         S.box(W, x - 1.7, yt - 1.6, h + 1.8, x + 1.7, yt + 1.6, h + 3.2);
         S.box(W, x - 1.2, yt - 1, h - 2.4, x + 1.2, yt + 1, h);
-        for (const dx of [-1, 1]) S.line([[x + dx * 0.9, yt, h - 2.4], [x + dx * 3, yt, zs + 2.8]]);
-        S.box(W, x - 3.1, yt - 1.3, zs + 2.6, x + 3.1, yt + 1.3, zs + 2.8);
-        container(T, axes([x - 3.05, yt, 0], [1, 0, 0], [0, 1, 0], Z), 0, 6.1, zs, rng.pick([RED, GOLD, null]), rng);
+        const top = container(T, axes([x - 3.05, yt, 0], [1, 0, 0], [0, 1, 0], Z), 0, 6.1, rng.range(7.4, 9), rng.pick([RED, GOLD, null]), rng);
+        S.box(W, x - 3.1, yt - 1.3, top, x + 3.1, yt + 1.3, top + 0.2);
+        for (const dx of [-1, 1]) S.line([[x + dx * 0.9, yt, h - 2.4], [x + dx * 3, yt, top + 0.2]]);
     }
 
     // ------------------------------------------------------------------
@@ -1727,8 +1744,9 @@
 
     // Row of terraced houses under one long roof, ridge along the street,
     // from u = 0 to L in frame F with the fronts on v = 0. Chimneys on the
-    // party walls, a back extension each and walled yards behind with a
-    // privy and sometimes washing out.
+    // party walls, a back extension each and walled yards behind, sometimes
+    // with washing out. Two rows meet back to back, so anything more in the
+    // yards plots as a tangle of walls and shadows.
     function terraceRow(T, F, L, rng) {
         const S = T.S, FLOOR = kit.FLOOR, D = 7.5, Y = 8, base = 0.25, n = Math.max(2, Math.round(L / 5.2)), w = L / n, top = base + 2 * FLOOR;
         S.kind = INK;
@@ -1747,14 +1765,10 @@
             const a0 = i % 2 ? i * w + 0.25 : (i + 1) * w - 2.75, a1 = a0 + 2.5;
             S.box(F, a0, D, base, a1, D + 3.4, base + FLOOR);
             shadeGable(T, F, gableRoof(T, F, [a0, D, a1, D + 3.4], base + FLOOR, false, geo.rad(30), rng, { attic: false }));
-            // yard walls, a privy in the far corner and maybe washing
+            // yard walls and maybe washing
             S.box(F, i * w - 0.1, D + 3.4, 0, i * w + 0.1, D + Y, 1.6);
             S.box(F, i * w + 0.1, D + Y - 0.2, 0, (i + 1) * w - 0.1, D + Y, 1.6);
-            const pa = i % 2 ? (i + 1) * w - 1.5 : i * w + 0.3;
-            S.box(F, pa, D + Y - 1.5, 0, pa + 1.2, D + Y - 0.2, 2.1);
-            const pw = wall(F, 0, [pa, D + Y - 1.5, pa + 1.2, D + Y - 0.2]);
-            if (T.sees(pw.n)) door(T, pw.at, 0.6, 0, 0.7, 1.7);
-            if (rng.chance(0.55)) kit.clothesline(T, F, i * w + 0.6, D + 5, w - 1.2, rng);
+            if (rng.chance(0.3)) kit.clothesline(T, F, i * w + 0.6, D + 5, w - 1.2, rng);
         }
     }
 
@@ -2071,17 +2085,21 @@
     function planDepot(T, L, rng) {
         const { p, cam } = T, { Y, N, xs } = L, top = Y.yard(N - 1);
         const D = L.depot = { kind: p.depot, service: [], spokes: [] };
+        // The yard shed is about 10 m tall and draws over about 7 m of ground
+        // behind it, so the depot keeps further back when there is one
+        const clear = L.shedX === null ? 5 : 14;
         if (D.kind === 'roundhouse') {
-            // stalls stop well short of the approach coming in from -x, and the
-            // whole thing sits far enough up that the nearest stall clears the yard
-            Object.assign(D, { Rt: 11, rIn: 22, depth: 20, da: geo.rad(11), face: Math.atan2(cam.fy, cam.fx) });
-            D.stalls = Math.min(p.stalls, Math.floor((2 * (Math.PI - 0.45 - D.face)) / D.da));
-            D.a0 = D.face - (D.stalls * D.da) / 2;
-            D.y = top + Math.max(D.Rt + 10, 5 - (D.rIn + D.depth) * Math.min(0, Math.sin(D.a0)));
+            // Stalls are centered on the side facing away from us, but stop
+            // at 125° so they don't wrap round behind the coaling tower on the
+            // approach. Past that they shift round towards +x instead.
+            Object.assign(D, { Rt: 11, rIn: 22, depth: 20, da: geo.rad(11), face: Math.atan2(cam.fy, cam.fx), aMax: geo.rad(125) });
+            D.stalls = Math.min(p.stalls, Math.floor((D.aMax + geo.rad(60)) / D.da));
+            D.a0 = Math.min(D.face - (D.stalls * D.da) / 2, D.aMax - D.stalls * D.da);
+            D.y = top + Math.max(D.Rt + 10, clear - (D.rIn + D.depth) * Math.min(0, Math.sin(D.a0)));
             D.far = D.y + (D.stalls ? D.rIn + D.depth : D.Rt);
         } else if (D.kind === 'round') {
             Object.assign(D, { Rt: 11, Rh: 25 });
-            D.y = top + D.Rh + 7;
+            D.y = top + D.Rh + Math.max(7, clear);
             D.far = D.y + D.Rh;
         } else {
             Object.assign(D, { gs: 5.2, nr: 5, A: geo.rad(20) });
@@ -2090,14 +2108,20 @@
             D.roads = Array.from({ length: D.nr }, (_, k) => D.y + k * D.gs);
             D.far = D.roads[D.nr - 1] + 4;
         }
-        // `door` is where the depot proper starts, the S bend comes back from there
-        const sp = T.span(D.kind === 'shed' ? D.y + 10 : D.y, 0, 0) || L.span, straight = 26, Rd = 26, B = geo.rad(34);
+        // `door` is where the depot proper starts, the S bend comes back from
+        // there. The coaling tower stands `tower` short of the door. It's over
+        // 20 m tall, so in front of a round depot it has to stand about 50 m
+        // out from the middle or it draws right over the turntable and stalls.
+        D.tower = D.kind === 'roundhouse' ? 39 : D.kind === 'round' ? 25 : 14;
+        const sp = T.span(D.kind === 'shed' ? D.y + 10 : D.y, 0, 0) || L.span, straight = D.tower + 12, Rd = 26, B = geo.rad(34);
+        // round depots sit right of the middle, with the coaling and water
+        // towers out to their left
         let door;
         if (D.kind === 'roundhouse') {
-            D.x = geo.lerp(sp[0], sp[1], rng.range(0.42, 0.55));
+            D.x = geo.lerp(sp[0], sp[1], rng.range(0.5, 0.6));
             door = D.x - D.Rt;
         } else if (D.kind === 'round') {
-            D.x = geo.lerp(sp[0], sp[1], rng.range(0.45, 0.58));
+            D.x = geo.lerp(sp[0], sp[1], rng.range(0.52, 0.62));
             door = D.x - D.Rh;
         } else {
             const c = D.R * (1 - Math.cos(D.A)), len = 2 * D.R * Math.sin(D.A) + ((D.nr - 1) * D.gs - 2 * c) / Math.tan(D.A);
@@ -2144,7 +2168,7 @@
                 L.tracks.push(t);
             };
             for (let i = 0; i < D.stalls; i++) spoke(D.a0 + (i + 0.5) * D.da, D.rIn + D.depth - 1.5, true);
-            for (let i = 1, a = D.a0 + (D.stalls + 1) * D.da; i <= 3 && a < Math.PI - 0.5; i++, a += D.da * 1.3) spoke(a, D.rIn + 4 + i * 2, false);
+            for (let i = 1, a = D.a0 + (D.stalls + 1) * D.da; i <= 3 && a < D.aMax; i++, a += D.da * 1.3) spoke(a, D.rIn + 4 + i * 2, false);
         }
     }
 
@@ -2211,7 +2235,9 @@
         };
         if (D.kind === 'roundhouse') {
             const { Rt, rIn, depth, da, a0, stalls } = D;
-            claims.disc(D.x, D.y, Rt + 4);
+            // the spokes don't count as track for the clutter, so keep the
+            // whole fan out to the stall doors clear
+            claims.disc(D.x, D.y, rIn + 1);
             for (const t of D.spokes) {
                 const [x, y] = t.at(t.len * 0.5), [x1, y1] = t.at(t.len);
                 claims.disc(x, y, 3);
@@ -2250,7 +2276,7 @@
             });
         }
         // coaling tower over the approach, with the water tower and a water crane by it
-        const ct = sAt(D.approach, D.door - 14);
+        const ct = sAt(D.approach, D.door - D.tower);
         coalingTower(T, onTrack(D.approach, ct, 2, false), rng);
         if (rng.chance(0.75)) engine(D.approach, ct + rng.range(-2, 3), 1);
         {
@@ -2321,7 +2347,9 @@
             for (let i = Math.round(rng.range(4, 10) * busy); i > 0; i--) person(T, rng.range(st.x0 + 5, st.x1 - 12), rng.chance(0.5) ? rng.range(iy0 + 1.2, iy0 + 2.5) : rng.range(iy1 - 2.5, iy1 - 1.2), PLAT, rng);
             for (let i = Math.round(rng.range(2, 6) * busy); i > 0; i--) person(T, rng.range(st.x0 + 8, st.x1 - 8), rng.range(sy0 + 1.8, sy1 - 1.2), PLAT, rng);
             if (rng.chance(0.8)) {
-                const r = train(T, st.loop, st.loop.len - rng.range(46, 58), 1, local(rng, p), rng);
+                const s = st.loop.len - rng.range(46, 58), cars = local(rng, p);
+                fit(cars, s - sAt(st.loop, st.x0 - 8));
+                const r = train(T, st.loop, s, 1, cars, rng);
                 for (const q of r.stacks) steam.push({ ...q, still: true });
             }
         } else if (L.goods) {
@@ -2330,12 +2358,15 @@
             claims.rect(G.shed - 1, G.yA - 16, G.shed + 33, G.yA + 4.5);
             const x0 = G.cut + 36, x1 = G.cut + 100;
             containerStacks(T, x0, x1, G.yB - 15.5, G.yB - 3, rng);
-            gantryCrane(T, geo.lerp(x0 + 8, x1 - 20, rng.range(0.1, 0.6)), G.yA + 3.4, G.yB - 16.5, rng);
+            G.crane = geo.lerp(x0 + 8, x1 - 20, rng.range(0.1, 0.6));
+            gantryCrane(T, G.crane, G.yB - 16.5, G.yA + 3.4, G.yB + rng.range(-0.5, 0.5), rng);
             claims.rect(G.cut - 2, G.yB - 17.5, x1 + 2, G.yA + 4);
             // wagons in at the goods shed, container flats along under the crane
             S.kind = INK;
             const box = [];
             for (let k = rng.int(2, 4); k > 0; k--) box.push(freight(rng, rng.pick(['box', 'reefer', 'cattle'])));
+            // only as many as fit between the S bend and the far end of the shed
+            fit(box, 36);
             train(T, G.a, sAt(G.a, G.shed + 30), 1, box, rng);
             const flats = [];
             for (let k = rng.int(3, 5); k > 0; k--) flats.push(['well', null]);
@@ -2356,27 +2387,41 @@
             const [x, y, ux, uy] = t.at(t.len);
             bufferStop(T, x, y, ux, uy);
         }
+        // signal box set back far enough that the telegraph wires pass in front of it
         const y0M = Y.main(0), xb = xs - rng.range(22, 32);
-        signalBox(T, frame(xb, y0M + 4.2, 0, 0), rng);
-        claims.rect(xb - 1, y0M + 3.5, xb + 13.5, y0M + 9.5);
+        signalBox(T, frame(xb, y0M + 4.8, 0, 0), rng);
+        claims.rect(xb - 1, y0M + 4.5, xb + 13.5, y0M + 10);
         for (const x of [xs - rng.range(4, 10), xs - rng.range(50, 70)]) {
             if (!T.onPage(x, y0M + 3, 4, 10)) continue;
             semaphore(T, axes([x, y0M + 3, 0], [-1, 0, 0], [0, -1, 0], Z), rng.range(7, 8.5), rng);
             claims.disc(x, y0M + 3, 1.5);
         }
         if (L.st) {
-            for (const x of [L.st.x0 - 12, L.st.x1 + 14]) if (T.onPage(x, L.st.yL - 3, 4, 10)) semaphore(T, axes([x, L.st.yL - 3, 0], [-1, 0, 0], [0, -1, 0], Z), 6.5, rng);
+            for (const x of [L.st.x0 - 12, L.st.x1 + 14]) {
+                if (!T.onPage(x, L.st.yL - 3, 4, 10)) continue;
+                semaphore(T, axes([x, L.st.yL - 3, 0], [-1, 0, 0], [0, -1, 0], Z), 6.5, rng);
+                claims.disc(x, L.st.yL - 3, 1.5);
+            }
         }
+        // Stretches of the line that portals and the signal gantry keep out
+        // of. Footbridge stairs run about 14 m along the line either way. The
+        // container crane is tall enough to draw over the main line for 30 m
+        // or so past it.
+        const busy = [L.bridgeX, L.stationBridge].filter(x => x !== null && x !== undefined).map(x => [x - 22, x + 22]);
+        if (L.goods) busy.push([L.goods.crane - 16, L.goods.crane + 34]);
         const vis = visible(T, L.mains[0], 20), ys = L.mains.map((_, j) => Y.main(j));
         if (vis && p.wires) {
-            catenary(T, X0 + vis[0] - 50, X0 + vis[1] + 50, ys, [L.bridgeX, L.stationBridge].filter(x => x !== null && x !== undefined));
+            catenary(T, X0 + vis[0] - 50, X0 + vis[1] + 50, ys, busy);
         } else if (vis) {
-            const gx = L.st ? Math.max(L.st.x1 + 30, X0 + vis[0] + 20) : X0 + geo.lerp(vis[0], vis[1], 0.3);
-            if (gx < X0 + vis[1] - 10 && (L.bridgeX === null || Math.abs(gx - L.bridgeX) > 8)) {
+            let gx = L.st ? Math.max(L.st.x1 + 30, X0 + vis[0] + 20) : X0 + geo.lerp(vis[0], vis[1], 0.3);
+            for (const [a, b] of busy) if (gx > a && gx < b) gx = b;
+            if (gx < X0 + vis[1] - 10 && busy.every(([a, b]) => gx <= a || gx >= b)) {
                 gantry(T, gx, yM - 3, y0M + 3, ys, rng);
                 claims.disc(gx, y0M + 3, 1.5);
+                claims.disc(gx, yM - 3, 1.5);
             }
-            telegraph(T, X0 + vis[0] - 40, X0 + vis[1] + 40, y0M + 3.6, rng);
+            telegraph(T, X0 + vis[0] - 40, X0 + vis[1] + 40, y0M + 3.4, rng, x => claims.free(x, y0M + 3.4, 1.2));
+            claims.rect(X0 + vis[0] - 40, y0M + 2.4, X0 + vis[1] + 40, y0M + 4.4);
         }
         if (L.bridgeX !== null) {
             const x = L.bridgeX, yn = Y.yard(L.N - 1) + 4.4, z = 7.8;
@@ -2474,8 +2519,9 @@
             for (let k = 0; k < n; k++) cars.push(freight(rng, style === 'mixed' ? null : style));
             if (rng.chance(0.35)) cars.push(['caboose', rng.chance(0.8) ? RED : GOLD]);
             // head towards +s, so the train trails back to where we started
-            const len = cars.reduce((a, [k]) => a + STOCK[k].L + 0.85, 0);
-            const r = train(T, t, Math.min(end, s + len), 1, cars, rng);
+            const len = fit(cars, end - s);
+            if (!cars.length) break;
+            const r = train(T, t, s + len, 1, cars, rng);
             for (const q of r.stacks) steam.push({ ...q, still: true });
             s += len + rng.range(10, 50);
         }
@@ -2495,9 +2541,9 @@
             Y: { yard: i => y0 + i * g, main: j => y0 - 7 - j * 4.5 },
         };
         planYard(T, L, rng);
+        planExtras(T, L, rng);
         planDepot(T, L, rng);
         planStation(T, L, rng);
-        planExtras(T, L, rng);
         L.gap = layTracks(T, L.tracks);
         // shadows hatch level across the page, so they don't run with the rails or sleepers
         S.shadowGroup(0, null, Math.atan2(cam.ry, cam.rx));

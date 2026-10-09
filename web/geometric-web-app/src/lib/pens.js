@@ -56,6 +56,7 @@
         voronoi: profile(4, 'Neighboring cells form color regions, or colors follow fill style.', botanical),
         town: profile(4, 'Default palette: dark buildings, brown streets and fences, green plants, blue water. More pens separate cars, people and details.'),
         harbour: profile(4, 'Roofs, shadows and awnings use separate inks. More pens separate plants, figures, water and wood.'),
+        castle: profile(5, 'Black masonry, red roofs and banners, blue shadows and moat, gold awnings and heraldry, green trees and fields. More pens separate people, the moat and timber.'),
         fairground: profile(4, 'Rides, tents and shadows use separate inks. More pens separate plants, people, water and paths.'),
         trainyard: profile(5, 'Black trains and buildings, red roofs and paint, blue shadows, gold trim and brown track. More pens separate plants, people and steam.'),
         moonbase: profile(6, 'Black structures, red pressure collars, blue shadows and solar cells, gold equipment, green gardens and light blue glazing. Seven pens separate astronauts; eight add brown lunar dust.'),
@@ -97,6 +98,7 @@
             [INK, BROWN, GREEN, BLUE, RED, PURPLE, CYAN, GOLD],
         ], [0, 1, 2, 3, 3, 3, 1, 3], ['Buildings', 'Streets', 'Plants', 'Details', 'Vehicles', 'People', 'Water', 'Fences & benches']),
         harbour: scene(illustrated, [0, 1, 2, 3, 0, 0, 2, 0], ['Structure', 'Roofs', 'Shadows', 'Awnings', 'Plants', 'Figures', 'Water', 'Wood']),
+        castle: scene(illustrated, [0, 1, 2, 3, 4, 5, 6, 7], ['Masonry & buildings', 'Roofs & banners', 'Shadows', 'Awnings & heraldry', 'Trees & fields', 'People & horses', 'Moat', 'Timber & tracks']),
         fairground: scene(illustrated, [0, 1, 2, 3, 0, 0, 2, 0], ['Structure', 'Tents', 'Shadows', 'Rides & flags', 'Plants', 'People', 'Water', 'Paths']),
         moonbase: scene([
             ...illustrated.slice(0, 5),

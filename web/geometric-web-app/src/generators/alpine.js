@@ -542,9 +542,10 @@
                         }
                     }
                     // Rock: ledges across the steep faces above the trees. Under snow
-                    // only the steepest faces stay bare.
+                    // only the steepest faces stay bare. Not on the darkest faces, where
+                    // they'd double up the shading into a solid patch.
                     const sl = Math.hypot(nb[0], nb[1]) / nb[2], zm = (zs[0] + zs[1] + zs[2]) / 3;
-                    if (p.rock > 0 && zm > V.treeline - p.relief * 0.05 && sl > (zm > V.snowAt(P[0][0], P[0][1]) ? steep + 0.5 : steep)) {
+                    if (p.rock > 0 && tone < 0.55 && zm > V.treeline - p.relief * 0.05 && sl > (zm > V.snowAt(P[0][0], P[0][1]) ? steep + 0.5 : steep)) {
                         for (let L = Math.ceil(lo / strata); L * strata < hi; L++) {
                             const e = crossing(tri, P, zs, L * strata);
                             if (e) add(ledges, L, e);
@@ -650,9 +651,13 @@
     function groundShadow(T, G, vertices) {
         const [sx, sy] = T.shadowDir;
         const shadow = PG.iso.hull(vertices.map(([x, y, z]) => {
+            // Where the ground falls away steeper than the sun the shadow never lands and
+            // runs off down the slope as a fan of hatching, so keep it to the length it'd be
+            // on level ground
+            const cap = Math.max(0, z - G.at(x, y)) + 0.5;
             let qx = x, qy = y;
             for (let i = 0; i < 4; i++) {
-                const h = Math.max(0, z - G.at(qx, qy));
+                const h = geo.clamp(z - G.at(qx, qy), 0, cap);
                 qx = x + sx * h; qy = y + sy * h;
             }
             return [qx, qy];
@@ -793,8 +798,6 @@
         // until one has a road up to it that isn't too steep.
         if (p.hut) {
             const v = E.village, zv = G.at(v.x, v.y), cands = [];
-            let from = E.main[0];
-            for (const q of E.main) if (Math.hypot(q[0] - v.x, q[1] - v.y) < Math.hypot(from[0] - v.x, from[1] - v.y)) from = q;
             for (let tries = 0; tries < 400; tries++) {
                 const [x, y] = P.w(P.U * rng.range(0.04, 0.96), P.V * rng.range(0.1, 0.85));
                 if (!seen(x, y, 12) || G.wet(x, y) || nearest(V.axis, x, y).side !== side) continue;
@@ -806,6 +809,10 @@
             for (const c of cands.slice(0, 4)) {
                 const keep = G.h.slice();
                 level(G, c.x, c.y, 11, c.z);
+                // off the main road where it passes nearest, so the road doesn't run
+                // alongside it first and cross back over it
+                let from = E.main[0];
+                for (const q of E.main) if (Math.hypot(q[0] - c.x, q[1] - c.y) < Math.hypot(from[0] - c.x, from[1] - c.y)) from = q;
                 let route = null;
                 // on steep ground a gentle grade only fits hairpins narrower than the
                 // road, which draws as a scribble, so go steeper until it untangles
@@ -962,7 +969,7 @@
     // Draw the line: rails and ties on the shelf and the viaducts, piers and
     // arches under the viaducts, portals where it goes into the mountain, and
     // a train somewhere out in the open
-    function drawRail(T, G, R, claims, rng) {
+    function drawRail(T, G, R, claims, nearCable, rng) {
         const S = T.S, { pts, zs, kind, inside } = R;
         const q3 = i => [pts[i][0], pts[i][1], zs[i]];
         let i = 0;
@@ -1006,11 +1013,13 @@
                 S.line([[pts[q][0] - nx * 1.5, pts[q][1] - ny * 1.5, zs[q] + 0.3], [pts[q][0] + nx * 1.5, pts[q][1] + ny * 1.5, zs[q] + 0.3]]);
             }
         }
-        // a train out in the open
+        // a train out in the open, not right under the cable car
         const long = open.filter(([a, b]) => b - a > 30);
-        if (long.length) {
-            const [a, b] = rng.pick(long);
-            train(T, pts, zs, rng.int(a + 26, b - 2), rng);
+        for (let tries = 0; long.length && tries < 20; tries++) {
+            const [a, b] = rng.pick(long), at = rng.int(a + 26, b - 2);
+            if (tries < 19 && pts.slice(at - 26, at + 1).some(q => nearCable(q[0], q[1], 10))) continue;
+            train(T, pts, zs, at, rng);
+            break;
         }
     }
 
@@ -1174,9 +1183,11 @@
         const at = (sx, sy, f) => { const w = geo.lerp(w0, w1, f); return [x + (A[0] * sx - A[1] * sy) * w, y + (A[1] * sx + A[0] * sy) * w, z0 + h * f]; };
         const legs = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
         for (const [sx, sy] of legs) S.line([at(sx, sy, 0), at(sx, sy, 1)]);
-        const n = Math.max(2, Math.round(h / 3));
+        // bracing on the two near faces only, with all four it's a solid scribble at this size
+        const n = Math.max(2, Math.round(h / 5));
         for (let k = 0; k < 4; k++) {
-            const [ax, ay] = legs[k], [bx, by] = legs[(k + 1) % 4];
+            const [ax, ay] = legs[k], [bx, by] = legs[(k + 1) % 4], mx = (ax + bx) / 2, my = (ay + by) / 2;
+            if (!T.sees([A[0] * mx - A[1] * my, A[1] * mx + A[0] * my, 0])) continue;
             for (let i = 0; i < n; i++) S.line([at(ax, ay, i / n), at(bx, by, (i + 1) / n)]);
         }
         S.line([[x - A[0] * 3, y - A[1] * 3, top], [x + A[0] * 3, y + A[1] * 3, top]]);
@@ -1185,18 +1196,22 @@
     // Cable car from `a` up to `b` (ground points): stations at each end,
     // pylons wherever the cable would come down too near the ground, a pair of
     // sagging cables and a cabin or two on them
-    function cableCar(T, G, a, b, claims, rng) {
+    function cableCar(T, G, a, b, nearRail, rng) {
         const S = T.S;
         const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy), u = [dx / L, dy / L], A = [-u[1], u[0]];
         const za = G.at(a[0], a[1]) + 7, zb = G.at(b[0], b[1]) + 7;
         const sup = [[0, za], [1, zb]];
-        // put in pylons where the straight line between supports is lowest over the ground
+        // Put in pylons where the sagging cable comes lowest over the ground. Not within
+        // 12 m of a support, or the cable leaving a station at 7 m always looks too low
+        // and gets a pylon right beside it.
+        const m = 12 / L;
         for (let it = 0; it < 4; it++) {
-            let worst = null, wc = 9;
+            let worst = null, wc = 6;
             for (let k = 0; k + 1 < sup.length; k++) {
-                const [f0, z0] = sup[k], [f1, z1] = sup[k + 1];
-                for (let f = f0 + 0.03; f < f1 - 0.03; f += 0.01) {
-                    const x = a[0] + dx * f, y = a[1] + dy * f, c = geo.lerp(z0, z1, (f - f0) / (f1 - f0)) - G.at(x, y);
+                const [f0, z0] = sup[k], [f1, z1] = sup[k + 1], sag = 0.025 * L * (f1 - f0);
+                for (let f = f0 + m; f < f1 - m; f += 0.01) {
+                    const s = (f - f0) / (f1 - f0), x = a[0] + dx * f, y = a[1] + dy * f;
+                    const c = geo.lerp(z0, z1, s) - sag * 4 * s * (1 - s) - G.at(x, y);
                     if (c < wc) { wc = c; worst = f; }
                 }
             }
@@ -1220,7 +1235,6 @@
                 S.loop(hole);
                 S.hatch(hole, [0, 0, 1], 0.3);
             }
-            claims.take(p[0], p[1], 7);
         }
         const cable = (off, f0, z0, f1, z1) => {
             const pts = [], sag = 0.025 * L * (f1 - f0);
@@ -1231,19 +1245,30 @@
             return pts;
         };
         for (let k = 0; k + 1 < sup.length; k++) for (const off of [-2, 2]) S.line(cable(off, sup[k][0], sup[k][1], sup[k + 1][0], sup[k + 1][1]));
-        // cabins, one on each track, hanging a few meters under the cable
-        for (const [off, f] of [[-2, rng.range(0.25, 0.45)], [2, rng.range(0.55, 0.75)]]) {
+        const hang = (off, f) => {
             let k = 0;
             while (k + 2 < sup.length && sup[k + 1][0] < f) k++;
-            const s = (f - sup[k][0]) / (sup[k + 1][0] - sup[k][0]), pts = cable(off, sup[k][0], sup[k][1], sup[k + 1][0], sup[k + 1][1]);
-            const q = pts[Math.round(s * 24)], F = turned(q[0], q[1], q[2] - 4.6, Math.atan2(u[1], u[0]));
+            const s = (f - sup[k][0]) / (sup[k + 1][0] - sup[k][0]);
+            return cable(off, sup[k][0], sup[k][1], sup[k + 1][0], sup[k + 1][1])[Math.round(s * 24)];
+        };
+        // whether a cabin hanging from q would be drawn over the viaduct, up to 16 m tall
+        const back = T.cam.ce / T.cam.se;
+        const overRail = q => {
+            const h = q[2] - 4.6 - G.at(q[0], q[1]);
+            for (let o = h - 16; o <= h; o += 2) if (nearRail(q[0] + T.cam.fx * o * back, q[1] + T.cam.fy * o * back, 8)) return true;
+            return false;
+        };
+        // cabins, one on each track, hanging a few meters under the cable
+        for (const [off, f0, f1] of [[-2, 0.25, 0.45], [2, 0.55, 0.75]]) {
+            let q = hang(off, rng.range(f0, f1));
+            for (let tries = 0; tries < 12 && overRail(q); tries++) q = hang(off, rng.range(f0 - 0.1, f1 + 0.1));
+            const F = turned(q[0], q[1], q[2] - 4.6, Math.atan2(u[1], u[0]));
             S.line([q, F.P(0, 0, 2.6)]);
             S.box(F, -1.4, -1.1, 0, 1.4, 1.1, 2.4);
             S.kind = RED;
             S.hatch([F.P(-1.4, -1.1, 2.4), F.P(1.4, -1.1, 2.4), F.P(1.4, 1.1, 2.4), F.P(-1.4, 1.1, 2.4)], F.V(0, 1, 0), 0.35);
             S.kind = INK;
         }
-        claims.line(Array.from({ length: 40 }, (_, i) => [a[0] + dx * i / 39, a[1] + dy * i / 39]), 3);
     }
 
     // Stream from high up in a gully down to the river, taking the steepest
@@ -1689,7 +1714,8 @@
     // lake, the forest, and paragliders and birds overhead
     function settle(T, G, P, V, E, rng) {
         const { S, p } = T;
-        const claims = new Claims();
+        // solid is the buildings and the square, which the cable car and paragliders keep clear of
+        const claims = new Claims(), solid = new Claims();
         const [zmin, zmax] = G.bounds();
         const AT = t => pathAt(V.axis, parAt(V.axis, t));
         const onBlock = (x, y, m) => G.inside(x, y, m) && P.seen(x, y, G.at(x, y), -m);
@@ -1714,7 +1740,11 @@
         road(T, G, E.main, 4.5);
         claims.line(E.main, 3.5);
         if (E.rail) claims.line(E.rail.pts.filter((_, i) => E.rail.inside[i]), 4);
-        if (E.hut) claims.take(E.hut[0], E.hut[1], 10);
+        if (E.hut) {
+            claims.take(E.hut[0], E.hut[1], 10);
+            solid.take(E.hut[0], E.hut[1], 14);
+        }
+        const nearRail = (x, y, r) => !!E.rail && E.rail.pts.some((q, i) => E.rail.inside[i] && Math.hypot(q[0] - x, q[1] - y) < r);
         const lanes = [E.main];
         // a lane through pts, cut back to its longest stretch on dry, gentle ground
         const addLane = (pts, min = 20) => {
@@ -1800,6 +1830,7 @@
             S.line(drape(G, sqPts.concat([sqPts[0]]).map(q => q.slice(0, 2)), 0.1));
             for (const q of sqPts) claims.take(q[0], q[1], 3);
             claims.take(sqc[0], sqc[1], 13);
+            solid.take(sqc[0], sqc[1], 16);
             const z0 = G.at(sqc[0], sqc[1]);
             S.kind = INK;
             PG.isokit.fountain(T, sqc[0], sqc[1], z0 + 0.05, rng);
@@ -1830,6 +1861,7 @@
                     church(T, F, [-4.5, -8, 4.5, 8], rng);
                     groundShadow(T, G, [[-5, -8, 0], [5, -8, 0], [5, 8, 0], [-5, 8, 0], [0, -6, 22], [-4, 0, 8], [4, 0, 8]].map(q => F.P(...q)));
                     claims.take(c[0], c[1], 11);
+                    solid.take(c[0], c[1], 12);
                 }
             }
         }
@@ -1839,19 +1871,55 @@
             const x = q.x + q.nx * off, y = q.y + q.ny * off, L = rng.range(20, 25), D = rng.range(11, 13), a = T.square(Math.atan2(-q.nx, q.ny));
             if (!fits(x, y, a, L + 2, D + 3, 0.3)) continue;
             hold(x, y, a, L + 2, D + 3);
+            for (const [u, v, r] of cover(x, y, a, L + 2, D + 3)) solid.take(u, v, r);
             hotel(T, G, x, y, a, L, D, rng);
             h++;
         }
-        // bottom station of the cable car at the edge of the village, on its side of the river
-        let start = null;
+        // Bottom station of the cable car at the edge of the village, on its side of the
+        // river. Take the spot nearest the top so the cable heads up over the fields rather
+        // than across the village, keep it off the big buildings and over the train, and
+        // keep clear the ground it's drawn over so nothing gets built there. That's not
+        // just under it: on paper a cable h meters up lines up with ground h / tan(elev)
+        // further back, and anything up to a tall chalet's height in between.
+        let start = null, cable = null;
         if (E.top) {
-            for (let tries = 0; tries < 150 && !start; tries++) {
-                const a = rng.range(0, TAU), r = rng.range(20, 60), x = cx + r * Math.cos(a), y = cy + r * Math.sin(a);
-                if (!flatRound(x, y, 8, 0.3)) continue;
-                if (nearest(V.axis, x, y).side === side && Math.hypot(E.top[0] - x, E.top[1] - y) > 60) start = [x, y];
+            const zb = G.at(E.top[0], E.top[1]) + 7, back = T.cam.ce / T.cam.se, [fx, fy] = [T.cam.fx, T.cam.fy];
+            const span = s => {
+                const d = Math.hypot(E.top[0] - s[0], E.top[1] - s[1]), za = G.at(s[0], s[1]) + 7, out = [];
+                for (let i = 0; i <= 39; i++) {
+                    const f = i / 39, [x, y] = geo.lerpPt(s, E.top, f), z = geo.lerp(za, zb, f) - 0.1 * d * f * (1 - f), hc = Math.max(0, z - G.at(x, y));
+                    out.push({ x, y, z, i, under: true });
+                    for (let o = Math.max(0, hc - 14) * back; ; o = Math.min(o + 4, hc * back)) {
+                        out.push({ x: x + fx * o, y: y + fy * o, z, i });
+                        if (o >= hc * back) break;
+                    }
+                }
+                return out;
+            };
+            let best = Infinity;
+            for (let tries = 0; tries < 500; tries++) {
+                const a = rng.range(0, TAU), r = rng.range(20, 90), x = cx + r * Math.cos(a), y = cy + r * Math.sin(a);
+                const d = Math.hypot(E.top[0] - x, E.top[1] - y);
+                if (d < 60 || d >= best || !flatRound(x, y, 6, 0.3) || nearest(V.axis, x, y).side !== side) continue;
+                const band = span([x, y]);
+                // under the line, the cable has to clear a train with a cabin's height to spare
+                if (E.rail && band.some(q => q.under && E.rail.pts.some((c, j) => E.rail.inside[j] && Math.hypot(c[0] - q.x, c[1] - q.y) < 5 && q.z < E.rail.zs[j] + 7))) continue;
+                // Crossing a building is a heavy penalty rather than ruled out, as sometimes
+                // there's no way round, and leaving the cable car out leaves a flat summit
+                const score = d + 500 * band.filter(q => q.i >= 4 && q.i <= 35 && !solid.free(q.x, q.y, 2)).length;
+                if (score >= best) continue;
+                start = [x, y];
+                cable = band;
+                best = score;
             }
-            if (start) claims.take(start[0], start[1], 8);
+            if (start) {
+                claims.take(start[0], start[1], 8);
+                claims.take(E.top[0], E.top[1], 7);
+                for (const q of cable) claims.take(q.x, q.y, 4);
+                cable = cable.map(q => [q.x, q.y]);
+            }
         }
+        const nearCable = (x, y, r) => !!cable && cable.some(q => Math.hypot(q[0] - x, q[1] - y) < r);
         // the station where the line runs on a shelf, as near the village as it can be
         if (E.rail) {
             const R = E.rail;
@@ -1859,7 +1927,7 @@
             for (let i = 3; i + 9 < R.pts.length; i++) {
                 if (![...Array(10).keys()].every(k => R.kind[i + k] === 'shelf' && R.inside[i + k])) continue;
                 const q = R.pts[i + 5];
-                if (!P.seen(q[0], q[1], R.zs[i + 5], 12)) continue;
+                if (!P.seen(q[0], q[1], R.zs[i + 5], 12) || nearCable(q[0], q[1], 24)) continue;
                 const d = Math.hypot(q[0] - cx, q[1] - cy);
                 if (!best || d < best[1]) best = [i, d];
             }
@@ -1900,6 +1968,7 @@
                     s += L + rng.range(3, 8);
                     built++;
                     hold(x, y, a, L, D);
+                    for (const [u, v, r] of cover(x, y, a, L, D)) solid.take(u, v, r);
                     const floors = dc < 45 ? rng.pick([2, 3, 3]) : rng.chance(0.85) ? 2 : 1;
                     const F = chalet(T, G, x, y, a, L, D, floors, rng, gable), entry = F.P(0, -D / 2 - 0.5, 0);
                     const walk = [entry.slice(0, 2), [q.x, q.y]];
@@ -1939,7 +2008,7 @@
             S.hatch(fl, [0, 0, 1], 0.35);
             S.kind = INK;
         }
-        if (start) cableCar(T, G, start, [E.top[0], E.top[1]], claims, rng);
+        if (start) cableCar(T, G, start, [E.top[0], E.top[1]], nearRail, rng);
         // a cross on the highest summit the cable car doesn't go to
         if (p.rock > 0) {
             let top = null;
@@ -1970,7 +2039,7 @@
                 if (pts) claims.line(pts, 2.5);
             }
         }
-        if (E.rail) drawRail(T, G, E.rail, claims, rng);
+        if (E.rail) drawRail(T, G, E.rail, claims, nearCable, rng);
         // boats out on the lake
         if (V.lake) {
             const c = AT(V.lake.t);
@@ -2037,9 +2106,24 @@
         S.kind = INK;
         // overhead
         if (p.fliers) {
+            // somewhere a paraglider won't be drawn over the viaduct, the cable car or a building
+            const back = T.cam.ce / T.cam.se;
+            const clearSky = (x, y, z) => {
+                const h = z - G.at(x, y);
+                for (let o = h - 24; o <= h + 2; o += 3) {
+                    const u = x + T.cam.fx * o * back, v = y + T.cam.fy * o * back;
+                    if (nearRail(u, v, 10) || nearCable(u, v, 8) || !solid.free(u, v, 6)) return false;
+                }
+                return true;
+            };
             for (let i = rng.int(1, 2); i > 0; i--) {
-                const q = AT(rng.range(0.3, 0.8)), z = G.at(q.x, q.y) + (zmax - zmin) * rng.range(0.45, 0.75);
-                paraglider(T, q.x + rng.range(-20, 20), q.y + rng.range(-20, 20), z, rng.range(0, TAU), rng);
+                for (let tries = 0; tries < 12; tries++) {
+                    const q = AT(rng.range(0.3, 0.8)), z = G.at(q.x, q.y) + (zmax - zmin) * rng.range(0.45, 0.75);
+                    const x = q.x + rng.range(-20, 20), y = q.y + rng.range(-20, 20);
+                    if (!clearSky(x, y, z)) continue;
+                    paraglider(T, x, y, z, rng.range(0, TAU), rng);
+                    break;
+                }
             }
             const q = AT(rng.range(0.4, 0.9));
             birds(T, q.x, q.y, zmax + rng.range(5, 20), rng);

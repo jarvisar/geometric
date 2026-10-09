@@ -102,7 +102,7 @@
     // The key is true once unlocked, false once a locked browser has had its old saved scene checked.
     const SCENES_KEY = 'plotter-geometry:scenes:v1';
     let scenesUnlocked = storageGet(SCENES_KEY) === true;
-    const publicScenes = new Set(['fairground', 'trainyard', 'moonbase', 'stairwell', 'alpine', 'tidal', 'skyline']);
+    const publicScenes = new Set(['castle', 'fairground', 'trainyard', 'moonbase', 'stairwell', 'alpine', 'tidal', 'skyline']);
     const isListedGenerator = g => scenesUnlocked || g.category !== 'Scenes' || publicScenes.has(g.id);
     const listedGenerators = () => PG.generators.filter(isListedGenerator);
     const lockedSceneParams = id => !scenesUnlocked && id === 'skyline' ? { landmark: 'none', airship: false } : {};

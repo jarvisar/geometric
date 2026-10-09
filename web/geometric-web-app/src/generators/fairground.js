@@ -61,19 +61,60 @@
     }
 
     // Stripes down a surface of revolution at (x, y), from a lathe profile of
-    // [r, z]: a seam between each of n sectors, and every other sector filled
-    // with lines close enough to read as solid, taking turns through `kinds`.
-    // Just the seams without tones.
+    // [r, z]: a seam between each of n sectors, and every other sector hatched
+    // along its length, taking turns through `kinds`. Just the seams without
+    // tones.
     function stripes(T, x, y, prof, n, a0, kinds = [RED]) {
-        const S = T.S, rmax = Math.max(...prof.map(q => q[0]));
-        const merid = a => prof.map(([r, z]) => [x + (r * 1.015 + 0.01) * Math.cos(a), y + (r * 1.015 + 0.01) * Math.sin(a), z]);
-        const step = 0.3 / (T.k * rmax);
+        const S = T.S, c = T.cam, gap = T.hLit * 0.8, w = TAU / n, half = w / 2;
+        const at = (a, r, z) => [x + (r * 1.015 + 0.01) * Math.cos(a), y + (r * 1.015 + 0.01) * Math.sin(a), z];
+        const fine = [prof[0]];
+        for (let i = 1; i < prof.length; i++) {
+            for (let j = 1; j <= 6; j++) fine.push([geo.lerp(prof[i - 1][0], prof[i][0], j / 6), geo.lerp(prof[i - 1][1], prof[i][1], j / 6)]);
+        }
+        // a line over the surface at angle ang(r), only where the profile is
+        // out past rin, cut exactly where it crosses
+        const trace = (ang, rin) => {
+            const pt = ([r, z]) => at(ang(r), r, z);
+            let run = [];
+            for (let j = 0; j < fine.length; j++) {
+                const inside = fine[j][0] >= rin;
+                if (j && inside !== fine[j - 1][0] >= rin) {
+                    const [r0, z0] = fine[j - 1], [r1, z1] = fine[j];
+                    run.push(pt([rin, z0 + ((z1 - z0) * (rin - r0)) / (r1 - r0)]));
+                    if (!inside) {
+                        if (run.length > 1) S.line(run);
+                        run = [];
+                    }
+                }
+                if (inside) run.push(pt(fine[j]));
+            }
+            if (run.length > 1) S.line(run);
+        };
+        // The seams all meet at the apex and run together into a blob, so
+        // every other one stops once they get close, then every fourth, and so
+        // on. Seam 0 always goes all the way.
         for (let i = 0; i < n; i++) {
-            const s0 = a0 + (TAU * i) / n, s1 = s0 + TAU / n;
-            S.line(merid(s0));
-            if (i % 2 || !T.tones) continue;
+            let reach = 1;
+            while (i && i % (reach * 2) === 0) reach *= 2;
+            trace(() => a0 + w * i, i ? (0.7 * gap) / (reach * w * T.k) : 0);
+        }
+        if (!T.tones) return;
+        // The hatching runs a fixed distance round the surface from the middle
+        // of the stripe and stops half a gap short of the seams, so it never
+        // closes up towards the apex.
+        const rim = fine.reduce((b, q) => (q[0] > b[0] ? q : b)), [rmax] = rim;
+        for (let i = 0; i < n; i += 2) {
+            const ac = a0 + w * (i + 0.5);
+            // paper distance across the stripe per meter round the rim, so
+            // stripes turning away from us get fewer lines rather than closer ones
+            const p = c.project(...at(ac, ...rim)), q = c.project(...at(ac + 0.01 / rmax, ...rim));
+            const ri = fine.indexOf(rim), up = c.project(...at(ac, ...fine[ri > 0 ? ri - 1 : ri + 1]));
+            const dx = q[0] - p[0], dy = q[1] - p[1], ux = up[0] - p[0], uy = up[1] - p[1], ul = Math.hypot(ux, uy);
+            const per = (ul > 1e-9 ? Math.abs(dx * uy - dy * ux) / ul : Math.hypot(dx, dy)) / 0.01;
+            if (per < 1e-6) continue;
+            const d = gap / per, count = Math.floor((half * rmax - d / 2) / d);
             inKind(S, kinds[(i / 2) % kinds.length], () => {
-                for (let a = s0 + step / 2; a < s1 - step / 4; a += step) S.line(merid(a));
+                for (let o = -count; o <= count; o++) trace(r => ac + (o * d) / r, (Math.abs(o * d) + d / 2) / half);
             });
         }
     }
@@ -137,7 +178,7 @@
         const F = frame(x, y, 0, 0), basket = z - 5;
         S.box(F, -1.5, -1.1, basket, 1.5, 1.1, basket + 1.6);
         if (T.detail) {
-            for (let h = basket + 0.25; h < basket + 1.6; h += 0.3)
+            for (let h = basket + 0.3; h < basket + 1.5; h += 0.45)
                 S.loop([F.P(-1.52, -1.12, h), F.P(1.52, -1.12, h), F.P(1.52, 1.12, h), F.P(-1.52, 1.12, h)]);
         }
         for (const a of [-1, 1]) for (const b of [-1, 1]) {
@@ -286,7 +327,7 @@
         tube(T, add(O, mul(A, -(wr + 1.3))), add(O, mul(A, wr + 1.3)), 0.35, 10);
         for (const side of [-1, 1]) tube(T, add(O, mul(A, side * wr - 0.25)), add(O, mul(A, side * wr + 0.25)), 1.1, 12);
         // rims with zigzag bracing between them, and spokes to the hubs
-        const m = 96, ns = 2 * Math.round(R * 0.9), ri = R * 0.9;
+        const m = 96, ns = 2 * Math.round(R * 0.5), ri = R * 0.9;
         for (const side of [-1, 1]) {
             S.loop(Array.from({ length: m }, (_, i) => at((TAU * i) / m, R, side)));
             S.loop(Array.from({ length: m }, (_, i) => at((TAU * i) / m, ri, side)));
@@ -327,7 +368,7 @@
                 if (Math.cos(m) * c.fx + Math.sin(m) * c.fy > 0.2) continue;
                 const pt = (ang, r, z) => [x + r * Math.cos(ang), y + r * Math.sin(ang), z];
                 const f = [pt(a, r0 + 0.01, 0), pt(b, r0 + 0.01, 0), pt(b, r1 + 0.01, H), pt(a, r1 + 0.01, H)];
-                inKind(S, RED, () => S.hatch(f, [0, 0, 1], 0.3));
+                inKind(S, RED, () => S.hatch(f, [0, 0, 1], T.hLit));
             }
         }
         S.lathe(x, y, [[3, H], [3, H + 0.3]], T.segs(3));
@@ -658,7 +699,8 @@
             const spread = 0.8 + z * 0.12, g = s => [x - ty * s * spread, y + tx * s * spread, 0], top = s => [x - ty * s * 0.45, y + tx * s * 0.45, z];
             tube(T, g(-1), top(-1), 0.13, 6);
             tube(T, g(1), top(1), 0.13, 6);
-            if (T.detail) {
+            // cross bracing on every other bent, or seen down the track they stack up into a solid mesh
+            if (T.detail && i % 6 === 0) {
                 for (let h = 0; h + 3 < z; h += 3) {
                     const f0 = h / z, f1 = Math.min(1, (h + 3) / z), at = (s, f) => geo.lerpPt(g(s), top(s), f).concat([z * f]);
                     S.line([at(-1, f0), at(1, f1)]);
@@ -795,14 +837,21 @@
                 a = b;
             }
         };
-        // tops hatched across so they read as hedge rather than wall
-        const hedge = (a0, b0, a1, b1, along) => {
+        // A zigzag along the top so it reads as hedge rather than wall.
+        // Straight hatching across the tops made the maze look like railway track.
+        const hedge = (a0, b0, a1, b1, alongU) => {
             S.box(F, a0, b0, 0, a1, b1, h);
-            if (T.tones) S.hatch([F.P(a0, b0, h), F.P(a1, b0, h), F.P(a1, b1, h), F.P(a0, b1, h)], along, T.hDark);
+            if (!T.tones) return;
+            const len = alongU ? a1 - a0 : b1 - b0, m = Math.max(2, Math.round((len * T.k) / T.hLit)), e = 0.08, pts = [];
+            for (let i = 0; i <= m; i++) {
+                const s = i / m, side = i % 2;
+                pts.push(alongU ? F.P(geo.lerp(a0, a1, s), side ? b1 - e : b0 + e, h) : F.P(side ? a1 - e : a0 + e, geo.lerp(b0, b1, s), h));
+            }
+            S.line(pts);
         };
         inKind(S, GREEN, () => {
-            for (let j = 0; j <= n; j++) runs(Hw[j], (a, b) => hedge(a - t, j * cs - half - t, b + t, j * cs - half + t, F.V(0, 1, 0)));
-            for (let i = 0; i <= n; i++) runs(Vw[i], (a, b) => hedge(i * cs - half - t, a - t, i * cs - half + t, b + t, F.V(1, 0, 0)));
+            for (let j = 0; j <= n; j++) runs(Hw[j], (a, b) => hedge(a - t, j * cs - half - t, b + t, j * cs - half + t, true));
+            for (let i = 0; i <= n; i++) runs(Vw[i], (a, b) => hedge(i * cs - half - t, a - t, i * cs - half + t, b + t, false));
         });
         flag(T, x, y, 0, 3.4);
         return half * Math.SQRT2 + t;
@@ -1200,7 +1249,7 @@
         }
 
         free(x, y, r) {
-            return this.inside(x, y, r) && this.discs.every(([a, b, q]) => (a - x) ** 2 + (b - y) ** 2 >= (q + r) ** 2);
+            return this.inside(x, y, r) && !(this.blocked && this.blocked(x, y, r)) && this.discs.every(([a, b, q]) => (a - x) ** 2 + (b - y) ** 2 >= (q + r) ** 2);
         }
 
         take(x, y, r) {
@@ -1491,7 +1540,7 @@
         let n = Math.round(on.filter(c => !c.kind).length * p.rides);
         for (const c of rng.shuffle(on.slice())) {
             if (n <= 0) break;
-            if (c.kind || c.underWheel) continue;
+            if (c.kind || c.underWheel || c.behindWheel) continue;
             const fits = RIDES.filter(([k, need]) => c.r >= need && (used[k] || 0) < most(k));
             if (!fits.length) continue;
             const k = rng.weighted(fits.map(([kind, , w]) => [w / (1 + 2 * (used[kind] || 0)), kind]));
@@ -1617,8 +1666,9 @@
     function garden(T, c, rng, room = c.r) {
         const S = T.S;
         S.kind = INK;
-        // one maze a page at most
-        const k = rng.weighted([[3, 'fountain'], [room >= 6 ? 2 : 0, 'bandstand'], [room >= 9 && !T.maze ? 2 : 0, 'maze'], [3, 'bed']]);
+        // one maze a page at most, and nothing in the middle behind the wheel
+        const k = T.hidden && T.hidden(c.x, c.y, 2) ? null
+            : rng.weighted([[3, 'fountain'], [room >= 6 ? 2 : 0, 'bandstand'], [room >= 9 && !T.maze ? 2 : 0, 'maze'], [3, 'bed']]);
         let rad;
         if (k === 'fountain') rad = fountain(T, c.x, c.y, 0, rng);
         else if (k === 'bandstand') rad = bandstand(T, c.x, c.y, 0, rng);
@@ -1626,11 +1676,11 @@
             rad = maze(T, c.x, c.y, room, rng);
             T.maze = true;
         }
-        else {
+        else if (k === 'bed') {
             rad = Math.min(3.5, room - 1);
             flowerBed(T, c.x, c.y, rad, rng);
         }
-        c.lawn.take(c.x, c.y, rad + 1);
+        if (k) c.lawn.take(c.x, c.y, rad + 1);
         for (let i = rng.int(1, 3); i > 0; i--) {
             const r = rng.range(1.2, 2), at = c.lawn.place(rng, r + 0.5);
             if (at) flowerBed(T, at[0], at[1], r, rng);
@@ -1676,7 +1726,7 @@
                 for (let side2 = 0; side2 < 4; side2++) {
                     const W = wall(F, side2, [-0.9, -0.9, 0.9, 0.9]);
                     if (!T.sees(W.n)) continue;
-                    for (const z0 of [1.2, 3, 4.8]) inKind(S, RED, () => S.hatch([W.at(0, z0), W.at(W.len, z0), W.at(W.len, z0 + 0.7), W.at(0, z0 + 0.7)], [0, 0, 1], 0.3));
+                    for (const z0 of [1.2, 3, 4.8]) inKind(S, RED, () => S.hatch([W.at(0, z0), W.at(W.len, z0), W.at(W.len, z0 + 0.7), W.at(0, z0 + 0.7)], [0, 0, 1], T.hLit));
                 }
             }
         }
@@ -1717,7 +1767,7 @@
         S.kind = INK;
         for (let i = 0; i < want * 3 && left > 0; i++) {
             const [x, y] = cam.ground(rng.range(0, S.W), rng.range(0, S.H + 10), 0);
-            if (!onPath(x, y) || !clear(x, y, 0.45)) continue;
+            if (!onPath(x, y) || !clear(x, y, 0.45) || (T.hidden && T.hidden(x, y, 0))) continue;
             put(x, y, 0.45);
             if (sellers > 0 && rng.chance(0.05)) {
                 sellers--;
@@ -1745,6 +1795,20 @@
             cells.push({ cell: poly, poly: core, lawn, x, y, r, pc: [q[0], q[1]], on: q[0] > 12 && q[0] < S.W - 12 && q[1] > 20 && q[1] < S.H + 15, kind: null });
         }
         assign(T, cells, rng, new PG.RNG(hash(seed, 2)));
+        const wc = cells.find(c => c.kind === 'wheel');
+        if (wc) {
+            // Nothing on the grass or paths that would show through the spokes.
+            // A point is taken back from the page into the plane of the wheel
+            // to see if it lands inside the rim, at the ground and 3 m up.
+            const hz = wc.R + 2.8, o = cam.project(wc.x, wc.y, hz), rel = q => [q[0] - o[0], q[1] - o[1]];
+            const sE = rel(cam.project(wc.x + wc.E[0], wc.y + wc.E[1], hz)), sZ = rel(cam.project(wc.x, wc.y, hz + 1));
+            const det = sE[0] * sZ[1] - sE[1] * sZ[0];
+            T.hidden = (x, y, r) => [0, 3].some(z => {
+                const [dx, dy] = rel(cam.project(x, y, z));
+                return Math.hypot((dx * sZ[1] - dy * sZ[0]) / det, (sE[0] * dy - sE[1] * dx) / det) < wc.R + 1 + r;
+            });
+            for (const c of cells) c.lawn.blocked = T.hidden;
+        }
         const ground = S.shadowGroup(0, null, Math.atan2(cam.ry, cam.rx));
         S.kind = PATH;
         for (const c of cells) S.loop(c.lawn.poly.map(([x, y]) => [x, y, 0]));
