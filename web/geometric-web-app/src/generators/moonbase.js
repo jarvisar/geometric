@@ -52,53 +52,55 @@
         });
     }
 
-    // Intersect a docking ray with the actual pressure envelope, rather than
-    // the circular reservation used to keep neighbouring lots apart.
-    function dockingReach(lot, angle) {
-        if (!lot.type) return lot.port;
-        const u = Math.cos(angle - lot.angle), v = Math.sin(angle - lot.angle);
-        const box = (x0, y0, x1, y1) => {
-            let lo = 0, hi = Infinity;
-            for (const [d, a, b] of [[u, x0, x1], [v, y0, y1]]) {
-                if (Math.abs(d) < 1e-9) { if (a > 0 || b < 0) return 0; continue; }
-                lo = Math.max(lo, Math.min(a / d, b / d));
-                hi = Math.min(hi, Math.max(a / d, b / d));
-            }
-            return hi >= lo ? hi : 0;
-        };
+    // Rectangular buildings only take tunnels square on, through a short port
+    // tunnel to an airlock pod outside one end (axis 0) or side (axis 1).
+    // The long run then goes pod to pod, so it never hits a hull at an angle
+    // or comes in through a door. `at` is the pod's distance from the center.
+    const PORTS = { hab: { axis: 0, at: 10.3 }, greenhouse: { axis: 0, at: 11.3 }, workshop: { axis: 1, at: 8 } };
+    const POD = 1.9;
+
+    // Where a tunnel meets a round building along `angle`: the collar goes at
+    // `s` from the center, just outside the wall, and the body runs on to `e`
+    // so the joint is hidden inside.
+    function dockAt(lot, angle) {
         switch (lot.type) {
-            case 'dome': return lot.r - 0.9;
-            case 'hub': return 4.15;
-            case 'observatory': return 4.75;
-            case 'hab': return Math.max(box(-6.5, -6.7, 6.5, -2.3), box(-6.5, 2.3, 6.5, 6.7), box(-1.35, -4.5, 1.35, 4.5)) - 0.45;
-            case 'greenhouse': return box(-8.5, -3.55, 8.5, 3.55) - 0.45;
-            case 'workshop': return box(-7.4, -5.3, 7.4, 5.3) - 0.4;
-            default: return lot.port;
+            case 'dome': return [lot.r - 0.5, lot.r - 1.2];
+            case 'hub': {
+                // Octagon with faces square to the world axes
+                const q = Math.PI / 4, off = angle - Math.round(angle / q) * q, s = 4.6 * Math.cos(Math.PI / 8) / Math.cos(off);
+                return [s, s - 0.8];
+            }
+            case 'observatory': return [5.25, 4.4];
+            default: return [POD, 1];
         }
     }
 
-    function tunnel(T, a, b) {
+    // A pressure tunnel from a to b. Collars sit at sa from a and sb from b,
+    // the body runs from ea to d - eb.
+    function tunnel(T, a, b, sa, ea, sb, eb) {
         const { S } = T, angle = Math.atan2(b.y - a.y, b.x - a.x), d = Math.hypot(b.x - a.x, b.y - a.y);
-        const F = turned(a.x, a.y, 0, angle), start = dockingReach(a, angle), end = d - dockingReach(b, angle + Math.PI);
-        if (end <= start) return;
+        const F = turned(a.x, a.y, 0, angle), start = sa, end = d - sb;
+        if (end - start < 0.1) return;
         // A square sill, curved roof, and heavy expansion collars make an
         // enclosed passage distinct from the exposed service pipes below it.
         const arch = (u, extra = 0) => [F.P(u, -1.35 - extra, 0.7), ...Array.from({ length: 13 }, (_, i) => {
             const t = Math.PI - Math.PI * i / 12;
             return F.P(u, (1.35 + extra) * Math.cos(t), 1.75 + (1.35 + extra) * Math.sin(t));
         }), F.P(u, 1.35 + extra, 0.7)];
-        S.prism(arch(start), F.V(end - start, 0, 0), true);
+        S.prism(arch(ea), F.V(d - eb - ea, 0, 0), true);
         S.line([F.P(start, -1.37, 1), F.P(end, -1.37, 1)]);
-        // Solid socket collars meet the hull at both ends. They also screen
-        // the glazing behind each biosphere's pressure-tight entrance.
-        for (const u of [start + 0.45, end - 0.8]) {
+        // Collars sit right against the wall at each end. Short port tunnels
+        // only have room for one.
+        const collars = end - start > 1.2 ? [start, end - 0.35] : [start];
+        for (const u of collars) {
             S.prism(arch(u, 0.16), F.V(0.35, 0, 0), true);
             inKind(S, RED, () => S.line(arch(u + 0.18, 0.18)));
             S.box(F, u - 0.12, -1.65, 0, u + 0.47, 1.65, 0.7);
         }
-        for (let u = start + 0.7; u < end; u += T.p.detail ? 1.4 : 2.8) {
+        const step = T.p.detail ? 1.4 : 2.8;
+        for (let u = start + 0.85, i = 0; u < end - 0.6; u += step, i++) {
             S.line(arch(u, 0.04));
-                if (Math.round((u - start - 0.7) / (T.p.detail ? 1.4 : 2.8)) % 5 === 0) {
+            if (i % 5 === 4) {
                 inKind(S, RED, () => S.line(arch(u + 0.13, 0.06)));
                 S.box(F, u - 0.2, -1.65, 0, u + 0.2, 1.65, 0.7);
             }
@@ -106,6 +108,35 @@
         inKind(S, GOLD, () => {
             for (const v of [-1.75, -1.95]) tube(T, F.P(start, v, 0.38), F.P(end, v, 0.38), 0.075, 6);
         });
+    }
+
+    // Airlock pod where a port tunnel turns onto a long run
+    function pod(T, x, y) {
+        const { S } = T;
+        S.lathe(x, y, [[POD, 0], [POD, 3.6], [POD - 0.5, 4.2], [0.7, 4.45], [0, 4.45]], 20);
+        inKind(S, RED, () => circle(S, x, y, POD + 0.03, 3.2, 20));
+    }
+
+    function tunnelNetwork(T, site) {
+        for (const e of site.links) {
+            const A = e.pa, B = e.pb, angle = Math.atan2(B.y - A.y, B.x - A.x);
+            const [sa, ea] = A === e.a ? dockAt(e.a, angle) : [POD, 1];
+            const [sb, eb] = B === e.b ? dockAt(e.b, angle + Math.PI) : [POD, 1];
+            tunnel(T, A, B, sa, ea, sb, eb);
+        }
+        for (const lot of site.lots) {
+            if (!lot.dock) continue;
+            const { axis, at } = PORTS[lot.type], F = turned(lot.x, lot.y, 0, lot.angle);
+            for (const side of lot.dock) {
+                const q = axis ? F.P(0, side * at, 0) : F.P(side * at, 0, 0);
+                // The port tunnel leaves from the building's own wall: the
+                // cross tunnel between the hab hulls, a greenhouse end wall or
+                // a workshop side wall.
+                const [s, e] = { hab: [1.5, 0], greenhouse: [8.85, 8.5], workshop: [5.55, 4.8] }[lot.type];
+                tunnel(T, lot, { x: q[0], y: q[1] }, s, e, POD, 1);
+                pod(T, q[0], q[1]);
+            }
+        }
     }
 
     function garden(T, x, y, r, rng) {
@@ -124,15 +155,10 @@
                 }
             });
         }
-        // The grove sits on the viewing side of the dome, where the clear
-        // glazing can reveal it instead of hiding it behind the roof.
-        if (r > 9) inKind(S, GREEN, () => {
-            for (const [u, v] of [[-0.24, 0.1], [0.06, 0.2], [0.28, 0.08]]) {
-                const tx = x + r * (u * T.cam.rx - v * T.cam.fx), ty = y + r * (u * T.cam.ry - v * T.cam.fy);
-                PG.isokit.roundTree(T, tx, ty, 1.5, rng);
-            }
-        });
-        inKind(S, GLASS, () => {
+        // The big dome gets one tree where the paths cross, the others a pond.
+        // Several trees piled up over the beds and each other.
+        if (r > 11) inKind(S, GREEN, () => PG.isokit.roundTree(T, x, y, 1.05, rng));
+        else inKind(S, GLASS, () => {
             S.lathe(x, y, [[0.9, 1.1], [0.9, 1.5]], 16);
             circle(S, x, y, 0.65, 1.52, 16);
         });
@@ -203,12 +229,13 @@
             if (!T.cam.facing(...F.V(0, side, 0))) continue;
             for (const u of [-4.1, -1.4, 1.4, 4.1]) inKind(S, GLASS, () => {
                 S.loop(ring(12, (c, s) => F.P(u + 0.63 * c, side * 2.68, 3.7 + 0.63 * s)));
-                S.line([F.P(u - 0.44, side * 2.69, 3.7), F.P(u + 0.44, side * 2.69, 3.7)]);
             });
         }
+        // Round-topped hatch. An octagon with a bar across it read as a face.
         const end = T.cam.facing(...F.V(-1, 0, 0)) ? -L - 0.03 : L + 0.03;
-        S.loop(ring(8, (c, s) => F.P(end, 1.15 * c, 3.25 + 1.5 * s)));
-        S.line([F.P(end, -0.75, 3.25), F.P(end, 0.75, 3.25)]);
+        S.line([F.P(end, -1, 1.75), F.P(end, -1, 3.6), ...Array.from({ length: 9 }, (_, i) => {
+            const a = Math.PI - Math.PI * i / 8; return F.P(end, Math.cos(a), 3.6 + Math.sin(a));
+        }), F.P(end, 1, 1.75), F.P(end, -1, 1.75)]);
         // A short stair and landing make the end hatch an actual entrance.
         const sign = Math.sign(end);
         for (let i = 0; i < 4; i++) {
@@ -231,13 +258,19 @@
             const q = F.P(0, v, 0);
             habitat(T, { ...lot, x: q[0], y: q[1] }, lot.index * 2 + (v > 0 ? 1 : 0));
         }
+        // The cross tunnel runs into each hull as far as its axis, which keeps
+        // the joint hidden even under the curve of the hull
         const a = F.P(0, -4.5, 0), b = F.P(0, 4.5, 0);
-        tunnel(T, { x: a[0], y: a[1], port: 1.5 }, { x: b[0], y: b[1], port: 1.5 });
+        tunnel(T, { x: a[0], y: a[1] }, { x: b[0], y: b[1] }, 2.66, 0, 2.66, 0);
+        // Battery box in the corridor between the hulls, unless a port tunnel needs it
         const { S } = T;
-        S.box(F, -4, -1.3, 0, -1.5, 1.3, 2.3);
-        inKind(S, BLUE, () => {
-            for (let u = -3.7; u < -1.5; u += 0.5) S.line([F.P(u, -1.3, 2.33), F.P(u, 1.3, 2.33)]);
-        });
+        for (const side of [-1, 1]) {
+            if ((lot.dock || []).includes(side) || side > 0 && !(lot.dock || []).includes(-1)) continue;
+            S.box(F, side * 4, -1.3, 0, side * 1.5, 1.3, 2.3);
+            inKind(S, BLUE, () => {
+                for (let u = 1.8; u < 4; u += 0.5) S.line([F.P(side * u, -1.3, 2.33), F.P(side * u, 1.3, 2.33)]);
+            });
+        }
     }
 
     function workshop(T, lot) {
@@ -306,7 +339,7 @@
             }
             S.line([F.P(u, -r, 1.2), F.P(u, r, 1.2)]);
             const side = Math.sign(u), v = side * (8.5 + 0.035);
-            if (T.cam.facing(...F.V(side, 0, 0))) {
+            if (T.cam.facing(...F.V(side, 0, 0)) && !(lot.dock || []).includes(side)) {
                 const door = [F.P(v, -1.05, 0.85), F.P(v, 1.05, 0.85), F.P(v, 1.05, 3.1), F.P(v, 0.7, 3.45), F.P(v, -0.7, 3.45), F.P(v, -1.05, 3.1)];
                 S.face(door); S.loop(door);
                 inKind(S, GLASS, () => S.loop([F.P(v + side * 0.01, -0.65, 2.15), F.P(v + side * 0.01, 0.65, 2.15), F.P(v + side * 0.01, 0.65, 2.95), F.P(v + side * 0.01, -0.65, 2.95)]));
@@ -363,15 +396,17 @@
         S.lathe(x, y, [[2, 1], [1.3, 3], [3.1, 3.5], ...nose], 32);
         for (const z of [6, 17.6, 19]) inKind(S, RED, () => circle(S, x, y, 3.13, z));
         for (const u of [-4.1, 4.1]) {
-            const q = F.P(u, 0.5, 0);
+            const q = F.P(u, 0, 0);
             S.lathe(q[0], q[1], [[0.85, 1], [0.6, 2.5], [1.15, 3], [1.15, 15], [0.8, 17], [0, 18.8]], 20);
             inKind(S, RED, () => { circle(S, q[0], q[1], 1.18, 5.5, 20); circle(S, q[0], q[1], 1.18, 14, 20); });
         }
-        for (let i = 0; i < 4; i++) {
-            const A = turned(x, y, 0, i * Math.PI / 2 + Math.PI / 4);
-            const pts = [A.P(2.9, -0.14, 9), A.P(6.3, -0.14, 2), A.P(6.3, -0.14, 0.9), A.P(2.9, -0.14, 3.5)];
-            S.prism(pts, A.V(0, 0.28, 0));
-            inKind(S, RED, () => S.line([A.P(2.95, -0.17, 8.3), A.P(5.8, -0.17, 2.3)]));
+        // Fins point along the world axes. The camera turn stays within 20 to
+        // 70 degrees, so none of them is ever seen edge-on as a single line.
+        // The sides get full fins, the boosters smaller ones on their outer face.
+        for (const [a, r0, r1, z1] of [[Math.PI / 2, 2.9, 6.3, 9], [-Math.PI / 2, 2.9, 6.3, 9], [0, 5.1, 6.9, 6], [Math.PI, 5.1, 6.9, 6]]) {
+            const A = turned(x, y, 0, a), z0 = r0 > 3 ? 3 : 3.5;
+            S.prism([A.P(r0, -0.14, z1), A.P(r1, -0.14, 2), A.P(r1, -0.14, 0.9), A.P(r0, -0.14, z0)], A.V(0, 0.28, 0));
+            inKind(S, RED, () => S.line([A.P(r0 + 0.05, -0.17, z1 - 0.7), A.P(r1 - 0.5, -0.17, 2.3)]));
         }
         const windscreen = [F.P(-1.3, -3.14, 20.2), F.P(1.3, -3.14, 20.2), F.P(1.05, -3.09, 21.9), F.P(-1.05, -3.09, 21.9)];
         panel(T, windscreen, BLUE, 0.8);
@@ -560,36 +595,35 @@
         const { S } = T, { x, y } = lot, r = 5.2;
         S.lathe(x, y, [[r + 0.6, 0], [r + 0.6, 0.6], [r, 0.9], [r, 5.4]], 32);
         inKind(S, RED, () => { circle(S, x, y, r + 0.04, 1.3); circle(S, x, y, r + 0.04, 4.7); });
-        // Two shells leave a real slit for the telescope. Individual panels
-        // retain the opening at every camera angle, including overhead views.
-        const F = turned(x, y, 0, -0.65), at = (a, t) => F.P(r * Math.cos(a) * Math.cos(t), r * Math.sin(a) * Math.cos(t), 5.4 + r * Math.sin(t));
-        const edges = new Map(), key = p => p.map(v => Math.round(v * 1e6)).join(',');
-        for (let i = 0; i < 32; i++) {
-            const a = i * TAU / 32, b = (i + 1) * TAU / 32;
-            if (i === 0 || i === 15 || i === 16 || i === 31) continue;
-            for (let j = 0; j < 10; j++) {
-                const t = j * Math.PI / 20, u = (j + 1) * Math.PI / 20;
-                const pts = [at(a, t), at(b, t), at(b, u), at(a, u)];
-                S.face(pts.slice(0, 3)); S.face([pts[0], pts[2], pts[3]]);
-                const facing = T.cam.facing(...F.V(Math.cos((a + b) / 2) * Math.cos((t + u) / 2), Math.sin((a + b) / 2) * Math.cos((t + u) / 2), Math.sin((t + u) / 2)));
-                for (let k = 0; k < 4; k++) {
-                    const p = pts[k], q = pts[(k + 1) % 4], kp = key(p), kq = key(q), id = kp < kq ? kp + '/' + kq : kq + '/' + kp;
-                    if (kp === kq) continue;
-                    if (!edges.has(id)) edges.set(id, { pts: [p, q], fronts: [] });
-                    edges.get(id).fronts.push(facing);
-                }
+        // The slit is a straight band of constant width running from the eaves
+        // on the near-left side over the crown. The dome is turned so the slit
+        // and the telescope in it always face the viewer, at any camera turn.
+        const cam = T.cam, w = 1.05, z0 = 5.4;
+        const F = turned(x, y, 0, Math.atan2(0.95 * cam.ry + 0.3 * cam.fy, 0.95 * cam.rx + 0.3 * cam.fx));
+        S.lathe(x, y, Array.from({ length: 11 }, (_, j) => {
+            const t = j * Math.PI / 20; return [j === 10 ? 0 : r * Math.cos(t), z0 + r * Math.sin(t)];
+        }), 32);
+        // Drawn a little outside the sphere, otherwise the facets hide the slit
+        const R = r + 0.06, edge = (v, u) => F.P(u, v, z0 + Math.sqrt(Math.max(0, R * R - u * u - v * v)));
+        const reach = Math.sqrt(R * R - w * w), stops = Array.from({ length: 25 }, (_, i) => -reach + (reach + 1.6) * i / 24);
+        for (const v of [-w, w]) S.line(stops.map(u => edge(v, u)));
+        S.line([edge(-w, stops[24]), edge(w, stops[24])]);
+        // Narrow strips, so the hatching doesn't sag under the facets either
+        if (T.p.hatching) inKind(S, BLUE, () => {
+            for (let i = 0; i < 24; i++) for (let j = 0; j < 4; j++) {
+                const v0 = -w + w * j / 2, v1 = v0 + w / 2;
+                levelHatch(T, [edge(v0, stops[i]), edge(v0, stops[i + 1]), edge(v1, stops[i + 1]), edge(v1, stops[i])], T.p.hatchGap);
             }
-            if (i % 4 === 0) S.line(Array.from({ length: 11 }, (_, j) => at(a, j * Math.PI / 20)));
-        }
-        for (const e of edges.values()) if (e.fronts.length === 1 || e.fronts.some(Boolean) && e.fronts.some(f => !f)) S.line(e.pts);
-        circle(S, x, y, r + 0.03, 5.4);
-        S.lathe(x, y, [[1.1, 5.4], [1.1, 7.3]], 12);
-        S.line([F.P(0, -0.8, 7), F.P(-1, -1.15, 8.5), F.P(-1, 1.15, 8.5), F.P(0, 0.8, 7)]);
-        const a = F.P(-1, 0, 8.5), b = F.P(-8, 0, 12.2), dir = unit(b.map((v, i) => v - a[i]));
-        tube(T, a, b, 1, 16);
-        inKind(S, RED, () => tube(T, b, add(b, mul(dir, 0.35)), 1.06, 16));
-        const perp = unit(cross(dir, Z)), up = cross(dir, perp), end = add(b, mul(dir, 0.38));
-        inKind(S, GLASS, () => S.loop(ring(20, (c, s) => add(end, add(mul(perp, 0.73 * c), mul(up, 0.73 * s))))));
+        });
+        circle(S, x, y, r + 0.03, z0);
+        // Telescope tilted 35 degrees up out of the slit. The part inside is
+        // hidden by the dome, so it just needs to start below the surface.
+        const dir = unit(F.V(-Math.cos(0.6), 0, Math.sin(0.6))), centre = F.P(0, 0, z0);
+        const a = add(centre, mul(dir, r - 1.5)), b = add(centre, mul(dir, r + 3.4));
+        tube(T, a, b, 0.85, 16);
+        inKind(S, RED, () => tube(T, b, add(b, mul(dir, 0.3)), 0.86, 16));
+        const perp = unit(cross(dir, Z)), up = cross(perp, dir), end = add(b, mul(dir, 0.33));
+        inKind(S, GLASS, () => S.loop(ring(20, (c, s) => add(end, add(mul(perp, 0.58 * c), mul(up, 0.58 * s))))));
         const front = turned(x, y, 0, Math.atan2(-T.cam.fy, -T.cam.fx));
         S.loop([front.P(r + 0.03, -0.85, 0.9), front.P(r + 0.03, 0.85, 0.9), front.P(r + 0.03, 0.85, 3.5), front.P(r + 0.03, -0.85, 3.5)]);
         for (let j = 0; j < 3; j++) S.box(front, r + j * 0.5, -1.2, 0, r + (j + 1) * 0.5, 1.2, 0.9 - j * 0.25);
@@ -673,39 +707,57 @@
         }
     }
 
+    // Hatch a flat polygon with lines that run level across the page, at fixed
+    // page heights. Neighbouring facets share the same lines, so a curved
+    // surface shades as one patch and matches the cast shadow hatching.
+    function levelHatch(T, pts, gap) {
+        const { S, cam } = T, q = pts.map(p => cam.project(...p));
+        const ys = q.map(p => p[1]);
+        for (let y = Math.ceil(Math.min(...ys) / gap) * gap; y < Math.max(...ys); y += gap) {
+            const hits = [];
+            for (let i = 0; i < q.length; i++) {
+                const a = q[i], b = q[(i + 1) % q.length];
+                if ((a[1] > y) === (b[1] > y)) continue;
+                const t = (y - a[1]) / (b[1] - a[1]);
+                hits.push({ x: geo.lerp(a[0], b[0], t), p: pts[i].map((v, k) => geo.lerp(v, pts[(i + 1) % q.length][k], t)) });
+            }
+            if (hits.length < 2) continue;
+            hits.sort((a, b) => a.x - b.x);
+            S.line([hits[0].p, hits[hits.length - 1].p]);
+        }
+    }
+
     function crater(T, c, rng) {
-        const { S } = T, n = c.r > 6 ? 48 : 28, wobble = [];
+        const { S } = T, n = c.r > 6 ? 48 : 32, wobble = [];
         for (let i = 0; i < n; i++) {
             const a = i * TAU / n;
             wobble.push(1 + 0.045 * Math.sin(a * 3 + c.phase) + 0.025 * Math.cos(a * 7 - c.phase));
         }
         const rings = [[1.22, 0], [1, c.r * 0.09], [0.8, -c.r * 0.05], [0.43, -c.r * 0.24]];
         const at = (i, scale, z) => { const a = i * TAU / n, r = c.r * scale * wobble[i % n]; return [c.x + r * Math.cos(a), c.y + r * Math.sin(a), z]; };
+        // The sun sits opposite the cast shadows (see generate), so the inner
+        // wall nearest it is the one in shade.
+        const sun = [-0.42, 0.91];
         // The depression is an open mesh, never a convex solid. Each annulus
         // is triangulated so the near lip correctly hides the lower floor.
         for (let j = 0; j < rings.length - 1; j++) for (let i = 0; i < n; i++) {
             const a = at(i, ...rings[j]), b = at((i + 1) % n, ...rings[j]), d = at(i, ...rings[j + 1]), c1 = at((i + 1) % n, ...rings[j + 1]);
             S.face([a, b, c1], false); S.face([a, c1, d], false);
-            // Shade a continuous side of the bowl, on its actual facets.
-            // Sparse, sloping strokes describe depth without a ring of spokes.
-            const angle = (i + 0.5) * TAU / n;
-            if (T.p.hatching && j > 0 && Math.cos(angle + 0.8) > 0.45) inKind(S, BLUE, () => {
-                S.hatch([a, b, c1], b.map((v, k) => v - c1[k]), T.p.hatchGap * 1.5);
-                S.hatch([a, c1, d], b.map((v, k) => v - c1[k]), T.p.hatchGap * 1.5);
+            const angle = (i + 0.5) * TAU / n, shade = Math.cos(angle) * sun[0] + Math.sin(angle) * sun[1];
+            if (T.p.hatching && j > 0 && shade > 0.35) inKind(S, BLUE, () => {
+                levelHatch(T, [a, b, c1], T.p.shadowGap);
+                levelHatch(T, [a, c1, d], T.p.shadowGap);
             });
         }
         S.face(Array.from({ length: n }, (_, i) => at(i, ...rings[3])), false);
         inKind(S, DUST, () => {
             S.loop(Array.from({ length: n }, (_, i) => at(i, ...rings[1])));
-            for (let i = 0; i < n; i += 12) S.line(Array.from({ length: 7 }, (_, j) => at((i + j) % n, ...rings[3])));
-            // Broken ejecta arcs and widely spaced irregular gullies keep the
-            // bowl legible without turning every crater into a toothed gear.
-            for (let i = 0; i < n; i += 8) S.line(Array.from({ length: 6 }, (_, j) => at((i + j) % n, 1.22, 0)));
-            for (let i = 0; i < n; i++) {
-                if (i % 4 !== 0) continue;
-                const a = at(i, ...rings[1]), b = at(i, ...rings[2]), c1 = at(i, ...rings[3]), t = rng.range(0.25, 0.8);
-                S.line([a, b, b.map((v, k) => geo.lerp(v, c1[k], t))]);
-                if (T.p.detail && i % 8 === 0) S.line([a, at(i, ...rings[0])]);
+            S.loop(Array.from({ length: n }, (_, i) => at(i, ...rings[3])));
+            // A few short arcs of ejecta around the outside of the rim
+            const arcs = c.r > 6 ? 5 : 3, start = rng.int(0, n - 1);
+            for (let k = 0; k < arcs; k++) {
+                const i0 = start + Math.round(k * n / arcs), len = rng.int(3, 5);
+                S.line(Array.from({ length: len }, (_, j) => at((i0 + j) % n, rng.range(1.2, 1.3), 0)));
             }
         });
     }
@@ -740,9 +792,9 @@
 
     function plan(T, seed) {
         const { cam, W, H, p } = T, rng = new PG.RNG(hash(seed, 10)), lots = [], links = [];
-        const put = (type, sx, sy, r, port = r) => {
+        const put = (type, sx, sy, r) => {
             const [x, y] = cam.ground(W * sx, H * sy);
-            const lot = { type, x, y, r, port, angle: rng.pick([0, Math.PI / 2]), index: lots.length };
+            const lot = { type, x, y, r, angle: rng.pick([0, Math.PI / 2]), index: lots.length };
             lots.push(lot); return lot;
         };
         // Positions describe districts on the page; every object itself still
@@ -754,9 +806,8 @@
             spine: [[0.56, 0.38], [0.40, 0.56], [0.21, 0.44], [0.73, 0.65], [0.31, 0.23], [0.77, 0.27], [0.35, 0.71], [0.68, 0.52]],
         };
         const positions = layouts[p.layout] || layouts.gardens;
-        const specs = [['dome', 13, 11.7], ['hub', 6, 4.2], ['dome', 8.5, 7.7], ['dome', 9.5, 8.5],
-            ['hab', 11, 2.4], ['hab', 11, 2.4], ['hab', 11, 2.4], ['hab', 11, 2.4]];
-        specs.forEach(([type, r, port], i) => put(type, positions[i][0] + jitter(), positions[i][1] + jitter(), r, port));
+        const specs = [['dome', 13], ['hub', 6], ['dome', 8.5], ['dome', 9.5], ['hab', 11], ['hab', 11], ['hab', 11], ['hab', 11]];
+        specs.forEach(([type, r], i) => put(type, positions[i][0] + jitter(), positions[i][1] + jitter(), r));
         const nodes = lots.slice();
         put('pad', 0.26, 0.85, 12.5);
         put('solar', 0.49, 0.10, Math.max(13, p.solarRows * 3.6));
@@ -805,7 +856,9 @@
             if (links.length >= nodes.length + 1) break;
             if (!links.includes(e) && !links.some(l => segmentsCross(e.a, e.b, l.a, l.b))) links.push(e);
         }
-        const clear = (x, y, r) => !occupied(x, y, r) && !links.some(e => distanceToSegment(x, y, e.a, e.b) < r + 2.4);
+        // Once ports are picked a tunnel follows its path through the pods
+        const near = (x, y, e, r) => e.path ? e.path.slice(1).some((q, i) => distanceToSegment(x, y, e.path[i], q) < r) : distanceToSegment(x, y, e.a, e.b) < r;
+        const clear = (x, y, r) => !occupied(x, y, r) && !links.some(e => near(x, y, e, r + 2.4));
         // Fill the frame with working districts on the same world grid as the
         // architecture. Peripheral buildings continue beyond the crop as they
         // do in Town and Trainyard. Packing uses whole facilities, not specks.
@@ -827,8 +880,7 @@
             if (!clear(x, y, 9.5)) continue;
             const district = q[1] / H;
             const type = rng.pick(district < 0.24 ? ['solar', 'solar', 'workshop', 'greenhouse'] : district > 0.73 ? ['cargo', 'workshop', 'utilities', 'workshop'] : ['hab', 'workshop', 'greenhouse', 'greenhouse', 'utilities']);
-            const lot = { type, x, y, r: type === 'hab' ? 11 : type === 'solar' ? 13 : 9.5,
-                port: type === 'hab' ? 2.4 : 4, small: true, angle: rng.chance(0.75) ? 0 : Math.PI / 2, index: lots.length };
+            const lot = { type, x, y, r: type === 'hab' || type === 'greenhouse' ? 11 : type === 'solar' ? 13 : 9.5, small: true, angle: rng.chance(0.75) ? 0 : Math.PI / 2, index: lots.length };
             if (!clear(x, y, lot.r)) continue;
             lots.push(lot); added++;
         }
@@ -846,13 +898,41 @@
                 !links.some(l => segmentsCross(e.a, e.b, l.a, l.b)));
             if (edge) { links.push(edge); connected.add(a); }
         }
+        // Turn each rectangular building so its ports face its tunnels as
+        // squarely as they can, then dock every tunnel at the nearer port.
+        const toward = (lot, o) => Math.atan2(o.y - lot.y, o.x - lot.x);
+        const portAxis = (lot, angle = lot.angle) => angle + (PORTS[lot.type].axis ? Math.PI / 2 : 0);
+        for (const lot of lots) {
+            const dirs = links.filter(e => e.a === lot || e.b === lot).map(e => toward(lot, e.a === lot ? e.b : e.a));
+            if (!PORTS[lot.type] || !dirs.length) continue;
+            const fit = angle => Math.min(...dirs.map(d => Math.abs(Math.cos(d - portAxis(lot, angle)))));
+            lot.angle = fit(0) >= fit(Math.PI / 2) ? 0 : Math.PI / 2;
+            lot.dock = [];
+        }
+        const anchor = (lot, other) => {
+            if (!lot.dock) return lot;
+            const a = portAxis(lot), side = Math.cos(toward(lot, other) - a) >= 0 ? 1 : -1, at = PORTS[lot.type].at;
+            if (!lot.dock.includes(side)) lot.dock.push(side);
+            return { x: lot.x + side * at * Math.cos(a), y: lot.y + side * at * Math.sin(a) };
+        };
+        for (const e of links) {
+            e.pa = anchor(e.a, e.b); e.pb = anchor(e.b, e.a);
+            e.path = [e.a, e.pa, e.pb, e.b].filter((q, i, all) => q !== all[i - 1]);
+        }
+        // Roads keep clear of tunnels, including where both leave the same lot
+        const crossesTunnel = (a, b) => links.some(l => l.path.slice(1).some((q, i) => segmentsCross(a, b, l.path[i], q)));
+        const alongTunnel = (lot, other) => links.some(l => {
+            if (l.a !== lot && l.b !== lot) return false;
+            const next = l.a === lot ? l.path[1] : l.path[l.path.length - 2];
+            return Math.cos(toward(lot, next) - toward(lot, other)) > Math.cos(0.5);
+        });
         const roads = [], traffic = new Map(), roadNodes = lots.filter(l => l.type !== 'crater');
         const roadCandidates = [];
         for (let i = 0; i < roadNodes.length; i++) for (let j = i + 1; j < roadNodes.length; j++) {
             const a = roadNodes[i], b = roadNodes[j], d = Math.hypot(a.x - b.x, a.y - b.y);
             if (d > 57 || d < a.r + b.r + 4 || links.some(l => l.a === a && l.b === b || l.a === b && l.b === a)) continue;
             if (lots.some(l => l !== a && l !== b && distanceToSegment(l.x, l.y, a, b) < l.r + 3)) continue;
-            if (links.some(l => segmentsCross(a, b, l.a, l.b))) continue;
+            if (crossesTunnel(a, b) || alongTunnel(a, b) || alongTunnel(b, a)) continue;
             roadCandidates.push({ a, b, d });
         }
         roadCandidates.sort((a, b) => a.d - b.d);
@@ -863,10 +943,7 @@
             traffic.set(road.a, (traffic.get(road.a) || 0) + 1); traffic.set(road.b, (traffic.get(road.b) || 0) + 1);
         }
         const clearSurface = (x, y, r) => clear(x, y, r) && !roads.some(e => distanceToSegment(x, y, e.a, e.b) < r + 3.1);
-        for (const lot of lots) lot.ports = links.filter(e => e.a === lot || e.b === lot).map(e => {
-            const other = e.a === lot ? e.b : e.a;
-            return Math.atan2(other.y - lot.y, other.x - lot.x);
-        });
+        for (const lot of lots) lot.ports = links.filter(e => e.a === lot || e.b === lot).map(e => toward(lot, e.a === lot ? e.pb : e.pa));
         return { lots, links, roads, clear: clearSurface };
     }
 
@@ -895,10 +972,12 @@
     function infrastructure(T, site) {
         const { S } = T;
         inKind(S, DUST, () => {
+            // Lots with an apron hide their own road ends. The rest stop the road
+            // at their base, so it doesn't run across a crater bowl or a dish mount.
+            const reach = { dome: l => l.r + 0.6, hub: () => 5.8, pad: l => l.r, launch: () => 12, mine: () => 9.6, dish: () => 2.2 };
             for (const road of site.roads) {
                 const { a, b, d } = road, F = turned(a.x, a.y, 0, Math.atan2(b.y - a.y, b.x - a.x));
-                // The apron faces trim these lines at the actual perimeter.
-                const start = 0, end = d;
+                const start = reach[a.type] ? reach[a.type](a) : 0, end = d - (reach[b.type] ? reach[b.type](b) : 0);
                 for (const v of [-2.7, 2.7]) S.line([F.P(start, v, 0.025), F.P(end, v, 0.025)]);
                 for (let u = start + 1; u < end - 1; u += 3.3) S.line([F.P(u, 0, 0.025), F.P(Math.min(end - 0.5, u + 1.5), 0, 0.025)]);
             }
@@ -910,7 +989,7 @@
                 const pts = rim.map(([a, b]) => F.P(a, b, 0.04));
                 S.face(pts, false);
                 const routes = [...site.roads.filter(e => e.a === lot || e.b === lot).map(e => ({ ...e, width: 2.7 })),
-                    ...site.links.filter(e => e.a === lot || e.b === lot).map(e => ({ ...e, width: 2.1 }))];
+                    ...site.links.filter(e => e.a === lot || e.b === lot).map(e => ({ a: lot, b: e.a === lot ? e.path[1] : e.path[e.path.length - 2], width: 2.1 }))];
                 for (let i = 0; i < pts.length; i++) apronEdge(S, pts[i], pts[(i + 1) % pts.length], routes);
                 if (lot.type === 'cargo' || lot.type === 'workshop') inKind(S, GOLD, () => {
                     for (let a = -u + 2; a < u - 2; a += 1.3) S.line([F.P(a, -v + 0.1, 0.04), F.P(a + 0.6, -v + 0.8, 0.04)]);
@@ -1015,7 +1094,7 @@
             { id: 'elev', label: 'Camera height (°)', type: 'range', min: 25, max: 60, step: 0.5, value: 38, random: false, hint: '35.3 is true isometric' },
             { type: 'section', label: 'Settlement' },
             { id: 'layout', label: 'Colony plan', type: 'select', value: 'gardens', options: [['gardens', 'Garden constellation'], ['crescent', 'Crescent settlement'], ['spine', 'Research spine']], random: true },
-            { id: 'gardens', label: 'Biosphere gardens', type: 'checkbox', value: true, hint: 'Clear front glazing reveals trees and hydroponic growing beds' },
+            { id: 'gardens', label: 'Biosphere gardens', type: 'checkbox', value: true, hint: 'Clear front glazing reveals the growing beds, with a tree in the main dome' },
             { id: 'tunnelLoops', label: 'Extra tunnel links', type: 'checkbox', value: true, random: 0.65 },
             { id: 'density', label: 'Settlement density', type: 'range', min: 0, max: 1, step: 0.05, value: 1, random: [0.75, 1], hint: 'Habitation blocks, workshops, growing houses and cargo yards around the biospheres' },
             { id: 'solarRows', label: 'Solar array rows', type: 'range', min: 1, max: 4, step: 1, value: 3, random: [2, 4] },
@@ -1048,7 +1127,7 @@
                 S.sun = [cot * 0.42, -cot * 0.91];
                 S.shadowGroup(0.055, null, Math.atan2(cam.ry, cam.rx));
             }
-            for (const e of site.links) tunnel(T, e.a, e.b);
+            tunnelNetwork(T, site);
             for (const lot of site.lots) {
                 S.kind = INK;
                 const rng = new PG.RNG(hash(ctx.seed, 40, lot.index));
@@ -1061,7 +1140,8 @@
                     case 'pad': landingPad(T, lot); break;
                     case 'launch': launchSite(T, lot); break;
                     case 'solar': solar(T, lot); break;
-                    case 'dish': dish(T, lot.x, lot.y, lot.r * 0.78, -0.55); break;
+                    // Turn the bowl most of the way towards the camera, otherwise it's just a back
+                    case 'dish': dish(T, lot.x, lot.y, lot.r * 0.78, Math.atan2(-cam.fx, cam.fy) + 0.9); break;
                     case 'utilities': utilities(T, lot); break;
                     case 'observatory': observatory(T, lot); break;
                     case 'cargo': cargoPort(T, lot); break;
