@@ -85,6 +85,56 @@
         const a = pts[lo], b = pts[hi];
         return b[0] > a[0] ? lerp(a[1], b[1], (x - a[0]) / (b[0] - a[0])) : a[1];
     }
+    // Room between things in a panel. A thing is a circle [x, y, r] or { box: [x0, y0, x1, y1] }.
+    function apart(a, b) {
+        if (a.box && b.box) return Math.hypot(Math.max(0, b.box[0] - a.box[2], a.box[0] - b.box[2]), Math.max(0, b.box[1] - a.box[3], a.box[1] - b.box[3]));
+        if (a.box) [a, b] = [b, a];
+        if (b.box) return Math.hypot(Math.max(0, b.box[0] - a[0], a[0] - b.box[2]), Math.max(0, b.box[1] - a[1], a[1] - b.box[3])) - a[2];
+        return Math.hypot(a[0] - b[0], a[1] - b[1]) - a[2] - b[2];
+    }
+    // Clouds can bank up against each other, everything else wants its own patch of sky
+    function room(taken, parts, cloud = false) {
+        let m = Infinity;
+        for (const t of taken) if (!(cloud && t.cloud)) for (const s of parts) m = Math.min(m, apart(s, t));
+        return m;
+    }
+    // Tries spots from pick() (a candidate with its `parts`) until one is clear of everything
+    // taken. With `must`, the roomiest one is used when none is clear.
+    function spot(taken, tries, pick, pad = 1, must = false, cloud = false) {
+        let best = null, most = -Infinity;
+        for (let i = 0; i < tries; i++) {
+            const c = pick();
+            if (!c) continue;
+            const r = room(taken, c.parts, cloud);
+            if (r > pad) return c;
+            if (r > most) { most = r; best = c; }
+        }
+        return must ? best : null;
+    }
+    // Do two boxes overlap by more than k of the smaller one, both across and down?
+    function crowded(a, b, k) {
+        const ox = Math.min(a[2], b[2]) - Math.max(a[0], b[0]), oy = Math.min(a[3], b[3]) - Math.max(a[1], b[1]);
+        return ox > k * Math.min(a[2] - a[0], b[2] - b[0]) && oy > k * Math.min(a[3] - a[1], b[3] - b[1]);
+    }
+    // Farthest and nearest depth some shapes draw at, outlines included
+    function depths(shapes) {
+        let lo = Infinity, hi = -Infinity;
+        for (const s of shapes) {
+            let a = 0, b = 0.01;
+            if (s.lines) for (const l of s.lines) { const dz = l[2] ?? 0.01; a = Math.min(a, dz); b = Math.max(b, dz); }
+            lo = Math.min(lo, s.z + a); hi = Math.max(hi, s.z + b);
+        }
+        return [lo, hi];
+    }
+    // Bounding box of some shapes, from their boxes or else their masks and lines
+    function extent(shapes) {
+        let b = null;
+        for (const s of shapes) {
+            const q = s.box || bounds((s.masks || []).concat((s.lines || []).map(l => l[0])).concat(s.top ? [s.top] : []));
+            b = b ? [Math.min(b[0], q[0]), Math.min(b[1], q[1]), Math.max(b[2], q[2]), Math.max(b[3], q[3])] : q.slice();
+        }
+        return b;
+    }
     function dashes(rng, xa, xb, y, density, len, out = []) {
         for (let x = xa - rng.range(0, len); x < xb;) {
             const l = len * rng.range(0.5, 1.5), a = Math.max(xa, x), b = Math.min(xb, x + l);
@@ -222,8 +272,9 @@
     // range into facets. Every crease has 5 points: top, two bends, base, foot.
     function facets(E, rng, s, r, base, foot, angle, tint, snow) {
         const { pts, idx } = r, g = E.gap, L = E.light, last = pts.length - 1, x0 = pts[0][0], x1 = pts[last][0];
-        // shading stops at the foot of the range, whatever stands in front of it
-        snow = (snow || []).concat([[[x0 - 1, base], [x1 + 1, base], [x1 + 1, foot + 10], [x0 - 1, foot + 10]]]);
+        // shading and the creases off the peaks carry on below the base down to the foot, and the
+        // ground in front cuts them off, so the range never floats over a white gap
+        snow = snow || [];
         const edge = i => { const [x, y] = pts[i]; return { i, path: [[x, y], [x, lerp(y, base, 0.35)], [x, lerp(y, base, 0.7)], [x, base], [x, foot]] }; };
         const cr = [edge(0)];
         for (let k = 1; k < idx.length - 1; k++) {
@@ -245,20 +296,24 @@
             cr.splice(k, 0, { i: j, path });
         }
         let dark = 0;
+        const shaded = [];
         for (let k = 1; k < cr.length; k++) {
             const a = cr[k - 1], b = cr[k];
             const poly = pts.slice(a.i, b.i + 1).concat(b.path.slice(1), a.path.slice(1).reverse());
-            if ((pts[b.i][1] - pts[a.i][1]) * L > 0) s.fills.push([fill([poly], g * (dark % 2 ? 0.8 : 1.05), angle + (dark++ % 2) * 0.25, snow), INK]);
-            else if (tint !== null && rng.chance(0.4)) s.fills.push([fill([poly], g * 1.4, angle - 0.9 * L, snow), tint]);
+            if ((pts[b.i][1] - pts[a.i][1]) * L > 0) { s.fills.push([fill([poly], g * (dark % 2 ? 0.8 : 1.05), angle + (dark++ % 2) * 0.25, snow), INK]); shaded[k] = true; }
+            else if (tint !== null && rng.chance(0.4)) { s.fills.push([fill([poly], g * 1.4, angle - 0.9 * L, snow), tint]); shaded[k] = true; }
             if ((pts[b.i][1] - pts[a.i][1]) * L <= 0 && b.i - a.i >= 4 && rng.chance(0.3 + 0.6 * E.p.detail)) {
                 // a jagged patch of shade hanging under the ridge
                 const j0 = a.i + 1 + rng.int(0, Math.max(0, b.i - a.i - 4)), j1 = Math.min(b.i - 1, j0 + rng.int(2, 5));
                 const top = pts.slice(j0, j1 + 1), depth = (base - pts[j0][1]) * rng.range(0.12, 0.35) + 0.5;
-                const under = top.map(([x, y]) => [x + rng.range(-0.2, 0.2) * depth, y + depth * rng.range(0.4, 1.1)]).reverse();
-                s.fills.push([fill([top.concat(under)], g * 0.85, angle, snow), INK]);
+                const under = top.map(([x, y]) => [x + rng.range(-0.2, 0.2) * depth, y + depth * rng.range(0.4, 1.1)]).reverse(), segs = fill([top.concat(under)], g * 0.85, angle, snow);
+                // a patch only a few lines deep just looks like stray dashes
+                if (segs.length >= 5) s.fills.push([segs, INK]);
             }
         }
-        for (const c of cr.slice(1, -1)) s.lines.push([c.path.slice(0, c.peak ? 4 : c.peak === false ? 2 : rng.int(2, 3)), INK]);
+        // A crease runs the full height wherever it edges some shading, and isn't drawn between two
+        // plain faces. Short ones stopping halfway down read as stray marks.
+        for (let k = 1; k < cr.length - 1; k++) if (shaded[k] || shaded[k + 1]) s.lines.push([cr[k].path, INK]);
     }
     // Snow caps: nothing above this line gets hatched
     function snowcap(rng, xa, xb, y, amp) {
@@ -525,13 +580,17 @@
     function puff(E, rng, x, y, r, z, role = INK) {
         return cloud(E, rng, x, y + r * 0.5, r * 2.2, r * 1.3, z, { part: 'puff', lumps: 1.4, role });
     }
-    function bolt(E, rng, D, x, y0, y1, z) {
+    // Only strikes where the sky under the cloud is empty
+    function bolt(E, rng, D, x, y0, y1, z, avoid) {
         if (y1 - y0 < 4) return;
         const main = [[x, y0]], step = (y1 - y0) / rng.int(5, 8);
         for (let y = y0; y < y1;) { y = Math.min(y1, y + step * rng.range(0.6, 1.2)); x += step * rng.range(-0.7, 0.7); main.push([x, y]); }
-        D.line(main, z, GOLD);
         const k = rng.int(1, main.length - 2), branch = [main[k]];
         for (let j = 0, s = rng.sign(); j < 3; j++) { const [bx, by] = branch[branch.length - 1]; branch.push([bx + s * step * rng.range(0.4, 0.9), by + step * rng.range(0.4, 0.8)]); }
+        const b = bounds([main.slice(1), branch]);
+        if (room(avoid, [{ box: b }], true) < 1) return;
+        avoid.push({ box: b });
+        D.line(main, z, GOLD);
         D.line(branch, z, GOLD);
     }
 
@@ -733,13 +792,15 @@
     function stars(E, rng, D, bottom, density, avoid) {
         const { X, Y, W } = D, y1 = Math.min(bottom, Y + D.H) - 1.3, area = W * (y1 - Y);
         if (area <= 0 || density <= 0) return;
-        const n = Math.min(700, Math.round(area * density / 55)), band = rng.chance(0.3) ? [rng.range(-0.8, 0.8), rng.range(0.2, 0.8)] : null;
+        const n = Math.min(700, Math.round(area * density / 55)), band = rng.chance(0.3) ? [rng.range(-0.8, 0.8), rng.range(0.2, 0.8)] : null, placed = [];
         for (let i = 0; i < n; i++) {
             let x = rng.range(X + 1.3, X + W - 1.3), y = rng.range(Y + 1.3, y1);
             // a milky way: some stars pulled toward a diagonal band
             if (band && i % 2) { const u = rng.random(); x = X + W * u; y = Y + (y1 - Y) * (band[1] + band[0] * (u - 0.5)) + rng.gauss(0, W * 0.05); if (x < X + 1.3 || x > X + W - 1.3 || y < Y + 1.3 || y > y1) continue; }
             const kind = rng.random(), s = rng.range(0.55, 1.1), role = rng.chance(0.1) ? rng.pick(E.starRoles) : INK;
-            if (avoid.some(([u, v, r]) => Math.hypot(x - u, y - v) < r + 1.5)) continue;
+            // stars keep a little apart too, or the milky way clumps into tangles of crosses
+            if (room(avoid, [[x, y, 0]]) < 1.5 || room(placed, [[x, y, s * 1.7]]) < 0.5) continue;
+            placed.push([x, y, s * 1.7]);
             if (kind < 0.5) D.mark(geo.circle(x, y, rng.range(0.22, 0.38), 6), 1, role);
             else if (kind < 0.9) D.cross(x, y, s, 1, role);
             else if (kind < 0.97) D.mark(geo.close(Array.from({ length: 8 }, (_, j) => { const rr = j % 2 ? s * 0.35 : s * 1.7, a = PI * j / 4; return [x + rr * Math.cos(a), y + rr * Math.sin(a)]; })), 1, role);
@@ -753,6 +814,12 @@
             D.line([[x, yb - len], [x, yb]], 0.5, Math.sin(f * 0.7 * x + ph) > 0 ? GREEN : CYAN);
         }
     }
+    // Head plus circles widening down the tail
+    function cometFoot(x, y, size, away) {
+        const a = Math.atan2(away[1], away[0]), c = Math.cos(a), s = Math.sin(a), parts = [[x, y, size * 0.1]];
+        for (let t = 0.25; t < 1.2; t += 0.25) parts.push([x + c * size * t, y + s * size * t, size * 0.16 * t + 1]);
+        return parts;
+    }
     function comet(E, rng, D, x, y, size, away, z) {
         const r = size * 0.08, a = Math.atan2(away[1], away[0]), head = geo.ngon(x, y, r, 12);
         D.face(head, z); D.line(geo.close(head), z + 0.01, INK);
@@ -761,13 +828,26 @@
             D.line([[x + Math.cos(t) * r - Math.sin(a) * o, y + Math.sin(t) * r + Math.cos(a) * o], [x + Math.cos(t) * l, y + Math.sin(t) * l]], z - 0.01, k ? CYAN : INK);
         }
     }
-    function shootingStar(D, rng, X, Y, W, H) {
-        const x = X + W * rng.range(0.2, 0.8), y = Y + H * rng.range(0.1, 0.35), a = rng.range(0.25, 0.7), l = Math.min(W, H) * rng.range(0.2, 0.35), dx = Math.cos(a) * l * rng.sign(), dy = Math.sin(a) * l;
+    function shootingStar(D, rng, X, Y, W, H, avoid) {
+        const c = spot(avoid, 6, () => {
+            const x = X + W * rng.range(0.2, 0.8), y = Y + H * rng.range(0.1, 0.35), a = rng.range(0.25, 0.7), l = Math.min(W, H) * rng.range(0.2, 0.35), dx = Math.cos(a) * l * rng.sign(), dy = Math.sin(a) * l;
+            return { x, y, dx, dy, parts: [0, 0.25, 0.5, 0.75, 1].map(t => [x + dx * t, y + dy * t, 1.5]) };
+        });
+        if (!c) return;
+        const { x, y, dx, dy } = c;
+        avoid.push(...c.parts);
         D.line([[x, y], [x + dx, y + dy]], 1.5, INK);
         D.line([[x + dy * 0.04, y - dx * 0.04], [x + dx * 0.6 + dy * 0.04, y + dy * 0.6 - dx * 0.04]], 1.5, COOL);
         D.cross(x + dx, y + dy, 1.2, 1.6, INK);
     }
-    function saucer(E, rng, D, x, y, size, z, ground, move = 0) {
+    // Hull, beam and speed lines. `beam` is the ground it lands on, { y, z }.
+    function saucerFoot(x, y, size, beam, move) {
+        const rx = size, ry = size * 0.26, parts = [{ box: [x - rx, y - ry * 1.95, x + rx, y + ry] }];
+        if (beam) parts.push({ box: [x - rx * 0.85, y + ry, x + rx * 0.85, beam.y + rx * 0.2] });
+        if (move) parts.push({ box: [Math.min(x - move * rx * 2.7, x - move * rx * 1.2), y - ry, Math.max(x - move * rx * 2.7, x - move * rx * 1.2), y + ry] });
+        return parts;
+    }
+    function saucer(E, rng, D, x, y, size, z, beam, move = 0) {
         const rx = size, ry = size * 0.26, body = geo.ellipse(x, y, rx, ry, 0, 32).slice(0, -1), dome = [];
         for (let j = 0; j <= 12; j++) { const a = PI + PI * j / 12; dome.push([x + rx * 0.42 * Math.cos(a), y - ry * 0.2 + ry * 1.7 * Math.sin(a)]); }
         const shapes = [
@@ -775,30 +855,38 @@
             { z: z - 0.1, masks: [dome], lines: [[dome, INK]], fills: [[fill([dome], E.gap * 0.8, 0.9, [shift(dome, -E.light * rx * 0.2, -ry * 0.5)]), CYAN]] },
         ];
         for (let k = -2; k <= 2; k++) shapes[0].lines.push([geo.circle(x + k * rx * 0.33, y + ry * 0.35 * (1 - (k * 0.33) ** 2), size * 0.05, 7), GOLD]);
-        if (ground && ground > y + ry * 2) {
-            const beam = [[x - rx * 0.3, y + ry * 0.7], [x + rx * 0.3, y + ry * 0.7], [x + rx * 0.85, ground], [x - rx * 0.85, ground]];
-            shapes.push({ z: z - 0.2, masks: [beam], lines: [[[beam[0], beam[3]], GOLD], [[beam[1], beam[2]], GOLD]], fills: [[fill([beam], E.gap * 1.6, PI / 2), GOLD]] });
+        if (beam && beam.y > y + ry * 2) {
+            // the beam sits just in front of the ground it lands on and ends in a pool of light,
+            // so anything nearer still covers it
+            const a = rx * 0.85, b = a * 0.2, pool = [];
+            for (let j = 0; j <= 12; j++) pool.push([x + a * Math.cos(PI * j / 12), beam.y + b * Math.sin(PI * j / 12)]);
+            const cone = [[x - rx * 0.3, y + ry * 0.7], [x + rx * 0.3, y + ry * 0.7]].concat(pool);
+            shapes.push({ z: beam.z, masks: [cone], lines: [[[cone[1], pool[0]], GOLD], [pool, GOLD], [[pool[12], cone[0]], GOLD]], fills: [[fill([cone], E.gap * 1.6, PI / 2), GOLD]] });
         }
         // comic speed lines
         if (move) for (let k = -1; k <= 1; k++) D.line([[x - move * rx * 1.2, y + k * ry * 0.7], [x - move * rx * (1.9 + rng.range(0, 0.8)), y + k * ry * 0.7]], z, INK);
         for (const s of shapes) draw(D, s);
     }
-    function rocket(E, rng, D, x, y, size, a, z) {
+    // Built but not drawn, so the caller can check it fits. The smoke trail stops at yMax.
+    function rocket(E, rng, x, y, size, a, z, yMax) {
         const w = size * 0.16, ca = Math.cos(a), sa = Math.sin(a);
         const P = (u, h) => [x + u * ca + h * sa, y - h * ca + u * sa];
         const body = [P(-w, 0), P(w, 0), P(w, size * 0.55), P(w * 0.6, size * 0.82), P(0, size), P(-w * 0.6, size * 0.82), P(-w, size * 0.55)];
         const fins = [-1, 1].map(s => [P(s * w, size * 0.3), P(s * w * 2.1, -size * 0.06), P(s * w, size * 0.04)]);
         const flame = [P(-w * 0.7, 0), P(-w * 0.35, -size * 0.3), P(0, -size * 0.5), P(w * 0.35, -size * 0.3), P(w * 0.7, 0)];
-        draw(D, { z: z - 0.1, masks: fins, lines: fins.map(f => [geo.close(f), INK]), fills: [[fill(fins, E.gap * 0.8, a), WARM]] });
-        draw(D, { z: z - 0.2, masks: [flame], lines: [[flame, WARM]], fills: [[fill([flame], E.gap * 1.2, a + PI / 2), GOLD]] });
         const win = geo.circle(...P(0, size * 0.56), w * 0.5, 12);
-        draw(D, { z, masks: [body], lines: [[geo.close(body), INK], [win, INK], [[P(-w, size * 0.3), P(w, size * 0.3)], INK]], fills: [[fill([body], E.gap * 0.9, a + 0.8, [shift(body, -E.light * w * 0.9, 0)]), INK]] });
+        const shapes = [
+            { z: z - 0.1, masks: fins, lines: fins.map(f => [geo.close(f), INK]), fills: [[fill(fins, E.gap * 0.8, a), WARM]] },
+            { z: z - 0.2, masks: [flame], lines: [[flame, WARM]], fills: [[fill([flame], E.gap * 1.2, a + PI / 2), GOLD]] },
+            { z, masks: [body], lines: [[geo.close(body), INK], [win, INK], [[P(-w, size * 0.3), P(w, size * 0.3)], INK]], fills: [[fill([body], E.gap * 0.9, a + 0.8, [shift(body, -E.light * w * 0.9, 0)]), INK]] },
+        ], parts = [{ box: bounds([body, flame].concat(fins)) }];
         for (let k = 0; k < 6; k++) {
             const [px, py] = P(rng.range(-0.3, 0.3) * size * 0.3, -size * (0.7 + k * 0.36)), pr = size * (0.1 + k * 0.04);
-            if (py > D.Y + D.H + pr) break;
+            if (py + pr * 0.6 > yMax) break;
             const c = puff(E, rng, px, py, pr, z - 0.3 - k * 0.02);
-            if (c) draw(D, c);
+            if (c) { shapes.push(c); parts.push({ box: c.box }); }
         }
+        return { shapes, parts };
     }
 
     // ------------------------------------------------------------------
@@ -807,44 +895,74 @@
     // panel's time of day before adding the sky, sun and visitors.
     // ------------------------------------------------------------------
     const phaseOf = e => e > 0.45 ? 'day' : e > 0.12 ? 'low' : e > -0.15 ? 'set' : 'night';
-    function sunAt(rng, D, horizon, e, m) {
+    // The height comes from the time of day, so only the sun's x is free to dodge things. When
+    // something fills the sky (a giant planet, say) there's no sun in that panel.
+    function sunAt(rng, D, horizon, e, m, taken = []) {
         if (e <= -0.15) return null;
-        const r = m * rng.range(0.07, 0.12), top = D.Y + r + 2, x = D.X + D.W * rng.range(0.18, 0.82);
-        return [x, e > 0 ? lerp(horizon + r * 0.15, top, Math.min(1, e)) : horizon + r * 0.15 - e * r * 4, r];
+        const r = m * rng.range(0.07, 0.12), top = D.Y + r + 2, y = e > 0 ? lerp(horizon + r * 0.15, top, Math.min(1, e)) : horizon + r * 0.15 - e * r * 4;
+        let k = 0;
+        const c = spot(taken, 24, () => {
+            const x = k++ < 12 ? D.X + D.W * rng.range(0.18, 0.82) : rng.range(D.X + r + 2, Math.max(D.X + r + 2, D.X + D.W - r - 2));
+            return { x, parts: [[x, y, r * 1.25]] };
+        });
+        return c && [c.x, y, r];
     }
-    // Planets from the page's cast, placed where they don't collide
+    // Footprint of a planet, rings included
+    function orb(pl, x, y, r) {
+        if (!pl.ring) return [x, y, r];
+        const o = r * pl.outer, c = Math.cos(pl.tilt), s = Math.sin(pl.tilt), f = pl.flat;
+        const hx = Math.max(r, o * Math.hypot(c, f * s)), hy = Math.max(r, o * Math.hypot(s, f * c));
+        return { box: [x - hx, y - hy, x + hx, y + hy] };
+    }
+    const spanOf = t => t.box ? [(t.box[2] - t.box[0]) / 2, (t.box[3] - t.box[1]) / 2] : [t[2], t[2]];
+    // Planets from the page's cast, kept whole inside the panel and clear of everything else
     function scatter(E, rng, D, count, yMax, avoid, z0, size, sun) {
         const m = Math.min(D.W, D.H);
         for (let i = 0, tries = 0; i < count && tries < 40; tries++) {
-            const pl = rng.pick(E.pool), r = m * rng.range(size[0], size[1]), reach = r * (pl.ring ? pl.outer * 0.9 : 1.1);
-            const x = rng.range(D.X + reach * 0.6, D.X + D.W - reach * 0.6), y = rng.range(D.Y + r * 1.3, Math.max(D.Y + r * 1.4, yMax - r * 1.4));
-            if (avoid.some(([u, v, rr]) => Math.hypot(x - u, y - v) < rr + reach + 1)) continue;
-            avoid.push([x, y, reach]);
+            const pl = rng.pick(E.pool), r = m * rng.range(size[0], size[1]), [hx, hy] = spanOf(orb(pl, 0, 0, r));
+            if (D.W < hx * 2 + 4 || yMax - D.Y < hy * 2 + 3) continue;
+            const x = rng.range(D.X + hx + 2, D.X + D.W - hx - 2), y = rng.range(D.Y + hy + 1.5, yMax - hy - 1.5), foot = orb(pl, x, y, r);
+            if (room(avoid, [foot]) < 1.5) continue;
+            avoid.push(foot);
             for (const s of planet(E, pl, x, y, r, z0 + i, lightFrom(E, sun, x, y))) draw(D, s);
             i++;
         }
     }
+    // The story's planet turns up in every panel, so it takes the roomiest spot when none is clear
     function featured(E, rng, D, t, yMax, avoid, sun) {
-        const pl = E.cast.planets[0], m = Math.min(D.W, D.H), r = m * lerp(0.04, 0.24, t ** 1.4);
-        const x = D.X + D.W * rng.range(0.3, 0.7), y = Math.min(D.Y + D.H * rng.range(0.25, 0.45), yMax - r * 0.6);
-        avoid.push([x, y, r * pl.outer]);
-        for (const s of planet(E, pl, x, y, r, 8, lightFrom(E, sun, x, y))) draw(D, s);
+        const pl = E.cast.planets[0], m = Math.min(D.W, D.H), r = m * lerp(0.04, 0.24, t ** 1.4), [hx, hy] = spanOf(orb(pl, 0, 0, r));
+        const c = spot(avoid, 20, () => {
+            const x = clamp(D.X + D.W * rng.range(0.2, 0.8), D.X + Math.min(hx + 2, D.W / 2), D.X + D.W - Math.min(hx + 2, D.W / 2));
+            const y = Math.max(D.Y + Math.min(hy + 2, D.H * 0.4), Math.min(D.Y + D.H * rng.range(0.2, 0.5), yMax - r * 0.6));
+            return { x, y, parts: [orb(pl, x, y, r)] };
+        }, 1.5, true);
+        avoid.push(c.parts[0]);
+        for (const s of planet(E, pl, c.x, c.y, r, 8, lightFrom(E, sun, c.x, c.y))) draw(D, s);
     }
-    function clouds(E, rng, D, count, yTop, yBot, z, scale, o = {}) {
+    function clouds(E, rng, D, count, yTop, yBot, z, scale, avoid, o = {}) {
         const out = [];
         for (let i = 0; i < count; i++) {
-            const width = scale * rng.range(0.3, 0.65), height = width * rng.range(0.22, 0.34), x = D.X + D.W * rng.range(0.05, 0.95), y = rng.range(yTop + height, Math.max(yTop + height, yBot));
-            const storm = rng.chance(0.07), c = cloud(E, rng, x, y, width, height, z + i * 0.05, { storm, ...o });
-            if (!c) continue;
-            draw(D, c); out.push([x, y, width]);
-            if (storm) for (let u = x - width * 0.35; u < x + width * 0.35; u += E.gap * 2.2) {
-                let v = y + rng.range(0, 1);
-                for (let k = 0, n = rng.int(1, 3); k < n; k++) {
-                    const l = height * rng.range(0.4, 1.1), dx = l * 0.25;
-                    D.line([[u + (v - y) * 0.25, v], [u + (v - y) * 0.25 + dx, v + l]], z - 0.02, COOL);
-                    v += l + height * rng.range(0.2, 0.6);
+            const c = spot(avoid, 6, () => {
+                const width = scale * rng.range(0.3, 0.65), height = width * rng.range(0.22, 0.34), x = D.X + D.W * rng.range(0.05, 0.95), y = rng.range(yTop + height, Math.max(yTop + height, yBot));
+                const storm = rng.chance(0.07), s = cloud(E, rng, x, y, width, height, z + i * 0.05, { storm, ...o });
+                if (!s) return null;
+                const rain = [];
+                if (storm) for (let u = x - width * 0.35; u < x + width * 0.35; u += E.gap * 2.2) {
+                    let v = y + rng.range(0, 1);
+                    for (let k = 0, n = rng.int(1, 3); k < n; k++) {
+                        const l = height * rng.range(0.4, 1.1), dx = l * 0.25;
+                        rain.push([[u + (v - y) * 0.25, v], [u + (v - y) * 0.25 + dx, v + l]]);
+                        v += l + height * rng.range(0.2, 0.6);
+                    }
                 }
-            }
+                return { x, y, width, s, rain, parts: [{ box: s.box }].concat(rain.length ? [{ box: bounds(rain) }] : []) };
+            }, 1, false, true);
+            if (!c) continue;
+            draw(D, c.s);
+            for (const q of c.rain) D.line(q, z - 0.02, COOL);
+            avoid.push({ box: c.s.box, cloud: true });
+            if (c.rain.length) avoid.push({ box: bounds(c.rain) });
+            out.push([c.x, c.y, c.width]);
         }
         return out;
     }
@@ -862,9 +980,15 @@
         const ang = rng.pick([-0.35, -0.55, 0.4, 0.25, -0.8]) * L;
         const hz = y0 + h * (tall ? rng.range(0.52, 0.66) : big ? rng.range(0.4, 0.5) : rng.range(0.4, 0.54));
         const tint = rng.pick([VIOLET, COOL, CYAN, VIOLET]), green = rng.pick([GREEN, GREEN, CYAN, INK]);
-        let far = null, water = null, front = null;
+        let far = null, water = null, front = null, floor = null;
+        // feats: things standing up into the sky, which sky things keep clear of. blocked: ground
+        // taken by a city, a base or a crystal outcrop, which props keep off. things: every prop,
+        // so a saucer's beam doesn't land on one.
+        const feats = [], blocked = [], ridges = [], things = [];
         const add = s => { if (Array.isArray(s)) shared.push(...s); else if (s) shared.push(s); return s; };
-        const layer = (top, z, role = INK) => { if (!far) far = top; return add({ z, top, lines: [[top, role]], fills: [], marks: [], box: bounds([top.concat([[top[0][0], yb]])]) }); };
+        const layer = (top, z, role = INK) => { if (!far) far = top; ridges.push(top); return add({ z, top, lines: [[top, role]], fills: [], marks: [], box: bounds([top.concat([[top[0][0], yb]])]) }); };
+        // the first open ground, where a saucer's beam can land
+        const ground = (top, z) => { floor ||= { top, z }; };
         // after sunset the ranges go dark, the far ones a little lighter and in their tint
         const solid = (s, gap, role, exc) => { s.solid = { polys: [s.top.concat([[xb, yb + 2], [xa, yb + 2]])], gap, role, exc }; return s; };
         const distant = (base, amp) => {
@@ -884,9 +1008,10 @@
             const flank = s => Array.from({ length: 13 }, (_, i) => [lerp(xc + s * half, xc + s * crater, i / 12), base - amp * (i / 12) ** 1.7 + (i % 12 ? rng.range(-0.03, 0.03) * amp : 0)]);
             const pts = [[xa, base], ...flank(-1), [xc - crater * 0.3, top + amp * 0.05], [xc + crater * 0.3, top + amp * 0.05], ...flank(1).reverse(), [xb, base]].filter((q, i, a) => !i || q[0] > a[i - 1][0]);
             const s = solid(layer(pts, z), g * 0.7, INK);
-            const crease = [[xc + L * crater * 0.3, top + amp * 0.05], [xc + L * half * 0.12, top + amp * 0.45], [xc + L * half * 0.3, base]];
-            const lit = [[xc - L * half * 3, top - amp], [crease[0][0], top - amp], ...crease, [crease[2][0], base + amp], [xc - L * half * 3, base + amp]];
-            s.fills.push([fill([pts.concat([[xb, base + 1], [xa, base + 1]])], g * 0.85, ang, [lit]), INK]);
+            // the shading and crease run on below the base, so they meet whatever ground is in front
+            const crease = [[xc + L * crater * 0.3, top + amp * 0.05], [xc + L * half * 0.12, top + amp * 0.45], [xc + L * half * 0.3, base], [xc + L * half * 0.38, base + amp * 0.6]];
+            const lit = [[xc - L * half * 3, top - amp], [crease[0][0], top - amp], ...crease, [crease[3][0], base + amp], [xc - L * half * 3, base + amp]];
+            s.fills.push([fill([pts.concat([[xb, base + amp * 0.6], [xa, base + amp * 0.6]])], g * 0.85, ang, [lit]), INK]);
             s.lines.push([crease, INK]);
             for (let k = 0; k < rng.int(2, 4); k++) {
                 const side = rng.sign(), run = [[xc + side * crater * rng.range(0.2, 0.9), top + amp * 0.06]];
@@ -898,43 +1023,65 @@
                 const r = amp * (0.07 + k * 0.045);
                 y -= r * 1.05;
                 const c = puff(E, rng, xc + drift * k * (1 + k * 0.25) + rng.range(-0.2, 0.2) * r, y, r, z - 0.6 - k * 0.02);
-                if (c) add(c);
+                if (c) { add(c); feats.push({ box: c.box }); }
             }
             return s;
         };
         const hill = (base, amp, z, role, chance = 0.85) => {
             const pts = rolling(rng, xa, xb, base, amp, Math.max(0.5, amp / 10)), s = layer(pts, z);
+            ground(pts, z);
             const ps = patches(rng, pts, L, chance);
             if (ps.length) s.fills.push([fill(ps, g * rng.range(0.9, 1.2), ang + rng.range(-0.2, 0.2)), role]);
             const lit = rng.chance(0.35) ? patches(rng, pts, -L, 0.7, 0.6) : [];
             if (lit.length) s.fills.push([fill(lit, g * 1.6, -ang), role === tint ? green : tint]);
             s.pts = pts;
+            s.patches = ps.concat(lit);
             return s;
         };
-        const flat = (y, z, role, density) => { const s = layer([[xa, y], [xb, y]], z); s.fills.push([plainLines(rng, xa, xb, y, yb + 2, g, density), role]); return s; };
-        // Props along a profile in small groves, lower ones (nearer) in front
-        const props = (pts, z, count, depth, make, grove = 1, lo = x0 + 1, hi = x0 + w - 1) => {
-            const list = [];
-            while (list.length < Math.min(120, count)) {
+        const flat = (y, z, role, density) => { const s = layer([[xa, y], [xb, y]], z); ground(s.top, z); s.fills.push([plainLines(rng, xa, xb, y, yb + 2, g, density), role]); return s; };
+        // Props along a profile in small groves, lower ones (nearer) in front. `crowd` is how much of
+        // the smaller of two props the other may cover, so trees can bunch up into groves but cacti
+        // and mushrooms stand apart. Props keep off blocked ground and stay above the panel bottom.
+        const props = (pts, z, count, depth, make, grove = 1, lo = x0 + 1, hi = x0 + w - 1, crowd = 0.5) => {
+            const list = [], want = Math.min(120, count);
+            for (let tries = 0; list.length < want && tries < want * 4 + 8;) {
                 const cx = rng.range(lo, hi), f = rng.range(0.1, 1), k = rng.int(1, grove);
-                for (let j = 0; j < k && list.length < 120; j++) {
-                    const x = clamp(cx + rng.gauss(0, u * 0.06) * (j > 0), lo, hi);
-                    list.push([x, heightAt(pts, x) + depth * clamp(f + rng.range(-0.2, 0.2) * (j > 0), 0.05, 1)]);
+                for (let j = 0; j < k && list.length < want; j++, tries++) {
+                    const x = clamp(cx + rng.gauss(0, u * 0.06) * (j > 0), lo, hi), top = heightAt(pts, x);
+                    const y = Math.min(top + depth * clamp(f + rng.range(-0.2, 0.2) * (j > 0), 0.05, 1), yb - 1.5);
+                    if (y < top) continue;
+                    const made = [].concat(make(x, y, 0)).filter(Boolean), b = extent(made);
+                    if (blocked.some(q => crowded(q, b, 0)) || list.some(p => crowded(p.b, b, crowd))) continue;
+                    list.push({ y, made, b });
                 }
             }
-            // Outlines sit 0.01 in front of their masks and a pine's tiers span 0.06, so neighbors need
-            // more depth than that between them or they show through each other
-            const step = Math.min(0.08, 1.3 / list.length);
-            list.sort((a, b) => a[1] - b[1]).forEach(([x, y], k) => add(make(x, y, z + 0.3 + k * step)));
-            front = { pts, z: z + 0.3 + list.length * step + 0.1, depth, lo, hi };
+            // Each prop goes just in front of the outlines of any it overlaps, or they show through
+            // each other. Props that don't touch can share a depth, which keeps the strip shallow.
+            let near = z + 0.3;
+            const done = [];
+            for (const p of list.sort((a, b) => a.y - b.y)) {
+                const [d0, d1] = depths(p.made);
+                let at = z + 0.3;
+                for (const q of done) if (crowded(q.b, p.b, 0)) at = Math.max(at, q.top + 0.005);
+                for (const s of p.made) { s.z += at - d0; add(s); }
+                p.top = at + d1 - d0;
+                near = Math.max(near, p.top);
+                done.push(p);
+                things.push({ box: p.b });
+                if (p.b[1] < hz) feats.push({ box: p.b });
+            }
+            front = { pts, z: near + 0.1, depth, lo, hi, list };
         };
         const bush = (x, y, size, z) => cloud(E, rng, x, y, size, size * rng.range(0.4, 0.6), z, { part: 'bush', role: green, lumps: 1.5, angle: ang });
-        // little patches of grass stripes
+        // little patches of grass stripes, on bare ground only so they don't cross the hatching
         const tufts = (s, count, depth) => {
-            const c = Math.cos(-L * 1.1), d = Math.sin(-L * 1.1);
+            const c = Math.cos(-L * 1.1), d = Math.sin(-L * 1.1), done = [];
             for (let k = 0; k < Math.min(80, count); k++) {
-                const x = rng.range(x0 + 1, x0 + w - 1), y = heightAt(s.top, x) + depth * rng.range(0.15, 1), q = u * rng.range(0.02, 0.035) + 0.8;
-                for (let j = 0, n = rng.int(3, 6); j < n; j++) {
+                const x = rng.range(x0 + 1, x0 + w - 1), y = heightAt(s.top, x) + depth * rng.range(0.15, 1), q = u * rng.range(0.02, 0.035) + 0.8, n = rng.int(3, 6);
+                const b = [x - 0.5, y - q, x + n * g * 1.5 + q, y + q];
+                if (done.some(o => crowded(o, b, 0)) || (s.patches || []).some(P => [[b[0], y], [b[2], y], [b[0], b[1]], [b[2], b[1]]].some(([px, py]) => geo.pointInPolygon(px, py, P)))) continue;
+                done.push(b);
+                for (let j = 0; j < n; j++) {
                     const v = x + j * g * 1.5, l = q * rng.range(0.6, 1), yy = y + rng.range(-0.15, 0.15) * q;
                     s.marks.push([[[v, yy], [v + c * l, yy + d * l]], green]);
                 }
@@ -943,14 +1090,38 @@
         const many = per => Math.round(w / u * per * (0.4 + detail) * rng.range(0.7, 1.3));
         const tree = (size, kind = 'round') => (x, y, z) => kind === 'pine' ? pine(E, rng, x, y, size * rng.range(0.8, 1.25), z, green)
             : rng.chance(0.25) ? bush(x, y, size * rng.range(0.4, 0.6), z) : rng.chance(0.12) ? boulder(E, rng, x, y, size * rng.range(0.2, 0.35), z, BROWN) : lollipop(E, rng, x, y, size * rng.range(0.75, 1.25), z, green);
-        let giant = null;
+        // A giant planet rising behind the horizon in feature panels. It goes in once the land is
+        // built, high enough that the ridges in front only cover its lower part, never leaving
+        // slivers of it showing between the peaks.
+        let giant = null, giantPl = null;
+        // Ridges may cover its lower part, but towers, outcrops and the explorer stay clear of it.
         const rising = (pl, z) => {
-            const r = Math.min(w * 0.32, h * 0.42) * rng.range(0.8, 1.1), x = x0 + w * rng.range(0.25, 0.75), y = hz + r * rng.range(-0.25, 0.3);
-            giant = [x, y, r * (pl.ring ? pl.outer : 1.1)];
+            const r0 = Math.min(w * 0.32, h * 0.42) * rng.range(0.8, 1.1), lift = rng.range(0.05, 0.3), [hx, hy] = spanOf(orb(pl, 0, 0, r0)), c = hy / r0;
+            let best = null;
+            for (let k = 0; k < 6; k++) {
+                const x = x0 + w * rng.range(0.25, 0.75);
+                let top = hz, clear = Infinity;
+                for (const q of ridges) for (const [px, py] of q) if (Math.abs(px - x) < hx) top = Math.min(top, py);
+                for (const f of feats) if (apart(f, { box: [x - hx - 1, y0, x + hx + 1, yb] }) <= 0) clear = Math.min(clear, f.box ? f.box[1] : f[1] - f[2]);
+                // biggest size that keeps the top inside the panel, sitting on the ridge or lifted over a feature
+                const r = Math.min(r0, (top - y0 - 3) / (lift + c), (clear - 5 - y0) / (2 * c));
+                if (!best || r > best.r) best = { x, r, y: Math.min(top - r * lift, clear - 2 - c * r) };
+            }
+            if (!best || best.r < h * 0.12) return;
+            const { x, r, y } = best;
+            giant = orb(pl, x, y, r);
+            feats.push(giant);
             add(planet(E, pl, x, y, r, z, E.lightVec));
         };
-        // A giant planet rising behind the horizon in feature panels
-        if (hero && biome !== 'moon' && rng.chance(0.5)) rising(E.cast.planets[2], 15);
+        if (hero && biome !== 'moon' && rng.chance(0.5)) giantPl = E.cast.planets[2];
+        // Outcrops, cities and bases take their patch of ground and sky
+        const claim = (shapes, keep = true) => {
+            const b = extent([].concat(shapes));
+            feats.push({ box: b });
+            if (keep) blocked.push(b);
+            add(shapes);
+            return b;
+        };
         const amp = Math.min(h * (big ? rng.range(0.18, 0.26) : rng.range(0.24, 0.34)), pw * rng.range(0.4, 0.6));
         if (biome === 'peaks' || biome === 'snow' || biome === 'lake') {
             if (rng.chance(0.65)) distant(hz - h * 0.02, h * rng.range(0.05, 0.1));
@@ -959,6 +1130,7 @@
             const trees = tree(u * rng.range(0.1, 0.15), snow ? 'pine' : 'round');
             if (lake) {
                 water = { y: base, ridge: main.top, z: 24 };
+                ground([[xa, base], [xb, base]], 24);
                 add({ z: 24, top: [[xa, base], [xb, base]], lines: [[[[xa, base], [xb, base]], INK]], box: [xa, base, xb, yb] });
                 const shore = hill(yb - h * (big ? rng.range(0.1, 0.18) : rng.range(0.03, 0.1)), h * rng.range(0.06, 0.12), 26, green);
                 props(shore.pts, 26, many(3), h * 0.05, trees, 4);
@@ -996,52 +1168,74 @@
                 const n = clamp(Math.round(h / u * 1.4), 2, 5) + (tall ? 1 : 0);
                 for (let i = 0; i < n; i++) {
                     const v = (i + 1) / n, d = layer(dunes(rng, xa, xb, lerp(hz + h * 0.04, yb - h * 0.02, v), h * lerp(0.05, 0.14, v), Math.max(0.5, h / 80)), 21 + i * 2);
+                    ground(d.top, d.z);
                     const ps = patches(rng, d.top, L, 0.95);
                     if (ps.length) d.fills.push([fill(ps, g * (i % 2 ? 0.9 : 1.2), ang + (i % 2) * 0.3), i % 2 ? INK : sand]);
-                    if (i === n - 1) props(d.top, 21 + i * 2, many(0.8), h * 0.04, (x, y, z) => rng.chance(0.5) ? cactus(E, rng, x, y, u * rng.range(0.12, 0.22), z, green) : boulder(E, rng, x, y, u * rng.range(0.025, 0.05), z, BROWN), 2);
+                    if (i === n - 1) props(d.top, 21 + i * 2, many(0.8), h * 0.04, (x, y, z) => rng.chance(0.5) ? cactus(E, rng, x, y, u * rng.range(0.12, 0.22), z, green) : boulder(E, rng, x, y, u * rng.range(0.025, 0.05), z, BROWN), 2, undefined, undefined, 0.1);
                 }
             } else {
                 flat(hz, 21, rng.pick([BROWN, GOLD]), 0.55);
-                // depth follows the base, stretched out so rocks with close bases don't show through each other
+                // depth follows the base, stretched out so rocks with close bases don't show through each
+                // other. Mesas can stand in front of each other, but an arch needs open sky through it.
+                const rocks = [];
                 for (let k = 0, n = Math.max(1, Math.round(w / (h * 0.6) * rng.range(0.6, 1.2) * (kind === 'arches' ? 1.6 : 1))); k < n; k++) {
-                    const base = hz + h * rng.range(0.02, 0.16), size = Math.min(h * rng.range(0.14, 0.32), pw * 0.45), x = x0 + w * rng.range(0.05, 0.95), z = 22 + (base - hz) / h * 20;
-                    if (kind === 'mesas') add(rng.chance(0.15) ? arch(E, rng, x, base, size * rng.range(0.8, 1.3), size, z) : mesa(E, rng, x, base, size * rng.range(0.5, 2.4), size, z));
-                    else add(k === 0 || rng.chance(0.3) ? arch(E, rng, x, base, size * rng.range(0.8, 1.3), size * 1.1, z) : mesa(E, rng, x, base, size * rng.range(0.18, 0.35), size * rng.range(0.8, 1.3), z));
+                    for (let tries = 0; tries < 4; tries++) {
+                        const base = hz + h * rng.range(0.02, 0.16), size = Math.min(h * rng.range(0.14, 0.32), pw * 0.45), x = x0 + w * rng.range(0.05, 0.95), z = 22 + (base - hz) / h * 20;
+                        const isArch = kind === 'mesas' ? rng.chance(0.15) : k === 0 || rng.chance(0.3);
+                        const butte = kind === 'mesas' ? isArch ? arch(E, rng, x, base, size * rng.range(0.8, 1.3), size, z) : mesa(E, rng, x, base, size * rng.range(0.5, 2.4), size, z)
+                            : isArch ? arch(E, rng, x, base, size * rng.range(0.8, 1.3), size * 1.1, z) : mesa(E, rng, x, base, size * rng.range(0.18, 0.35), size * rng.range(0.8, 1.3), z);
+                        if (rocks.some(q => crowded(q.box, butte.box, isArch || q.arch ? 0 : 0.35))) continue;
+                        rocks.push({ box: butte.box, arch: isArch });
+                        claim(butte, false);
+                        break;
+                    }
                 }
                 const d = layer(dunes(rng, xa, xb, yb - h * (tall ? 0.08 : 0.02), h * rng.range(0.08, 0.13), Math.max(0.5, h / 60)), 26);
                 const ps = patches(rng, d.top, L, 0.9);
                 if (ps.length) d.fills.push([fill(ps, g, ang), sand]);
-                props(d.top, 26, many(1.8), h * 0.04, (x, y, z) => rng.chance(0.65) ? cactus(E, rng, x, y, u * rng.range(0.12, 0.24), z, green) : boulder(E, rng, x, y, u * rng.range(0.025, 0.05), z, BROWN), 3);
+                props(d.top, 26, many(1.8), h * 0.04, (x, y, z) => rng.chance(0.65) ? cactus(E, rng, x, y, u * rng.range(0.12, 0.24), z, green) : boulder(E, rng, x, y, u * rng.range(0.025, 0.05), z, BROWN), 3, undefined, undefined, 0.1);
             }
         } else if (biome === 'moon') {
-            if (rng.chance(0.55)) rising(E.cast.planets[1], 15);
+            if (rng.chance(0.55)) giantPl = E.cast.planets[1];
             range(hz, h * rng.range(0.06, 0.12), 20);
             const plain = flat(hz + h * 0.05, 22, INK, 0.3);
-            for (let k = 0, n = Math.min(40, many(3)); k < n; k++) {
-                const v = rng.random() ** 0.7, y = lerp(hz + h * 0.08, yb - h * 0.03, v);
-                add(crater(E, rng, x0 + w * rng.range(0.03, 0.97), y, u * lerp(0.03, 0.12, v) * rng.range(0.6, 1.3), 22.3 + v));
-            }
             const outpost = rng.weighted([[2, 'domes'], [1.2, 'city'], [2, 'none']]);
-            if (outpost === 'city') add(city(E, rng, x0 + w * rng.range(0.3, 0.7), hz + h * 0.055, Math.min(w * 0.5, pw * 0.8) * rng.range(0.6, 1), h * rng.range(0.18, 0.3), 21.5, u));
+            if (outpost === 'city') claim(city(E, rng, x0 + w * rng.range(0.3, 0.7), hz + h * 0.055, Math.min(w * 0.5, pw * 0.8) * rng.range(0.6, 1), h * rng.range(0.18, 0.3), 21.5, u));
             if (outpost === 'domes') {
                 const bx = x0 + w * rng.range(0.2, 0.8), by = hz + h * rng.range(0.1, 0.22), r = u * rng.range(0.08, 0.13), s = rng.sign();
-                add(dome(E, rng, bx, by, r, 23.5, CYAN));
-                if (rng.chance(0.7)) add(dome(E, rng, bx + s * r * 1.5, by + r * 0.15, r * 0.6, 23.6, CYAN));
-                add(mast(E, bx - s * r * 1.5, by - r * 0.05, r * 2, 23.4));
+                const base = [dome(E, rng, bx, by, r, 23.5, CYAN)];
+                if (rng.chance(0.7)) base.push(dome(E, rng, bx + s * r * 1.5, by + r * 0.15, r * 0.6, 23.6, CYAN));
+                base.push(mast(E, bx - s * r * 1.5, by - r * 0.05, r * 2, 23.4));
+                const b = claim(base);
+                // a little apron of open ground in front of the base
+                blocked.push([b[0] - r * 0.3, b[1], b[2] + r * 0.3, b[3] + r * 0.4]);
             }
-            props(plain.top, 24, many(1), h * 0.3, (x, y, z) => boulder(E, rng, x, y, u * rng.range(0.03, 0.07), z, INK), 3);
+            const pits = [];
+            for (let k = 0, n = Math.min(40, many(3)); k < n; k++) {
+                const v = rng.random() ** 0.7, y = lerp(hz + h * 0.08, yb - h * 0.03, v), c = crater(E, rng, x0 + w * rng.range(0.03, 0.97), y, u * lerp(0.03, 0.12, v) * rng.range(0.6, 1.3), 22.3 + v);
+                if (blocked.some(q => crowded(q, c.box, 0)) || pits.some(q => crowded(q, c.box, 0.3))) continue;
+                pits.push(c.box);
+                add(c);
+            }
+            props(plain.top, 24, many(1), h * 0.3, (x, y, z) => boulder(E, rng, x, y, u * rng.range(0.03, 0.07), z, INK), 3, undefined, undefined, 0.2);
         } else {
             if (rng.chance(0.3)) volcano(hz + h * 0.02, h * rng.range(0.14, 0.22), 20);
             else distant(hz, h * rng.range(0.06, 0.12));
             flat(hz + h * 0.04, 22, rng.pick([CYAN, VIOLET]), 0.45);
-            if (rng.chance(0.35)) add(city(E, rng, x0 + w * rng.range(0.25, 0.75), hz + h * 0.045, Math.min(w * 0.5, pw * 0.8) * rng.range(0.6, 1), h * rng.range(0.2, 0.34), 21.5, u));
+            if (rng.chance(0.35)) claim(city(E, rng, x0 + w * rng.range(0.25, 0.75), hz + h * 0.045, Math.min(w * 0.5, pw * 0.8) * rng.range(0.6, 1), h * rng.range(0.2, 0.34), 21.5, u));
+            // crystal outcrops keep clear of the city and of each other
             for (let c = 0, n = Math.max(1, Math.round(w / h * rng.range(0.5, 1))); c < n; c++) {
-                const cx = x0 + w * rng.range(0.1, 0.9), cy = hz + h * rng.range(0.06, 0.16), size = Math.min(h * rng.range(0.15, 0.3), pw * 0.5);
-                const list = Array.from({ length: rng.int(3, 6) }, () => [cx + rng.range(-1, 1) * size * 0.35, cy + rng.range(0, 1) * h * 0.03, size * rng.range(0.4, 1)]).sort((a, b) => a[1] - b[1] || b[2] - a[2]);
-                list.forEach(([x, y, s], k) => add(crystal(E, rng, x, y, s, 23 + c * 0.2 + k * 0.02, CYAN)));
+                for (let tries = 0; tries < 5; tries++) {
+                    const cx = x0 + w * rng.range(0.1, 0.9), cy = hz + h * rng.range(0.06, 0.16), size = Math.min(h * rng.range(0.15, 0.3), pw * 0.5);
+                    const list = Array.from({ length: rng.int(3, 6) }, () => [cx + rng.range(-1, 1) * size * 0.35, cy + rng.range(0, 1) * h * 0.03, size * rng.range(0.4, 1)]).sort((a, b) => a[1] - b[1] || b[2] - a[2]);
+                    const outcrop = list.map(([x, y, s], k) => crystal(E, rng, x, y, s, 23 + c * 0.2 + k * 0.02, CYAN)), b = extent(outcrop);
+                    if (blocked.some(q => crowded(q, b, 0))) continue;
+                    claim(outcrop);
+                    break;
+                }
             }
             const s = hill(yb - h * 0.02, h * rng.range(0.07, 0.13), 26, rng.pick([VIOLET, CYAN, green]));
-            props(s.pts, 26, many(1.8), h * 0.06, (x, y, z) => mushroom(E, rng, x, y, u * rng.range(0.1, 0.2), z, rng.pick([WARM, VIOLET, GOLD])), 3);
+            props(s.pts, 26, many(1.8), h * 0.06, (x, y, z) => mushroom(E, rng, x, y, u * rng.range(0.1, 0.2), z, rng.pick([WARM, VIOLET, GOLD])), 3, undefined, undefined, 0.1);
             tufts(s, many(6), h * 0.08);
         }
         // Big panels get a slope rising into one corner, right up front, with bigger props on it
@@ -1057,7 +1251,7 @@
             if (near.length > 2) props(pts, 36, Math.round(many(1.5) * reach / w * 2) + 1, rise * 0.3,
                 biome === 'desert' ? (x, y, z) => cactus(E, rng, x, y, u * rng.range(0.25, 0.4), z, green) : biome === 'alien' ? (x, y, z) => crystal(E, rng, x, y, u * rng.range(0.2, 0.4), z, CYAN)
                     : biome === 'moon' ? (x, y, z) => boulder(E, rng, x, y, u * rng.range(0.06, 0.12), z, INK) : tree(u * rng.range(0.2, 0.3), biome === 'snow' ? 'pine' : 'round'), 3,
-                Math.max(x0 + 1, near[0][0]), Math.min(x0 + w - 1, near[near.length - 1][0]));
+                Math.max(x0 + 1, near[0][0]), Math.min(x0 + w - 1, near[near.length - 1][0]), biome === 'desert' || biome === 'alien' ? 0.1 : 0.3);
         }
         // The explorer stands on the nearest ground with props, in front of them and toward the
         // near edge of that strip. A lone feature panel can instead get the over-the-shoulder
@@ -1066,13 +1260,25 @@
             if (hero && count === 1 && rng.chance(0.65)) {
                 // cropped at the waist so no stubs of leg poke up from the frame
                 // kept clear of the side of the frame, or the arm on that side gets cut off
-                const side = rng.sign(), size = Math.min(h * rng.range(0.62, 0.74), w * 0.7), off = Math.max(0, w / 2 - size * 0.38 - 2) * rng.range(0.75, 1);
-                add(astronaut(E, rng, x0 + w / 2 + side * off, yb + size * 0.39, size, 40, {}));
-            } else if (front) {
-                const point = giant || biome === 'moon' ? rng.chance(0.5) * rng.sign() : 0, span = front.hi - front.lo, x = front.lo + span * rng.range(0.15, 0.85), size = Math.max(5.5, u * (biome === 'moon' ? 0.18 : 0.15));
-                if (span > size * 3) add(astronaut(E, rng, x, heightAt(front.pts, x) + front.depth * rng.range(0.7, 1), size, front.z, { point, flag: biome === 'moon' && rng.chance(0.7) ? rng.sign() : 0 }));
+                const side = rng.sign(), size = Math.min(h * rng.range(0.62, 0.74), w * 0.7), off = Math.max(0, w / 2 - size * 0.38 - 2) * rng.range(0.75, 1), x = x0 + w / 2 + side * off, y = yb + size * 0.39;
+                add(astronaut(E, rng, x, y, size, 40, {}));
+                feats.push({ box: [x - size * 0.5, y - size * 1.15, x + size * 0.5, yb] });
+            } else if (front && front.hi - front.lo > 3 * Math.max(5.5, u * 0.18)) {
+                // in a gap between the props, so it doesn't get lost in a grove, with its feet in the panel
+                const point = giantPl || biome === 'moon' ? rng.chance(0.5) * rng.sign() : 0, size = Math.max(5.5, u * (biome === 'moon' ? 0.18 : 0.15)), flag = biome === 'moon' && rng.chance(0.7) ? rng.sign() : 0;
+                const c = spot(front.list.map(p => ({ box: p.b })).concat(blocked.map(b => ({ box: b }))), 16, () => {
+                    const x = rng.range(front.lo + size * 0.6, front.hi - size * 0.6), top = heightAt(front.pts, x), y = Math.min(top + front.depth * rng.range(0.7, 1), yb - size * 0.15 - 1);
+                    if (y < top) return null;
+                    return { x, y, parts: [{ box: [x - size * (0.5 - Math.min(0, flag) * 0.9), y - size * (flag ? 1.25 : 1.15), x + size * (0.5 + Math.max(0, flag) * 0.9), y] }] };
+                }, 0.5);
+                if (c) {
+                    add(astronaut(E, rng, c.x, c.y, size, front.z, { point, flag }));
+                    feats.push(c.parts[0]);
+                    things.push(c.parts[0]);
+                }
             }
         }
+        if (giantPl) rising(giantPl, 15);
         // a saucer crossing a shared panorama left to right, either arriving and beaming down
         // in the last panel or beaming in the first and flying off
         const flight = count > 1 && E.p.visitors && rng.chance(0.35) && E.fly() ? rng.sign() : 0;
@@ -1085,29 +1291,38 @@
             return [Math.max(lo, ...ends), Math.min(hi, ...ends)];
         };
 
+        // where a saucer's beam lands: on the first open ground, just in front of it, and not
+        // on top of a tree or a rock
+        const beamAt = (D, x, y0, size) => {
+            if (!floor) return null;
+            const top = heightAt(floor.top, x), y = top + Math.min(4, (yb - top) * 0.1);
+            if (y > D.Y + D.H - 3) return null;
+            return room(things, [{ box: [x - size * 0.85, y0, x + size * 0.85, y + size * 0.2] }]) > 1 ? { y, z: floor.z + 0.2 } : null;
+        };
+
         const local = (D, prng, e) => {
             const phase = biome === 'moon' ? 'night' : phaseOf(e), dm = Math.min(D.W, D.H), [bottom, peak] = skyline(D);
             for (const s of shared) draw(D, s, phase === 'set' || phase === 'night');
-            const sun = phase === 'night' ? null : sunAt(prng, D, hz, e, Math.min(dm, h));
-            const st = skyStyle(E, prng, phase, sun), avoid = sun ? [[sun[0], sun[1], sun[2] * 1.4]] : [];
+            // the land's own tall things are in place before anything goes in the sky
+            const avoid = feats.filter(t => apart(t, { box: [D.X, D.Y, D.X + D.W, D.Y + D.H] }) <= 0);
+            const sun = phase === 'night' ? null : sunAt(prng, D, hz, e, Math.min(dm, h), avoid);
+            const st = skyStyle(E, prng, phase, sun);
+            if (sun) avoid.push([sun[0], sun[1], sun[2] * 1.4]);
             // the hatch thins out around the peaks rather than behind them, where it wouldn't show
             st.fadeTo = lerp(peak, bottom, 0.6);
             sky(E, prng, D, st, sun, bottom, hz);
             if (sun) sunDisc(E, D, sun, phase === 'set' && prng.chance(0.6));
-            stars(E, prng, D, bottom, E.p.stars * (biome === 'moon' ? 1.4 : phase === 'night' ? 1 : phase === 'set' ? 0.25 : 0.08), avoid);
             if (phase === 'night' && (biome === 'snow' || biome === 'peaks') && prng.chance(0.3)) aurora(E, prng, D, hz);
-            // small planets stay clear of the giant, or only slivers of them show around its rim
-            if (giant) avoid.push(giant);
             if (E.p.story === 'approach') featured(E, prng, D, t, hz, avoid, sun);
             scatter(E, prng, D, prng.int(0, phase === 'night' ? 2 : 1), hz - h * 0.08, avoid, 3, [0.035, 0.07], sun);
-            if (phase === 'night' && prng.chance(0.25)) shootingStar(D, prng, D.X, D.Y, D.W, hz - D.Y);
+            if (phase === 'night' && prng.chance(0.25)) shootingStar(D, prng, D.X, D.Y, D.W, hz - D.Y, avoid);
             // the moon has no air, so no weather at all
             const airless = biome === 'moon', weather = !airless && prng.chance(0.6) ? prng.int(1, big ? 4 : 3) : 0;
-            const made = clouds(E, prng, D, weather, D.Y + (hz - D.Y) * 0.08, hz - (hz - D.Y) * 0.3, 10, Math.min(dm, u * 1.6));
-            if (made.length > 1 && phase !== 'day' && prng.chance(0.35)) { const [x, y] = prng.pick(made); bolt(E, prng, D, x, y, hz + h * 0.02, 19.5); }
+            const made = clouds(E, prng, D, weather, D.Y + (hz - D.Y) * 0.08, hz - (hz - D.Y) * 0.3, 10, Math.min(dm, u * 1.6), avoid);
+            if (made.length > 1 && phase !== 'day' && prng.chance(0.35)) { const [x, y] = prng.pick(made); bolt(E, prng, D, x, y, hz + h * 0.02, 19.5, avoid); }
             // cloud banks sitting on the far horizon, or caught between the ranges
-            if (!airless && prng.chance(0.25)) clouds(E, prng, D, prng.int(1, 2), hz - h * 0.2, hz - h * 0.04, 19, dm * 0.8);
-            if (biome === 'peaks' && prng.chance(0.3)) clouds(E, prng, D, 1, hz - h * 0.2, hz, 22.5, dm * 0.7);
+            if (!airless && prng.chance(0.25)) clouds(E, prng, D, prng.int(1, 2), hz - h * 0.2, hz - h * 0.04, 19, dm * 0.8, avoid);
+            if (biome === 'peaks' && prng.chance(0.3)) clouds(E, prng, D, 1, hz - h * 0.2, hz, 22.5, dm * 0.7, avoid);
             if (water) {
                 // ripples: sun colored under the sun, ink inside the range's reflection, the rest cool
                 const segs = [], n = clamp(Math.round((D.Y + D.H - water.y) / (g * 2.2)), 3, 80);
@@ -1124,17 +1339,44 @@
                     if (x1 > from) D.line([[from, y], [x1, y]], water.z + 0.01, role);
                 }
             }
+            // visitors only go where they have the sky to themselves
+            let visitor = null;
+            const roomy = pick => spot(avoid, 12, pick, 2);
             if (flight) {
-                const u = (D.X + D.W / 2 - x0) / w, v = flight > 0 ? u : 1 - u, x = D.X + D.W * prng.range(0.35, 0.65), beam = flight > 0 ? D.X + D.W > x0 + w - 1 : D.X < x0 + 1;
-                saucer(E, prng, D, x, y0 + (hz - y0) * lerp(0.15, 0.5, v), Math.min(dm, h) * 0.12, 34, beam ? Math.min(D.Y + D.H, heightAt(far, x) + h * 0.15) : 0, beam ? 0 : 1);
+                const u = (D.X + D.W / 2 - x0) / w, v = flight > 0 ? u : 1 - u, lands = flight > 0 ? D.X + D.W > x0 + w - 1 : D.X < x0 + 1;
+                const y = y0 + (hz - y0) * lerp(0.15, 0.5, v), size = Math.min(dm, h) * 0.12, move = lands ? 0 : 1;
+                visitor = roomy(() => {
+                    const x = D.X + D.W * prng.range(0.3, 0.7), beam = lands ? beamAt(D, x, y, size) : null;
+                    if (y - size * 0.55 < D.Y + 1) return null;
+                    return { parts: saucerFoot(x, y, size, beam, move), draw: () => saucer(E, prng, D, x, y, size, 34, beam, move) };
+                });
             } else if (E.visit(prng, D)) {
                 const kind = prng.weighted([[3, 'saucer'], [1.5, 'rocket'], [2, 'comet']]);
                 if (kind === 'saucer') {
-                    const x = D.X + D.W * prng.range(0.25, 0.75), y = D.Y + (hz - D.Y) * prng.range(0.25, 0.6);
-                    saucer(E, prng, D, x, y, dm * prng.range(0.1, 0.16), 34, prng.chance(0.6) ? Math.min(D.Y + D.H, heightAt(far, x) + h * 0.15) : 0);
-                } else if (kind === 'rocket') rocket(E, prng, D, D.X + D.W * prng.range(0.3, 0.7), D.Y + (hz - D.Y) * prng.range(0.5, 0.9), dm * prng.range(0.14, 0.22), prng.range(-0.5, 0.5), 34);
-                else comet(E, prng, D, D.X + D.W * prng.range(0.2, 0.8), D.Y + (hz - D.Y) * prng.range(0.15, 0.45), dm * prng.range(0.25, 0.45), [prng.sign() * 0.8, -0.6], 9);
+                    const size = dm * prng.range(0.1, 0.16), lit = prng.chance(0.6);
+                    visitor = roomy(() => {
+                        const x = D.X + D.W * prng.range(0.25, 0.75), y = D.Y + (hz - D.Y) * prng.range(0.25, 0.6), beam = lit ? beamAt(D, x, y, size) : null;
+                        if (y - size * 0.55 < D.Y + 1) return null;
+                        return { parts: saucerFoot(x, y, size, beam, 0), draw: () => saucer(E, prng, D, x, y, size, 34, beam) };
+                    });
+                } else if (kind === 'rocket') {
+                    const size = dm * prng.range(0.14, 0.22);
+                    visitor = roomy(() => {
+                        const x = D.X + D.W * prng.range(0.25, 0.75), y = D.Y + size * 1.1 + (peak - D.Y - size * 1.6) * prng.range(0.3, 0.8);
+                        if (y + size * 0.5 > peak) return null;
+                        const r = rocket(E, prng, x, y, size, prng.range(-0.5, 0.5), 34, peak - 1);
+                        return { parts: r.parts, draw: () => r.shapes.forEach(q => draw(D, q)) };
+                    });
+                } else {
+                    const size = dm * prng.range(0.25, 0.45), away = [prng.sign() * 0.8, -0.6];
+                    visitor = roomy(() => {
+                        const x = D.X + D.W * prng.range(0.2, 0.8), y = D.Y + (hz - D.Y) * prng.range(0.15, 0.45);
+                        return { parts: cometFoot(x, y, size, away), draw: () => comet(E, prng, D, x, y, size, away, 9) };
+                    });
+                }
             }
+            if (visitor) { visitor.draw(); avoid.push(...visitor.parts); }
+            stars(E, prng, D, bottom, E.p.stars * (biome === 'moon' ? 1.4 : phase === 'night' ? 1 : phase === 'set' ? 0.25 : 0.08), avoid);
         };
         return { local };
     }
@@ -1149,16 +1391,22 @@
                 if (st.style === 'bands') st.style = 'rays';
                 sky(E, prng, D, st, sun, D.Y + D.H, D.Y + D.H);
                 if (sun) sunDisc(E, D, sun, false);
-                stars(E, prng, D, D.Y + D.H, E.p.stars * (phase === 'night' ? 0.8 : 0.1), avoid);
                 if (E.p.story === 'approach') featured(E, prng, D, t, D.Y + D.H * 0.7, avoid, sun);
                 const rows = prng.int(2, 4);
                 for (let k = 0; k < rows; k++) {
                     const y = D.Y + D.H * lerp(0.22, 0.95, k / (rows - 1));
-                    clouds(E, prng, D, prng.int(1, Math.max(1, Math.round(w / h * 2))), y - h * 0.08, y, 10 + k * 2, m * (0.9 + k * 0.25));
+                    clouds(E, prng, D, prng.int(1, Math.max(1, Math.round(w / h * 2))), y - h * 0.08, y, 10 + k * 2, m * (0.9 + k * 0.25), avoid);
                     if (k < rows - 1) scatter(E, prng, D, prng.int(0, 1), y, avoid, 11 + k * 2, [0.04, 0.1], sun);
                 }
-                if (prng.chance(0.4)) { const c = cloud(E, prng, D.X + D.W / 2, D.Y + D.H + h * 0.05, D.W * 1.5, h * 0.25, 20); if (c) draw(D, c); }
-                if (E.visit(prng, D)) saucer(E, prng, D, D.X + D.W * prng.range(0.25, 0.75), D.Y + D.H * prng.range(0.3, 0.6), m * 0.12, 15, 0);
+                if (prng.chance(0.4)) {
+                    const c = cloud(E, prng, D.X + D.W / 2, D.Y + D.H + h * 0.05, D.W * 1.5, h * 0.25, 20);
+                    if (c && room(avoid, [{ box: c.box }], true) > 1) { draw(D, c); avoid.push({ box: c.box, cloud: true }); }
+                }
+                if (E.visit(prng, D)) {
+                    const v = spot(avoid, 12, () => { const x = D.X + D.W * prng.range(0.25, 0.75), y = D.Y + D.H * prng.range(0.3, 0.6); return { x, y, parts: saucerFoot(x, y, m * 0.12, null, 0) }; });
+                    if (v) { saucer(E, prng, D, v.x, v.y, m * 0.12, 15, null); avoid.push(...v.parts); }
+                }
+                stars(E, prng, D, D.Y + D.H, E.p.stars * (phase === 'night' ? 0.8 : 0.1), avoid);
             },
         };
     }
@@ -1166,11 +1414,12 @@
         return {
             local: (D, prng) => {
                 const m = Math.min(D.W, D.H), avoid = [];
-                if (prng.chance(0.2)) sky(E, prng, D, { style: 'hatch', role: E.script.night.role, angle: E.script.angle, k: 3.2 }, null, D.Y + D.H, 0);
+                // the orbit view has its own sunburst, and hatching under that just turns into a mesh
+                if (kind !== 'orbit' && prng.chance(0.2)) sky(E, prng, D, { style: 'hatch', role: E.script.night.role, angle: E.script.angle, k: 3.2 }, null, D.Y + D.H, 0);
                 if (kind === 'giant') {
                     const pl = E.p.story === 'approach' ? E.cast.planets[0] : prng.pick(E.cast.planets), r = m * prng.range(0.26, 0.4);
                     const x = D.X + D.W * prng.range(0.35, 0.65), y = D.Y + D.H * prng.range(0.4, 0.6);
-                    avoid.push([x, y, r * (pl.ring ? pl.outer : 1.1)]);
+                    avoid.push(orb(pl, x, y, r));
                     for (const s of planet(E, pl, x, y, r, 8, E.lightVec)) draw(D, s);
                     scatter(E, prng, D, prng.int(1, 3), D.Y + D.H, avoid, 3, [0.025, 0.06], null);
                 } else if (kind === 'orbit') {
@@ -1197,7 +1446,10 @@
                         }
                     }
                     scatter(E, prng, D, prng.int(0, 1), D.Y + D.H * 0.55, avoid, 3, [0.04, 0.08], sun);
-                    if (E.visit(prng, D)) rocket(E, prng, D, D.X + D.W * prng.range(0.2, 0.8), D.Y + D.H * prng.range(0.3, 0.5), m * 0.16, prng.range(-1.2, 1.2), 20);
+                    if (E.visit(prng, D)) {
+                        const v = spot(avoid, 12, () => rocket(E, prng, D.X + D.W * prng.range(0.2, 0.8), D.Y + D.H * prng.range(0.3, 0.5), m * 0.16, prng.range(-1.2, 1.2), 20, D.Y + D.H + m));
+                        if (v) { v.shapes.forEach(q => draw(D, q)); avoid.push(...v.parts); }
+                    }
                 } else {
                     const tallish = D.H > D.W * 1.3;
                     if (E.p.story === 'approach') featured(E, prng, D, t, D.Y + D.H, avoid, null);
@@ -1207,15 +1459,17 @@
                         for (let k = 0; k < n; k++) {
                             const u = prng.range(-0.6, 0.6) * Math.hypot(D.W, D.H), v = prng.gauss(0, D.H * 0.1), r = m * 0.07 * prng.random() ** 2.5 + 0.8;
                             const x = D.X + D.W / 2 + u * c - v * sn, y = D.Y + D.H / 2 + u * sn + v * c;
-                            if (x > D.X - r && x < D.X + D.W + r && y > D.Y - r && y < D.Y + D.H + r && !avoid.some(([p, q, rr]) => Math.hypot(x - p, y - q) < rr + r)) rocks.push([x, y, r]);
+                            // apart from each other too, or the belt clumps into blobs
+                            if (x > D.X - r && x < D.X + D.W + r && y > D.Y - r && y < D.Y + D.H + r && room(avoid, [[x, y, r]]) > 0 && room(rocks, [[x, y, r]]) > 0.4) rocks.push([x, y, r]);
                         }
                         rocks.sort((p, q) => p[2] - q[2]).forEach(([x, y, r], k) => { draw(D, rock(E, prng, x, y, r, 4 + k * 0.02)); avoid.push([x, y, r]); });
                     }
                     scatter(E, prng, D, prng.int(tallish ? 2 : 1, tallish ? 4 : 3), D.Y + D.H, avoid, 3, [0.04, 0.12], null);
-                    const cx = D.X + D.W * prng.range(0.2, 0.8), cy = D.Y + D.H * prng.range(0.2, 0.8), size = m * prng.range(0.25, 0.4);
-                    if ((E.visit(prng, D) || prng.chance(0.2)) && !avoid.some(([x, y, r]) => Math.hypot(cx - x, cy - y) < r + size)) comet(E, prng, D, cx, cy, size, [prng.sign(), prng.range(-0.6, 0.6)], 7);
+                    const cx = D.X + D.W * prng.range(0.2, 0.8), cy = D.Y + D.H * prng.range(0.2, 0.8), size = m * prng.range(0.25, 0.4), away = [prng.sign(), prng.range(-0.6, 0.6)];
+                    if ((E.visit(prng, D) || prng.chance(0.2)) && room(avoid, cometFoot(cx, cy, size, away)) > 1) { comet(E, prng, D, cx, cy, size, away, 7); avoid.push(...cometFoot(cx, cy, size, away)); }
                 }
-                stars(E, prng, D, D.Y + D.H, E.p.stars * 1.3, avoid);
+                // fewer stars over the orbit view's sunburst, where they get lost in the rays
+                stars(E, prng, D, D.Y + D.H, E.p.stars * (kind === 'orbit' ? 0.5 : 1.3), avoid);
             },
         };
     }
