@@ -161,6 +161,8 @@
             seed: s.seed, paperW: s.paper.w, paperH: s.paper.h, margin: s.paper.margin,
             scale: c.scale, rotate: c.rotate, offsetX: c.offsetX, offsetY: c.offsetY, clip: c.clip,
             frame: c.frame, framePen: c.framePen, frameInset: c.frameInset, opt: s.opt,
+            // Only overlap removal depends on pen width. Otherwise a width change is just a redraw.
+            penWidths: s.opt.overlap ? s.pens.map(p => p.width) : null,
             cols: c.cols, rows: c.rows, gutter: c.gutter, cellVary: c.cellVary,
             // Grid variation must keep the hidden Skyline options off too.
             locks: [...new Set([...(s.locks[s.gen] || []), ...Object.keys(lockedSceneParams(s.gen))])],
@@ -451,11 +453,13 @@
         const hidden = hiddenPens();
         const vis = layerStats(result).filter(l => !hidden.has(l.pen));
         const paths = vis.reduce((n, l) => n + l.paths, 0), points = vis.reduce((n, l) => n + l.points, 0);
+        const skipped = vis.reduce((n, l) => n + ((result.overlap || {})[l.pen] || 0), 0);
         const stat = (cls, ...kids) => el('span', { class: 'stat ' + (cls || '') }, ...kids);
         const items = [
             stat('', el('b', { text: fmtCount(paths) }), paths === 1 ? 'path' : 'paths'),
             stat('', el('b', { text: fmtCount(points) }), 'points'),
             vis.length > 1 ? stat('', el('b', { text: vis.length }), 'pens') : null,
+            result.overlap ? stat('', el('b', { text: skipped >= 1000 ? `${(skipped / 1000).toFixed(1)} m` : `${Math.round(skipped)} mm` }), 'overlap skipped') : null,
             stat('dim', `${Math.round(lastGenMs)} ms`),
         ];
         bar.append(...items.filter(Boolean));
@@ -1170,6 +1174,12 @@
                     { key: 'opt.simplify', label: 'Simplify points', type: 'checkbox' },
                     { key: 'opt.simplifyTol', label: 'Simplify tolerance (mm)', type: 'range', min: 0.005, max: 0.5, step: 0.005, show: s => s.opt.simplify },
                     { key: 'opt.minLength', label: 'Drop strokes shorter than (mm)', type: 'range', min: 0, max: 5, step: 0.1 },
+                    { key: 'opt.overlap', label: 'Skip lines already drawn', type: 'checkbox',
+                        hint: 'Lifts the pen where it would go back over ink from the same pen, so markers don\'t pick up ink and dry out. Uses each pen\'s width.' },
+                    { key: 'opt.overlapPct', label: 'Skip when already inked (% of pen width)', type: 'range', min: 25, max: 100, step: 5, show: s => s.opt.overlap,
+                        hint: 'At 100% only lines that are fully on ink go, so the plot looks the same. Lower values also skip lines that partly overlap, which can leave thin gaps in dense hatching.' },
+                    { key: 'opt.overlapMin', label: 'Keep overlaps shorter than (mm)', type: 'range', min: 0.2, max: 10, step: 0.1, show: s => s.opt.overlap,
+                        hint: 'Shorter overlaps, like where lines cross or meet, are drawn anyway so they don\'t cost an extra pen lift.' },
                 ],
             },
             { id: 'snaps', title: 'Snapshots', custom: buildSnapshotsSection },
@@ -1273,7 +1283,7 @@
                 pen.width = clamp(+width.value || pen.width, 0.05, 5);
                 width.value = pen.width;
                 syncAllWidth();
-                draw();
+                if (state.opt.overlap) requestGenerate(); else draw();
                 commit();
             });
             const meta = el('div', { class: 'pen-meta', 'data-pen': i });
@@ -1293,7 +1303,7 @@
             state.pens.forEach(p => { p.width = w; });
             list.querySelectorAll('.pen-row .num').forEach(input => { input.value = w; });
             allWidth.value = w;
-            draw();
+            if (state.opt.overlap) requestGenerate(); else draw();
             commit();
         });
         syncAllWidth();

@@ -82,6 +82,17 @@ Any design can also be laid out as a **grid** on one sheet. Each cell gets its o
 4. **Optimize**: joins strokes that touch and simplifies points below a
    tolerance, for smaller, cleaner files. The status bar shows the path and
    point counts.
+   Turn on `Skip lines already drawn` for felt tips and markers. Busy scenes
+   draw some lines twice, like edges shared by two buildings, and a marker
+   dragged back over ink picks it up, dries out and leaves gaps in the next
+   lines. This cuts the parts of strokes that land on ink the same pen already
+   put down, using each pen's width. At 100% only stretches that are fully on
+   ink go, so the plot looks the same. That's about 1.5 to 3% of the black ink in
+   the scenes with a 0.35 mm pen, or 5 to 13% with a 0.8 mm marker. Lower
+   values also skip lines that partly overlap, which saves more ink but can
+   leave thin gaps in dense hatching. Overlaps under 1 mm, like where lines
+   cross, are drawn anyway since they'd each cost a pen lift. Pens don't check
+   each other's ink, only their own.
 5. **Export**:
    * **SVG**: `width`/`height` in mm, one Inkscape layer per pen (`1 Pen 1`,
      `2 Pen 2`…), so AxiDraw's Inkscape extension, `vpype`, `saxi` and
@@ -153,7 +164,7 @@ src/
     iso.js         3D scenes for the Scenes designs: camera, solids, hidden-line removal, shadows
     isokit.js      walls, windows, roofs, cars, fences and people shared by the Scenes designs
     pipeline.js    fit / rotate / clip to the drawing area / frame
-    optimize.js    simplify, merge, travel ordering, stats
+    optimize.js    simplify, merge, overlap removal, travel ordering, stats
     export.js      SVG, PDF, DXF and EPS export
     render.js      canvas preview
     loader.js      list of design files
@@ -161,6 +172,7 @@ src/
   dev/sheet.html   contact sheet of designs + random variants
 scripts/
   check.js         runs every design through the pipeline (npm run check)
+  check-overlap.js overlap removal, checked by brute force (npm run check:overlap)
   shot.js          headless-Chrome screenshot of any page
   drive.js         tiny DevTools-protocol driver for UI tests (npm run smoke)
   build-pages.js   design pages and sitemap (npm run build:pages)

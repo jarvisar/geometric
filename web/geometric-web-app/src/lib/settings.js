@@ -31,7 +31,7 @@
             cols: 1, rows: 1, gutter: 8, cellVary: 'seed', sweepId: '', sweepAmount: 50,
         },
         pens: PG.pens.sets.fineliner.colors.map((color, i) => ({ name: `Pen ${i + 1}`, color, width: 0.35, visible: true })),
-        opt: { merge: true, mergeTol: 0.1, simplify: true, simplifyTol: 0.02, sort: true, minLength: 0 },
+        opt: { merge: true, mergeTol: 0.1, simplify: true, simplifyTol: 0.02, sort: true, minLength: 0, overlap: false, overlapPct: 100, overlapMin: 1 },
         view: { margin: false, penWidth: true },
         ui: { tab: 'design', open: { paper: true, comp: true, pens: true }, paramClosed: [] },
     });
@@ -64,7 +64,7 @@
         },
         opt: {
             merge: boolean, mergeTol: number(0.01, 1), simplify: boolean, simplifyTol: number(0.005, 0.5),
-            sort: boolean, minLength: number(0, 5),
+            sort: boolean, minLength: number(0, 5), overlap: boolean, overlapPct: number(25, 100), overlapMin: number(0.2, 10),
         },
         view: { margin: boolean, penWidth: boolean },
         pen: { name: string(200), color, width: number(0.05, 5), visible: boolean },

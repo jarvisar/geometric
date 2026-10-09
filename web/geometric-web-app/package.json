@@ -19,6 +19,7 @@
     "check:generation": "node scripts/build-worker.js --check && node scripts/check-generation.js",
     "check:edgecases": "node scripts/check-edgecases.js",
     "check:boundaries": "node scripts/check-boundaries.js",
+    "check:overlap": "node scripts/check-overlap.js",
     "check:exports": "node scripts/check-exports.js",
     "smoke:exports": "node scripts/drive.js scripts/exports.steps.js shots/exports",
     "smoke": "node scripts/drive.js scripts/smoke.steps.js shots",

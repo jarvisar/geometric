@@ -273,7 +273,8 @@
     //   frame, framePen, frameInset,
     //   cols, rows, gutter (mm), sweep: { id, amount (-1..1) },               (grid layouts)
     //   cellVary: 'seed' | 'params' | 'none', locks: [param ids kept when varying params]
-    //   opt: { merge, mergeTol, sort, simplify, simplifyTol, minLength }
+    //   opt: { merge, mergeTol, sort, simplify, simplifyTol, minLength, overlap, overlapPct, overlapMin },
+    //   penWidths: [mm per pen]                                                (overlap removal)
     // }
     // extra: { images } – non-serializable inputs handed to the generator.
     // ------------------------------------------------------------------
@@ -335,6 +336,7 @@
         const O = PG.optimize;
         const paperBounds = shapes.rect(m, m, m + W, m + H);
         const outsidePaper = p => p[0] < m - 1e-6 || p[0] > m + W + 1e-6 || p[1] < m - 1e-6 || p[1] > m + H + 1e-6;
+        const overlap = {};
         layers = layers.map(l => {
             // A join between two cells would draw across the gutter, or outside both
             // circle crops where they touch. Crops are convex, so joins inside one cell stay in it.
@@ -343,6 +345,13 @@
                 if (o.simplify) ps = ps.map(p => O.simplify(p, o.simplifyTol || 0.02));
                 return o.merge ? O.merge(ps, o.mergeTol || 0.1) : ps;
             });
+            if (o.overlap) {
+                // 0.35 mm is the default pen width, for callers that don't pass widths
+                const width = (S.penWidths && S.penWidths[l.pen]) || 0.35;
+                const cut = O.overlaps(paths, width, (o.overlapPct || 100) / 100, o.overlapMin ?? 1);
+                paths = cut.paths;
+                overlap[l.pen] = cut.removed;
+            }
             if (o.minLength > 0) paths = paths.filter(p => geo.pathLength(p) >= o.minLength);
             paths = paths.filter(p => p.length > 1);
             if (o.sort) {
@@ -363,6 +372,7 @@
             area: { x: m, y: m, w: W, h: H },
             timing: { generate: genMs, place: T3 - T0 - genMs, optimize: T4 - T3, total: T4 - T0 },
         };
+        if (o.overlap) res.overlap = overlap;
         if (motion) res.motion = motion;
         return res;
     };
