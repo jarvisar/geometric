@@ -26,6 +26,8 @@ const invalid = [
     { ...recipe, images: null }, { ...recipe, images: { missing: {} } },
     { ...recipe, images: { spirograph: { R: 'img-test' } } },
     { ...recipe, images: { image: { image: '../photo' } } },
+    { ...recipe, gen: 'tidal', params: { tidal: { studies: 2.5 } } },
+    { ...recipe, gen: 'trainyard', params: { trainyard: { tracks: 7.5 } } },
 ];
 for (const obj of invalid) assert.throws(() => read(obj), /Invalid settings/);
 for (const key of ['__proto__', 'constructor', 'prototype']) {
@@ -51,6 +53,9 @@ assert.deepEqual(partial, original, 'validation must not mutate its input');
 assert.equal(read({ ...recipe, comp: { sweepId: 'missing' } }).comp.sweepId, '');
 assert.deepEqual(read({ ...recipe, locks: ['R', 'removed', 'R'] }).locks.spirograph, ['R']);
 assert.throws(() => PG.settings.read({ ...recipe, ui: { open: null } }, true), /Invalid settings/);
+// A session saved with a fractional count before validation caught it opens with the default again
+assert.equal(PG.settings.read({ gen: 'tidal', params: { tidal: { studies: 2.5 } } }, true).params.tidal.studies,
+    PG.defaultParams(PG.byId.tidal).studies);
 
 for (const gen of ['harbour', 'fairground', 'alpine']) for (const [inks, pens] of [['one', 1], ['four', 4], ['eight', 8]]) {
     assert.equal(read({ gen, v: 1, params: { [gen]: { inks } } }).params[gen].pens, pens);
@@ -94,3 +99,29 @@ for (const [paperW, paperH] of [[210, 297], [105, 148], [50, 50], [215.9, 279.4]
     }
 }
 console.log(`${grids} grid layouts stay inside the drawing area, including frames and all crops`);
+
+// Lines that run right up to the cell edges, so their ends sit one gutter apart. Joining strokes
+// with a tolerance wider than the gutter must not draw across it.
+const edges = { id: 'test-edges', params: [], generate: (p, ctx) => {
+    const out = [];
+    for (let t = 0.1; t < 1; t += 0.2) out.push([[0, ctx.height * t], [ctx.width, ctx.height * t]], [[ctx.width * t, 0], [ctx.width * t, ctx.height]]);
+    return out;
+} };
+let gutters = 0;
+for (const gutter of [0.5, 0.9]) for (const clip of ['rect', 'circle', 'hexagon']) for (const [cols, rows] of [[2, 2], [3, 1], [1, 3]]) {
+    const S = { paperW: 210, paperH: 297, margin: 15, cols, rows, gutter, clip, seed: 1, cellVary: 'none',
+        opt: { merge: true, mergeTol: 1, simplify: true, sort: true } };
+    const L = PG.layoutSizes(S);
+    // Everything is clipped to its cell, so any segment reaching into a gutter strip crosses it
+    const overlaps = (a, b, lo) => Math.max(a, b) > lo + 1e-6 && Math.min(a, b) < lo + L.gut - 1e-6;
+    const crosses = (a, b) => {
+        for (let c = 1; c < L.cols; c++) if (overlaps(a[0], b[0], L.m + c * L.cw + (c - 1) * L.gut)) return true;
+        for (let r = 1; r < L.rows; r++) if (overlaps(a[1], b[1], L.m + r * L.ch + (r - 1) * L.gut)) return true;
+        return false;
+    };
+    for (const path of PG.run(edges, {}, S).layers.flatMap(l => l.paths)) for (let i = 1; i < path.length; i++) {
+        assert.ok(!crosses(path[i - 1], path[i]), `joined stroke crosses the gutter: ${JSON.stringify(S)}`);
+    }
+    gutters++;
+}
+console.log(`${gutters} grids with a join tolerance wider than the gutter keep their strokes in their cells`);

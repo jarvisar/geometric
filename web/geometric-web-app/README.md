@@ -172,6 +172,11 @@ scripts/
 on every push to `master` that touches it, or on demand from the Actions tab.
 One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 
+The faster node checks run before publishing and nothing goes out if one fails.
+The slower scene checks and the browser smoke tests don't run there, so run them
+locally for UI changes. `npm run smoke:a11y` covers keyboard and screen reader
+access, short screens, redo timing and stored photo cleanup.
+
 ## Export Checks
 
 Run `npm run check:exports` for format checks and fixtures from every design,

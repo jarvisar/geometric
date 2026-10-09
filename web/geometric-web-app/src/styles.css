@@ -105,6 +105,8 @@ kbd {
 }
 
 .ic { width: 18px; height: 18px; flex: none; fill: currentColor; }
+/* Read by screen readers, not shown */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* ------------------------------------------------------------------ top bar */
 
@@ -318,7 +320,10 @@ kbd {
     cursor: default;
 }
 .ctl-head .hint {
+    flex: none;
     width: 14px; height: 14px;
+    padding: 0;
+    border: 0;
     border-radius: 50%;
     background: var(--faint);
     color: var(--panel);
@@ -329,7 +334,8 @@ kbd {
     place-items: center;
     cursor: help;
 }
-.ctl-head .hint:hover { background: var(--focus); }
+.ctl-head .hint:hover, .ctl-head .hint[aria-expanded="true"] { background: var(--focus); }
+.ctl-hint { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .lock-btn {
     margin-left: auto;
     width: 20px; height: 20px;
@@ -344,7 +350,7 @@ kbd {
     padding: 0;
 }
 .lock-btn .ic { width: 13px; height: 13px; }
-.ctl:hover .lock-btn, .lock-btn.locked { opacity: 1; }
+.ctl:hover .lock-btn, .lock-btn.locked, .lock-btn:focus-visible { opacity: 1; }
 .lock-btn:hover { color: var(--text); }
 .lock-btn.locked { color: var(--accent); }
 
@@ -595,8 +601,10 @@ select:focus-visible { outline: none; border-color: var(--focus); box-shadow: va
 
 /* snapshots */
 .snaps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.snap {
-    position: relative;
+.snap { position: relative; }
+.snap-restore {
+    display: block;
+    width: 100%;
     aspect-ratio: 1;
     border-radius: var(--radius);
     overflow: hidden;
@@ -605,20 +613,23 @@ select:focus-visible { outline: none; border-color: var(--focus); box-shadow: va
     box-shadow: var(--shadow-sm);
     padding: 0;
 }
-.snap img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.snap-restore img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .snap .del {
     position: absolute; top: 3px; right: 3px;
     width: 20px; height: 20px;
     border-radius: 50%;
     border: 1px solid rgba(0, 0, 0, 0.6);
     background: rgba(20, 22, 25, 0.85);
-    display: none;
+    padding: 0;
+    /* Faded out rather than display: none, so screen readers still find it */
+    display: grid;
+    opacity: 0;
     place-items: center;
     color: #fff;
 }
-.snap:hover .del { display: grid; }
+.snap:hover .del, .snap:focus-within .del { opacity: 1; }
 .snap .del .ic { width: 12px; height: 12px; }
-.snap:hover { border-color: var(--accent); box-shadow: 0 0 6px rgba(255, 107, 61, 0.4); }
+.snap-restore:hover { border-color: var(--accent); box-shadow: 0 0 6px rgba(255, 107, 61, 0.4); }
 .snaps-empty { color: var(--muted); font-size: 11.5px; }
 
 /* ------------------------------------------------------------------ stage */
@@ -761,7 +772,8 @@ select:focus-visible { outline: none; border-color: var(--focus); box-shadow: va
     flex-direction: column;
     overflow: hidden;
 }
-.keys-inner { width: min(560px, 100%); height: auto; }
+/* The list scrolls when the window is shorter than it */
+.keys-inner { width: min(560px, 100%); height: auto; max-height: 100%; }
 .gallery-head {
     display: flex;
     align-items: center;
@@ -786,6 +798,7 @@ select:focus-visible { outline: none; border-color: var(--focus); box-shadow: va
 .gallery-head input[type="search"]::placeholder { color: var(--faint); }
 .gallery-head input[type="search"]:focus { outline: none; border-color: var(--focus); box-shadow: var(--input-shadow), var(--focus-glow); }
 .gallery-head .icon-btn:last-child { margin-left: auto; }
+.gallery-empty { margin: 0; padding: 28px 18px; color: var(--muted); text-align: center; }
 .gallery-body { overflow-y: auto; padding: 4px 18px 24px; scrollbar-width: thin; scrollbar-color: #3a414a transparent; }
 .gallery-cat {
     margin: 18px 2px 12px;
@@ -822,7 +835,7 @@ a.card .thumb { object-fit: cover; }
 .card .card-name { font-weight: bold; font-size: 12.5px; text-shadow: var(--emboss); }
 .card .card-desc { color: var(--muted); font-size: 11px; margin-top: 2px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
-.keys { display: grid; grid-template-columns: max-content 1fr; gap: 10px 18px; padding: 16px 20px 22px; margin: 0; }
+.keys { display: grid; grid-template-columns: max-content 1fr; gap: 10px 18px; padding: 16px 20px 22px; margin: 0; min-height: 0; overflow-y: auto; }
 .keys dt { text-align: right; color: var(--text-2); }
 .keys dd { margin: 0; color: var(--text-2); }
 
@@ -984,8 +997,7 @@ a.card .thumb { object-fit: cover; }
     .gallery-body { padding: 0 12px 20px; }
     .cards { grid-template-columns: repeat(2, 1fr); gap: 10px; }
     .card .card-text { padding: 7px 9px 9px; }
-    .keys-inner { max-height: 100%; }
-    .keys { grid-template-columns: 1fr; gap: 2px; padding: 14px 18px 20px; overflow-y: auto; }
+    .keys { grid-template-columns: 1fr; gap: 2px; padding: 14px 18px 20px; }
     .keys dt { text-align: left; margin-top: 10px; }
 
     .toasts { left: 12px; right: 12px; bottom: calc(var(--tabs-h) + 12px + env(safe-area-inset-bottom)); align-items: center; }
@@ -1003,7 +1015,7 @@ a.card .thumb { object-fit: cover; }
 @media (hover: none) {
     .lock-btn { opacity: 0.55; }
     .lock-btn.locked { opacity: 1; }
-    .snap .del { display: grid; }
+    .snap .del { opacity: 1; }
     /* touch keeps :hover after a tap, which would leave buttons looking lit */
     .btn:hover:not(:active), .icon-btn:hover:not(:active), .design-btn:hover:not(:active) { background: linear-gradient(var(--btn-1), var(--btn-2)); }
     .btn.accent:hover:not(:active) { background: linear-gradient(var(--go-1), var(--go-2)); }
@@ -1012,6 +1024,7 @@ a.card .thumb { object-fit: cover; }
 @media (pointer: coarse) {
     .lock-btn { width: 30px; height: 30px; margin: -6px -6px -6px auto; }
     .lock-btn .ic { width: 15px; height: 15px; }
+    .ctl-head .hint { width: 20px; height: 20px; font-size: 12px; }
     input[type="range"] { height: 32px; }
     input[type="range"]::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -9px; }
     input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; }

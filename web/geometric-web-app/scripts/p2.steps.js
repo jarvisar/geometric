@@ -122,7 +122,7 @@ const portable = await evaluate(`__downloads.at(-1).blob.text()`);
 assert(JSON.parse(portable).assets, 'JSON omitted photo contents');
 await click(clearImage); await ready(); await sleep(450);
 await open('index.html'); await ready(); await helpers();
-await click('#snapGrid .snap');
+await click('#snapGrid .snap-restore');
 await until(`plotterApp.state.params.image.image==='first.png'`, 'snapshot did not restore photo'); await ready();
 await check(`__hash(plotterApp.result.layers)===${drawingA}`, 'snapshot restored filename without correct pixels');
 

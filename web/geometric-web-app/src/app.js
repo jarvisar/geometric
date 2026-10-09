@@ -78,9 +78,18 @@
         try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (e) { return false; }
     }
 
+    // Screen readers get toasts and errors through two hidden live regions that are always on the
+    // page. A new line is added each time, so the same message twice is read twice.
+    function announce(msg, urgent) {
+        const line = el('div', { text: msg });
+        $(urgent ? '#liveAlert' : '#liveStatus').append(line);
+        setTimeout(() => line.remove(), 7000);
+    }
+
     function toast(msg, isError) {
         const t = el('div', { class: 'toast' + (isError ? ' error' : ''), text: msg });
         $('#toasts').append(t);
+        announce(msg, isError);
         setTimeout(() => t.remove(), isError ? 5000 : 2400);
     }
 
@@ -283,7 +292,8 @@
         scheduleSave();
     }
     const undo = () => { clearTimeout(commitTimer); pushUndo(); restoreUndo(undoStack.index - 1); };
-    const redo = () => restoreUndo(undoStack.index + 1);
+    // An edit still waiting for its commit goes in first. Being newer, it also drops the redo steps
+    const redo = () => { clearTimeout(commitTimer); pushUndo(); restoreUndo(undoStack.index + 1); };
     function updateUndoButtons() {
         $('#undo').disabled = undoStack.index <= 0;
         $('#redo').disabled = undoStack.index >= undoStack.items.length - 1;
@@ -426,6 +436,8 @@
     function setBusy(on) { $('#busy').hidden = !on; }
     function setError(msg) {
         const e = $('#errorMsg');
+        // Dragging a slider through a failing value repeats the same error, only read it out once
+        if (msg && msg !== e.textContent) announce(msg, true);
         e.hidden = !msg;
         e.textContent = msg || '';
     }
@@ -803,20 +815,35 @@
     function makeControl(q, get, set, opts = {}) {
         const id = `c-${(q.key || q.id).replace(/\W/g, '-')}-${Math.random().toString(36).slice(2, 7)}`;
         const row = el('div', { class: `ctl ctl-${q.type === 'checkbox' ? 'check' : q.type}` });
-        const label = el('label', { for: id, text: q.label || q.id });
+        const labelText = q.label || q.id;
+        const label = el('label', { for: id, text: labelText });
         const head = el('div', { class: 'ctl-head' }, label);
-        if (q.hint) head.append(el('span', { class: 'hint', title: q.hint, text: '?' }));
+        // The ? opens the hint under the control, for keyboards and touch where the tooltip never shows.
+        // The inputs are described by it either way.
+        let hint = null;
+        if (q.hint) {
+            hint = el('p', { class: 'ctl-hint', id: `${id}-hint`, text: q.hint, hidden: true });
+            const btn = el('button', { class: 'hint', type: 'button', title: q.hint, text: '?',
+                'aria-label': `About ${labelText}`, 'aria-expanded': 'false', 'aria-controls': hint.id });
+            btn.addEventListener('click', () => {
+                hint.hidden = !hint.hidden;
+                btn.setAttribute('aria-expanded', String(!hint.hidden));
+            });
+            head.append(btn);
+        }
         if (opts.onReset) {
             label.title = (q.hint ? q.hint + '\n' : '') + 'Double-click to reset';
             label.addEventListener('dblclick', opts.onReset);
         }
         if (opts.lockable) {
-            const lock = el('button', { class: 'lock-btn' + (opts.locked ? ' locked' : ''),
-                title: q.id === 'pens' ? 'Keep fixed when randomizing or switching designs' : 'Keep fixed when randomizing', type: 'button' });
+            const lock = el('button', { class: 'lock-btn' + (opts.locked ? ' locked' : ''), type: 'button',
+                title: q.id === 'pens' ? 'Keep fixed when randomizing or switching designs' : 'Keep fixed when randomizing',
+                'aria-label': `Lock ${labelText}`, 'aria-pressed': String(!!opts.locked) });
             lock.append(icon(opts.locked ? 'lock' : 'unlock'));
             lock.addEventListener('click', () => {
                 const on = opts.onLock();
                 lock.classList.toggle('locked', on);
+                lock.setAttribute('aria-pressed', String(on));
                 lock.replaceChildren(icon(on ? 'lock' : 'unlock'));
             });
             head.append(lock);
@@ -898,6 +925,10 @@
                 clear.hidden = !loaded && !v && !opts.hasImageReference?.();
             };
             ctlRow.append(pick, name, clear);
+        }
+        if (hint) {
+            row.append(hint);
+            for (const input of row.querySelectorAll('input, select, textarea')) input.setAttribute('aria-describedby', hint.id);
         }
         row.sync && row.sync();
         return row;
@@ -1068,6 +1099,18 @@
         img.src = url;
     }
 
+    // Photos the session, its saved copy or a snapshot still use. Null when storage can't be read,
+    // since then there's no telling what's still needed.
+    function imageRefs() {
+        try { localStorage.getItem(STORAGE_KEY); } catch (e) { return null; }
+        const refs = new Set();
+        const add = images => { for (const row of Object.values(images || {})) for (const key of Object.values(row || {})) refs.add(key); };
+        add(state.images);
+        add(storageGet(STORAGE_KEY)?.images);
+        for (const s of loadSnaps()) add(s.state.images);
+        return refs;
+    }
+
     // ---- output panel (right)
 
     const penOptions = () => state.pens.map((p, i) => [i, `${i + 1} · ${p.name}`]);
@@ -1203,26 +1246,29 @@
 
         const list = el('div', { id: 'penList' });
         state.pens.forEach((pen, i) => {
-            const eye = el('button', { class: 'eye' + (pen.visible ? '' : ' off'), type: 'button', title: 'Show / hide this pen (hidden pens are not exported)' }, icon(pen.visible ? 'eye' : 'eye-off'));
+            // Named by number, the name field can change and every row would otherwise read the same
+            const eye = el('button', { class: 'eye' + (pen.visible ? '' : ' off'), type: 'button', title: 'Show / hide this pen (hidden pens are not exported)',
+                'aria-label': `Show pen ${i + 1}`, 'aria-pressed': String(pen.visible) }, icon(pen.visible ? 'eye' : 'eye-off'));
             eye.addEventListener('click', () => {
                 pen.visible = !pen.visible;
                 eye.classList.toggle('off', !pen.visible);
+                eye.setAttribute('aria-pressed', String(pen.visible));
                 eye.replaceChildren(icon(pen.visible ? 'eye' : 'eye-off'));
                 draw();
                 renderStats();
                 commit();
             });
-            const color = el('input', { type: 'color', class: 'color-input', value: pen.color, title: 'Pen color' });
+            const color = el('input', { type: 'color', class: 'color-input', value: pen.color, title: 'Pen color', 'aria-label': `Pen ${i + 1} color` });
             color.addEventListener('input', () => { pen.color = color.value; draw(); });
             color.addEventListener('change', commit);
-            const name = el('input', { class: 'pen-name', value: pen.name, spellcheck: 'false', maxlength: 200, title: 'Pen name (used for SVG layer names)' });
+            const name = el('input', { class: 'pen-name', value: pen.name, spellcheck: 'false', maxlength: 200, title: 'Pen name (used for SVG layer names)', 'aria-label': `Pen ${i + 1} name` });
             name.addEventListener('change', () => {
                 pen.name = name.value || `Pen ${i + 1}`;
                 const opt = document.querySelector(`[data-key="comp.framePen"] option[value="${i}"]`);
                 if (opt) opt.textContent = `${i + 1} · ${pen.name}`;
                 commit();
             });
-            const width = el('input', { type: 'number', class: 'num', min: 0.05, max: 5, step: 0.05, value: pen.width, title: 'Pen width in mm' });
+            const width = el('input', { type: 'number', class: 'num', min: 0.05, max: 5, step: 0.05, value: pen.width, title: 'Pen width in mm', 'aria-label': `Pen ${i + 1} width (mm)` });
             width.addEventListener('change', () => {
                 pen.width = clamp(+width.value || pen.width, 0.05, 5);
                 width.value = pen.width;
@@ -1236,7 +1282,7 @@
         body.append(list);
 
         // blank when the pens have different widths
-        const allWidth = el('input', { type: 'number', class: 'num', min: 0.05, max: 5, step: 0.05, placeholder: 'mixed', title: 'Set the width of every pen in mm' });
+        const allWidth = el('input', { type: 'number', class: 'num', min: 0.05, max: 5, step: 0.05, placeholder: 'mixed', title: 'Set the width of every pen in mm', 'aria-label': 'Width of every pen (mm)' });
         const syncAllWidth = () => {
             const w = state.pens[0]?.width;
             allWidth.value = state.pens.every(p => p.width === w) ? w : '';
@@ -1284,7 +1330,7 @@
     }
 
     function buildSnapshotsSection(body) {
-        const btn = el('button', { class: 'btn', type: 'button' }, icon('camera'), el('span', { text: 'Save snapshot' }));
+        const btn = el('button', { class: 'btn', id: 'snapSave', type: 'button' }, icon('camera'), el('span', { text: 'Save snapshot' }));
         btn.addEventListener('click', saveSnapshot);
         body.append(el('div', { class: 'ctl' }, btn));
         const grid = el('div', { class: 'snaps', id: 'snapGrid' });
@@ -1301,21 +1347,31 @@
             return;
         }
         for (const s of snaps) {
-            const b = el('button', { class: 'snap', type: 'button', title: `${s.title}\n${new Date(s.time).toLocaleString()}` }, el('img', { src: s.thumb, alt: s.title }));
-            const del = el('span', { class: 'del', title: 'Delete snapshot' }, icon('x'));
-            del.addEventListener('click', e => {
-                e.stopPropagation();
+            const b = el('button', { class: 'snap-restore', type: 'button', title: `${s.title}\n${new Date(s.time).toLocaleString()}`,
+                'aria-label': `Restore ${s.title}` }, el('img', { src: s.thumb, alt: '' }));
+            const del = el('button', { class: 'del', type: 'button', title: 'Delete snapshot (Delete)', 'aria-label': `Delete ${s.title}` }, icon('x'));
+            const item = el('div', { class: 'snap' }, b, del);
+            const remove = () => {
+                const focused = item.contains(document.activeElement);
+                const at = [...grid.children].indexOf(item);
                 storageSet(SNAPS_KEY, loadSnaps().filter(x => x.time !== s.time));
-                renderSnaps();
-            });
-            b.append(del);
+                renderSnaps(grid);
+                announce(`Deleted ${s.title}`);
+                // The focused button is gone, so move to the snapshot that took its place
+                if (focused) {
+                    const left = grid.querySelectorAll('.snap-restore');
+                    (left[Math.min(at, left.length - 1)] || $('#snapSave')).focus();
+                }
+            };
+            del.addEventListener('click', remove);
+            b.addEventListener('keydown', e => { if (e.key === 'Delete') { e.preventDefault(); remove(); } });
             b.addEventListener('click', async () => {
                 try {
                     await restoreShared(s.state);
                     toast(`Restored ${s.title}`);
                 } catch (err) { toast(`Could not restore snapshot: ${err.message}`, true); }
             });
-            grid.append(b);
+            grid.append(item);
         }
     }
 
@@ -1353,7 +1409,8 @@
         activeDialog = dlg;
         dlg.hidden = false;
         for (const node of document.body.children) {
-            if (node === dlg || ['SCRIPT', 'SVG'].includes(node.tagName)) continue;
+            // Inert content is hidden from screen readers, live regions included
+            if (node === dlg || node.id === 'live' || ['SCRIPT', 'svg'].includes(node.tagName)) continue;
             inertBefore.set(node, node.inert);
             node.inert = true;
         }
@@ -1478,15 +1535,21 @@
 
     function filterGallery(text) {
         const t = text.trim().toLowerCase();
+        let shown = 0;
         document.querySelectorAll('#galleryBody section').forEach(sec => {
             let any = false;
             sec.querySelectorAll('.card').forEach(card => {
                 const ok = !t || card.dataset.search.includes(t);
                 card.hidden = !ok;
-                if (ok) any = true;
+                if (ok) { any = true; shown++; }
             });
             sec.hidden = !any;
         });
+        const empty = $('#galleryEmpty');
+        empty.textContent = `No designs match "${text.trim()}". Clear the search to see them all.`;
+        // Only read out when the results run out, not again for every letter typed after that
+        if (!shown && empty.hidden) announce(empty.textContent);
+        empty.hidden = shown > 0;
     }
 
     // The pen count lock follows design switches; other parameter locks belong to their design.
@@ -1556,7 +1619,7 @@
     }
 
     function resetParams() {
-        $('#resetMenu').hidden = true;
+        closeMenus();
         const def = currentDef();
         state.params[def.id] = defaultsFor(def);
         buildParams();
@@ -1567,7 +1630,7 @@
     // Back to a fresh start, but staying on the current design. Undo brings it all back
     // except the locks, which never go through undo.
     function resetAll() {
-        $('#resetMenu').hidden = true;
+        closeMenus();
         clearTimeout(commitTimer);
         pushUndo();
         const imageParams = Object.fromEntries(Object.keys(state.images).map(id => [id, defaultsFor(PG.byId[id])]));
@@ -1588,8 +1651,10 @@
         scheduleSave();
     }
     function syncViewButtons() {
-        $('#toggleMargin').classList.toggle('on', state.view.margin);
-        $('#togglePenWidth').classList.toggle('on', state.view.penWidth);
+        for (const [sel, on] of [['#toggleMargin', state.view.margin], ['#togglePenWidth', state.view.penWidth]]) {
+            $(sel).classList.toggle('on', on);
+            $(sel).setAttribute('aria-pressed', String(on));
+        }
     }
 
     // ------------------------------------------------------------------ export
@@ -1609,7 +1674,7 @@
     }
 
     async function doExport(kind) {
-        $('#exportMenu').hidden = true;
+        closeMenus();
         if (kind === 'load') { $('#settingsFile').value = ''; $('#settingsFile').click(); return; }
         if (kind === 'install') { installApp(); return; }
         // Saving settings must also work if rendering fails or is still running.
@@ -1753,8 +1818,9 @@
     function cardToast(title, text, action, onAction, onClose) {
         const logo = $('.brand .logo').cloneNode(true);
         logo.setAttribute('class', 'install-logo');
-        const card = el('div', { class: 'toast install', role: 'status' }, el('span', { class: 'install-icon' }, logo),
+        const card = el('div', { class: 'toast install' }, el('span', { class: 'install-icon' }, logo),
             el('div', { class: 'install-text' }, el('b', { text: title }), el('span', { text })));
+        announce(`${title}. ${text}`);
         if (action) {
             const btn = el('button', { class: 'btn accent', type: 'button', text: action });
             btn.addEventListener('click', onAction);
@@ -1816,6 +1882,28 @@
 
     // ------------------------------------------------------------------ wiring
 
+    // ---- menus (export and reset). Each opens under its caret button, which tracks aria-expanded
+    const menuButton = menu => $(`[aria-controls="${menu.id}"]`);
+    function closeMenus() {
+        for (const menu of document.querySelectorAll('#exportMenu, #resetMenu')) {
+            menu.hidden = true;
+            menuButton(menu).setAttribute('aria-expanded', 'false');
+        }
+    }
+    function toggleMenu(menu) {
+        const open = menu.hidden;
+        closeMenus();
+        if (!open) return;
+        menu.hidden = false;
+        menuButton(menu).setAttribute('aria-expanded', 'true');
+        // On a short phone the reset menu opens inside the scrolling Design panel, below what's showing
+        const panel = menu.closest('.panel');
+        if (panel) {
+            const m = menu.getBoundingClientRect(), p = panel.getBoundingClientRect();
+            if (m.bottom > p.bottom) panel.scrollTop += Math.min(m.bottom - p.bottom + 8, m.top - p.top);
+        }
+    }
+
     function rebuildAll() {
         constrainLayout();
         buildParams();
@@ -1831,8 +1919,7 @@
         $('#resetParams').addEventListener('click', resetParams);
         $('#resetMenuBtn').addEventListener('click', e => {
             e.stopPropagation();
-            $('#exportMenu').hidden = true;
-            $('#resetMenu').hidden = !$('#resetMenu').hidden;
+            toggleMenu($('#resetMenu'));
         });
         $('#resetMenu').addEventListener('click', e => {
             const b = e.target.closest('button[data-reset]');
@@ -1853,17 +1940,20 @@
         $('#exportSvg').addEventListener('click', () => doExport('svg'));
         $('#exportMenuBtn').addEventListener('click', e => {
             e.stopPropagation();
-            $('#resetMenu').hidden = true;
-            $('#exportMenu').hidden = !$('#exportMenu').hidden;
+            toggleMenu($('#exportMenu'));
         });
         $('#exportMenu').addEventListener('click', e => {
             const b = e.target.closest('button[data-export]');
             if (b) doExport(b.dataset.export);
         });
         document.addEventListener('click', e => {
-            if (!e.target.closest('.export')) $('#exportMenu').hidden = true;
-            if (!e.target.closest('.reset')) $('#resetMenu').hidden = true;
+            if (!e.target.closest('.export, .reset')) closeMenus();
         });
+        // Tabbing past a menu closes it. relatedTarget is null when Safari clicks a button without
+        // focusing it, and closing then would swallow the click on the menu item.
+        for (const wrap of document.querySelectorAll('.export, .reset')) {
+            wrap.addEventListener('focusout', e => { if (e.relatedTarget && !wrap.contains(e.relatedTarget)) closeMenus(); });
+        }
         $('#settingsFile').addEventListener('change', e => { const f = e.target.files[0]; if (f) loadSettingsFile(f); });
         $('#imageFile').addEventListener('change', e => {
             const f = e.target.files[0];
@@ -1894,7 +1984,10 @@
     function setTab(tab) {
         state.ui.tab = tab;
         $('#layout').dataset.tab = tab;
-        document.querySelectorAll('#panelTabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+        document.querySelectorAll('#panelTabs button').forEach(b => {
+            b.classList.toggle('active', b.dataset.tab === tab);
+            b.setAttribute('aria-pressed', String(b.dataset.tab === tab));
+        });
         if (tab === 'preview') requestAnimationFrame(resizeCanvas);
         scheduleSave();
     }
@@ -1936,8 +2029,10 @@
                 t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable;
             if (e.key === 'Escape') {
                 if (!$('#gallery').hidden) closeGallery();
-                $('#exportMenu').hidden = true;
-                $('#resetMenu').hidden = true;
+                // Focus would be left on a hidden menu item, so take it back to the menu's button
+                const menu = t.closest && t.closest('.menu');
+                closeMenus();
+                if (menu) menuButton(menu).focus();
                 if (typing) t.blur();
                 return;
             }
@@ -1959,6 +2054,8 @@
                 case '?': openDialog($('#keysDialog')); break;
                 default: return;
             }
+            // Otherwise the key also types into whatever got focus, like the G into the gallery search
+            e.preventDefault();
         });
     }
 
@@ -2060,6 +2157,7 @@
         resizeCanvas();
         regenerate();
         pushUndo();
+        PG.images.collect(imageRefs).catch(err => console.warn('Could not clean up stored photos:', err));
         // offline use and "install app"; needs http(s), so opening index.html from disk skips it
         if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
             navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service worker not registered:', err));
@@ -2072,6 +2170,8 @@
         get state() { return state; },
         get result() { return result; },
         select: selectGenerator, randomize, surprise, resetParams, resetAll, newSeed, undo, redo, exportAs: doExport, regenerate,
+        // Controls left out on purpose, e.g. Skyline's landmark and airship until scenes are unlocked
+        hiddenParams: id => Object.keys(lockedSceneParams(id)),
     };
 
     setupInstallPrompt(); // before init: the browser's install event can arrive while designs load

@@ -30,6 +30,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       # The app is static files only; drop the developer contact sheet.
       - name: Prepare site
         run: |
@@ -40,6 +44,21 @@ jobs:
           # The app compares its build meta tag with version.json to know when a new deploy is up
           sed -i 's/<meta name="build" content="dev">/<meta name="build" content="${{ github.sha }}">/' _site/index.html
           echo '{ "build": "${{ github.sha }}" }' > _site/version.json
+
+      # Nothing is published if these fail. They run after the build so check-generation tests the
+      # worker bundle that ships. The slower scene suites (boundaries, examples, alpine) and the
+      # browser smoke tests are still run locally.
+      - name: Run checks
+        working-directory: web/geometric-web-app
+        run: |
+          node scripts/check.js
+          node scripts/check-exports.js
+          node scripts/check-state.js
+          node scripts/check-edgecases.js
+          node scripts/check-generation.js
+          node scripts/check-pens.js
+          node scripts/check-castle.js
+          node scripts/check-moonbase.js
 
       - uses: actions/configure-pages@v5
 

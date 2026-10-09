@@ -29,6 +29,7 @@
     "smoke:examples": "node scripts/drive.js scripts/examples.steps.js shots/examples",
     "smoke:state": "node scripts/drive.js scripts/state.steps.js shots/state",
     "smoke:p2": "node scripts/drive.js scripts/p2.steps.js shots/p2",
+    "smoke:a11y": "node scripts/drive.js scripts/a11y.steps.js shots/a11y",
     "smoke:edgecases": "node scripts/drive.js scripts/edgecases.steps.js shots/edgecases",
     "sheet": "node scripts/shot.js dev/sheet.html \"variants=2&size=220\" shots/sheet.png 1100 6000"
   },

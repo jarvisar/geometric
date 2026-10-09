@@ -25,11 +25,24 @@
             tx.onerror = () => reject(tx.error);
         });
     }
+    // Cleanup (collect below) has to know about every open tab and never delete a photo another
+    // tab is storing. Each tab holds TABS from the moment it loads until it closes. Photos are only
+    // stored while holding CLEAN, which a cleanup holds on its own, so a tab that opens during one
+    // waits for it to finish before storing anything.
+    const TABS = 'plotter-geometry:tabs', CLEAN = 'plotter-geometry:image-cleanup';
+    const locks = navigator.locks;
+    // Resolves to true once this tab holds TABS, false without Web Locks
+    const present = !locks ? Promise.resolve(false) : new Promise(resolve => {
+        locks.request(TABS, { mode: 'shared' }, () => { resolve(true); return new Promise(() => {}); }).catch(() => resolve(false));
+    });
+
     const id = () => `img-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
     async function put(asset) {
         const key = id();
         // Commit the pixels before any saved state can refer to them.
-        await stored('readwrite', store => store.put(asset, key));
+        const write = () => stored('readwrite', store => store.put(asset, key));
+        if (await present) await locks.request(CLEAN, { mode: 'shared' }, write);
+        else await write();
         cache.set(key, asset);
         return key;
     }
@@ -85,5 +98,25 @@
         for (const [key, asset] of decoded) ids.set(key, await put(asset));
         for (const row of Object.values(s.images)) for (const param of Object.keys(row)) row[param] = ids.get(row[param]);
     }
-    PG.images = { put, load, get, pack, unpack, has: key => cache.has(key) };
+    // Photos stay stored after they're cleared or replaced, since undo can bring them back. Once
+    // nothing refers to them they're deleted at the next start, but not while another tab is open:
+    // its undo history could still need one. refs() lists the photos the saved session and
+    // snapshots use. It's only read once this tab is alone and holds CLEAN, so it includes
+    // whatever a tab that just closed saved last.
+    async function collect(refs) {
+        if (!await present) return 0;
+        return locks.request(CLEAN, { ifAvailable: true }, async lock => {
+            if (!lock) return 0;
+            const { held } = await locks.query();
+            if (held.filter(l => l.name === TABS).length > 1) return 0;
+            const keep = refs();
+            if (!keep) return 0;
+            const keys = await stored('readonly', store => store.getAllKeys());
+            // The cache has everything this tab stored or loaded, which covers its own undo history
+            const drop = keys.filter(key => !keep.has(key) && !cache.has(key));
+            if (drop.length) await stored('readwrite', store => drop.map(key => store.delete(key)).pop());
+            return drop.length;
+        });
+    }
+    PG.images = { put, load, get, pack, unpack, collect, has: key => cache.has(key) };
 })();

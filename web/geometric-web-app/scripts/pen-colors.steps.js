@@ -7,7 +7,8 @@ for (const id of ids) {
     await sleep(60);
     if (!await evaluate(`document.querySelectorAll('#params [data-param-section="Pens"]').length===1 &&
         document.querySelector('#params details').dataset.paramSection==='Pens' &&
-        document.querySelectorAll('#params [data-param]').length===PG.byId[${JSON.stringify(id)}].params.filter(q=>q.id).length`)) {
+        document.querySelectorAll('#params [data-param]').length===PG.byId[${JSON.stringify(id)}].params
+            .filter(q=>q.id && !plotterApp.hiddenParams(${JSON.stringify(id)}).includes(q.id)).length`)) {
         throw new Error(`${id}: parameter sections lost or duplicated controls`);
     }
     for (const count of [1, 8]) {

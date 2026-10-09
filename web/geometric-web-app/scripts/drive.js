@@ -98,10 +98,11 @@ process.on('exit', () => {
         for (const { reject } of pending.values()) reject(new Error('Browser debugger disconnected'));
         pending.clear();
     });
-    const send = (method, params = {}) => new Promise((resolve, reject) => {
+    // sessionId sends to another target attached with flatten: true, e.g. a service worker
+    const send = (method, params = {}, sessionId) => new Promise((resolve, reject) => {
         const id = nextId++;
         pending.set(id, { resolve, reject });
-        ws.send(JSON.stringify({ id, method, params }));
+        ws.send(JSON.stringify({ id, method, params, sessionId }));
     });
     const waitFor = method => new Promise(resolve => waiters.push({ method, resolve }));
 

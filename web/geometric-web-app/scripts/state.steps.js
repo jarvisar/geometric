@@ -88,7 +88,7 @@ await check(`(() => {
     return document.querySelectorAll('#snapGrid .snap').length === 2 && snaps[0].state.params.spirograph.R === 80 && snaps[0].thumb !== snaps[1].thumb;
 })()`, 'snapshot recipe and thumbnail did not include pending edit');
 await sleep(350);
-await click('#snapGrid .snap:last-child');
+await click('#snapGrid .snap:last-child .snap-restore');
 await check(`plotterApp.state.params.spirograph.R === 96`, 'snapshot restore failed');
 await evaluate(`plotterApp.undo()`);
 await sleep(100);
@@ -126,7 +126,7 @@ for (const [text, name] of [[svg, 'roundtrip.svg'], [json, 'roundtrip.json']]) {
 await click('#snapshotBtn');
 await evaluate(`plotterApp.resetAll()`);
 await sleep(300);
-await click('#snapGrid .snap:first-child');
+await click('#snapGrid .snap:first-child .snap-restore');
 await sleep(400);
 await check(`plotterApp.state.opt.simplifyTol === 0.5 && !plotterApp.state.pens[1].visible`, 'snapshot omitted output settings');
 log('SVG, JSON and snapshot round trips preserve output settings and visible geometry');
@@ -227,7 +227,7 @@ await evaluate(`localStorage.setItem('plotter-geometry:state:v1',JSON.stringify(
 await open('index.html');
 await sleep(400);
 await check(`!!plotterApp.result && plotterApp.state.paper.w===210`, 'corrupt saved state prevented startup');
-await click('#snapGrid .snap');
+await click('#snapGrid .snap-restore');
 await check(`!!plotterApp.result && plotterApp.state.paper.w===210`, 'corrupt legacy snapshot damaged recovered session');
 await click('#snapGrid .snap .del');
 await check(`!!document.querySelector('#snapGrid .snaps-empty')`, 'corrupt snapshot could not be deleted');

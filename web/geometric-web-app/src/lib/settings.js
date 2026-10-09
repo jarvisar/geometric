@@ -83,7 +83,9 @@
             const v = own(from, q.id) ? from[q.id] : q.value;
             if (v === undefined && q.type === 'image') continue;
             const name = `params.${id}.${q.id}`;
-            const read = q.type === 'range' ? number(q.min, q.max, q.id === 'pens')
+            // Whole-number steps are counts. The controls can't make a fraction, but an edited
+            // link can, and some designs crash on one (e.g. 2.5 studies in Tidal Atlas)
+            const read = q.type === 'range' ? number(q.min, q.max, Number.isInteger(q.step || 1) && Number.isInteger(q.min))
                 : q.type === 'select' ? choice(q.options.map(o => o[0]))
                 : q.type === 'checkbox' ? boolean
                 : q.type === 'text' || q.type === 'image' ? string() : null;

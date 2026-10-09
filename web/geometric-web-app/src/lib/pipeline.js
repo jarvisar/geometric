@@ -300,6 +300,7 @@
         const { m, W, H, cols, rows, gut, cw, ch } = PG.layoutSizes(S);
         const n = cols * rows;
 
+        // pen -> paths of each cell, kept apart so strokes are only joined within their own cell
         const byPen = new Map();
         const outlines = [];
         let genMs = 0;
@@ -318,14 +319,13 @@
             outlines.push(cell.shape.outline());
             for (const l of cell.layers) {
                 if (!byPen.has(l.pen)) byPen.set(l.pen, []);
-                const into = byPen.get(l.pen);
-                for (const p of l.paths) into.push(p);
+                byPen.get(l.pen).push(l.paths);
             }
         }
-        let layers = [...byPen.entries()].sort((a, b) => a[0] - b[0]).map(([pen, paths]) => ({ pen, paths }));
+        let layers = [...byPen.entries()].sort((a, b) => a[0] - b[0]).map(([pen, cells]) => ({ pen, paths: cells.flat(), cells }));
         // The preview morphs between drawings using the geometry from before optimizing, since
         // merging and sorting change the path order from one drawing to the next
-        const motion = extra.motion ? layers : null;
+        const motion = extra.motion ? layers.map(({ pen, paths }) => ({ pen, paths })) : null;
 
         const T3 = performance.now();
         const rawStats = PG.optimize.stats(layers);
@@ -336,10 +336,13 @@
         const paperBounds = shapes.rect(m, m, m + W, m + H);
         const outsidePaper = p => p[0] < m - 1e-6 || p[0] > m + W + 1e-6 || p[1] < m - 1e-6 || p[1] > m + H + 1e-6;
         layers = layers.map(l => {
-            let paths = l.paths;
-            paths = paths.map(p => O.dedupe(p, 0.001));
-            if (o.simplify) paths = paths.map(p => O.simplify(p, o.simplifyTol || 0.02));
-            if (o.merge) paths = O.merge(paths, o.mergeTol || 0.1);
+            // A join between two cells would draw across the gutter, or outside both
+            // circle crops where they touch. Crops are convex, so joins inside one cell stay in it.
+            let paths = l.cells.flatMap(cell => {
+                let ps = cell.map(p => O.dedupe(p, 0.001));
+                if (o.simplify) ps = ps.map(p => O.simplify(p, o.simplifyTol || 0.02));
+                return o.merge ? O.merge(ps, o.mergeTol || 0.1) : ps;
+            });
             if (o.minLength > 0) paths = paths.filter(p => geo.pathLength(p) >= o.minLength);
             paths = paths.filter(p => p.length > 1);
             if (o.sort) {
