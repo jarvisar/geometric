@@ -222,8 +222,13 @@
         const towers = [], walls = [];
         // The cut corners get no towers between their two corner towers. Seen
         // from the default camera two of them run straight away from us, and
-        // extra towers would all stand in a line on the page.
+        // extra towers would all stand in a line on the page. Where a cut runs
+        // so nearly away from us that even its two corner towers would stand one
+        // in front of the other, it gets a single tower in the middle instead,
+        // and the walls meet at mitred angles at its ends.
         const diagonal = e => Math.abs(e.n[0]) > 0.1 && Math.abs(e.n[1]) > 0.1;
+        const yaw = geo.rad(p.yaw);
+        const endOn = e => diagonal(e) && e.len * Math.abs(e.d[0] * Math.cos(yaw) - e.d[1] * Math.sin(yaw)) < 10.5;
         const mk = (e, s, v, r, kind) => {
             const [x, y] = e.F.P(s, v, 0), tw = { x, y, r, kind };
             towers.push(tw);
@@ -232,6 +237,7 @@
         const corners = poly.map((v, i) => {
             const e0 = edges[(i + poly.length - 1) % poly.length], e1 = edges[i];
             const bx = e0.n[0] + e1.n[0], by = e0.n[1] + e1.n[1], bl = Math.hypot(bx, by), r = rng.range(3.6, 4.1);
+            if (endOn(e0) || endOn(e1)) return { r, bare: true };
             const tw = { x: v[0] + (bx / bl) * r * 0.4, y: v[1] + (by / bl) * r * 0.4, r, kind: 'corner' };
             towers.push(tw);
             return tw;
@@ -269,9 +275,11 @@
             }
             return out;
         };
+        const end = (c, s) => ({ s, r: c.r, tw: c.bare ? null : c });
         edges.forEach((e, i) => {
-            const list = [{ s: 0, r: corners[i].r, tw: corners[i] }, ...stopsOf(e, false), { s: e.len, r: corners[(i + 1) % poly.length].r, tw: corners[(i + 1) % poly.length] }];
-            run(e, list, { z0: 0, zi: LAND, H });
+            const c0 = corners[i], c1 = corners[(i + 1) % poly.length];
+            const mid = endOn(e) ? [{ s: e.len / 2, r: c0.r, tw: mk(e, e.len / 2, -c0.r * 0.35, c0.r, 'corner') }] : [];
+            run(e, [end(c0, 0), ...mid, ...stopsOf(e, false), end(c1, e.len)], { z0: 0, zi: LAND, H });
         });
 
         if (castle) {
@@ -405,21 +413,42 @@
         }
     }
 
-    // Curtain wall between two towers: a prism, with a battered foot where it
-    // stands in the moat, a parapet with merlons on the outside and a low wall
-    // along the back of the wall walk
+    // A cut corner turns the wall through 45 degrees. Where two walls meet there
+    // without a tower, each end is cut back along the bisector by this much
+    // for every meter out from the wall's center line.
+    const MITRE = Math.tan(Math.PI / 8);
+
+    // Solid along a wall from s0 to s1 with the cross section prof, as convex
+    // [v, height] pairs. An end with k set is mitred: it moves along the wall
+    // by k * v, so the outside runs on past the corner and the inside stops short.
+    function along(S, F, prof, s0, s1, k0, k1) {
+        const m = prof.length;
+        const verts = prof.map(([v, c]) => F.P(s0 + k0 * v, v, c)).concat(prof.map(([v, c]) => F.P(s1 - k1 * v, v, c)));
+        const faces = [prof.map((_, i) => i), prof.map((_, i) => m + i)];
+        for (let i = 0; i < m; i++) faces.push([i, (i + 1) % m, m + (i + 1) % m, m + i]);
+        S.solid(verts, faces);
+    }
+
+    // Curtain wall between two towers, or mitred into the next wall where
+    // there's no tower: a prism, with a battered foot where it stands in the
+    // moat, a parapet with merlons on the outside and a low wall along the
+    // back of the wall walk
     function curtain(T, w, rng) {
-        const S = T.S, e = w.e, F = e.F, P = F.P, t = WALL, L = w.s1 - w.s0, H = w.H;
+        const S = T.S, e = w.e, F = e.F, P = F.P, t = WALL, H = w.H;
+        const k0 = w.t0 ? 0 : MITRE, k1 = w.t1 ? 0 : MITRE;
         S.kind = INK;
-        S.prism([P(w.s0, -t / 2, w.z0), P(w.s0, -t / 2, H), P(w.s0, t / 2, H), P(w.s0, t / 2, w.zi)], F.V(L, 0, 0));
-        if (w.z0 < LAND - 0.5) S.prism([P(w.s0, -t / 2, w.z0), P(w.s0, -t / 2 - 0.8, w.z0), P(w.s0, -t / 2, w.z0 + 2.4)], F.V(L, 0, 0));
+        along(S, F, [[-t / 2, w.z0], [-t / 2, H], [t / 2, H], [t / 2, w.zi]], w.s0, w.s1, k0, k1);
+        if (w.z0 < LAND - 0.5) along(S, F, [[-t / 2, w.z0], [-t / 2 - 0.8, w.z0], [-t / 2, w.z0 + 2.4]], w.s0, w.s1, k0, k1);
         // the parapet and the back wall start and stop where they come clear of the towers
-        const span = (v0, v1) => [Math.max(chord(e, w.t0, v0)[1], chord(e, w.t0, v1)[1]) + 0.05, Math.min(chord(e, w.t1, v0)[0], chord(e, w.t1, v1)[0]) - 0.05];
+        const span = (v0, v1) => [
+            w.t0 ? Math.max(chord(e, w.t0, v0)[1], chord(e, w.t0, v1)[1]) + 0.05 : w.s0,
+            w.t1 ? Math.min(chord(e, w.t1, v0)[0], chord(e, w.t1, v1)[0]) - 0.05 : w.s1,
+        ];
         const vo = -t / 2, vi = vo + 0.55, mw = T.merlon, top = H + 1.05;
         const [sA, sB] = span(vo, vi), seen = T.sees(F.V(0, -1, 0));
         const edgeOn = Math.abs(e.n[0] * T.cam.fx + e.n[1] * T.cam.fy) < 0.2;
         if (sB - sA > mw) {
-            S.box(F, sA, vo, H, sB, vi, top);
+            along(S, F, [[vo, H], [vi, H], [vi, top], [vo, top]], sA, sB, k0, k1);
             // seen edge on, the merlons would stack up into a ladder
             const gap = mw * 0.8, n = edgeOn ? 0 : Math.max(1, Math.floor((sB - sA + gap) / (mw + gap)));
             const lead = (sB - sA - n * mw - (n - 1) * gap) / 2;
@@ -431,7 +460,7 @@
             if (seen && T.detail) masonry(T, (u, c) => P(u, vo - 0.01, c), sA, sB, w.z0 + 2.8, H - 0.3, rng);
         }
         const [sC, sD] = span(t / 2 - 0.35, t / 2);
-        if (sD - sC > 1) S.box(F, sC, t / 2 - 0.35, H, sD, t / 2, H + 0.75);
+        if (sD - sC > 1) along(S, F, [[t / 2 - 0.35, H], [t / 2, H], [t / 2, H + 0.75], [t / 2 - 0.35, H + 0.75]], sC, sD, k0, k1);
     }
 
     // Lines down a cone roof, from the eaves most of the way to the top: red
@@ -451,7 +480,11 @@
             const lx = apex[0] - q0[0], ly = apex[1] - q0[1], ll = Math.hypot(lx, ly) || 1;
             const across = Math.abs(tx * ly - ty * lx) / ll;
             if (T.sees(n)) {
-                const f = [0.9, 0.55, 0.72, 0.55][i++ % 4];
+                // Lines stop at different heights so they never close up to
+                // less than half a lit gap on paper as they run in to the top.
+                // Every line reaches f(0), every other one f(1), and so on.
+                const j = i++ % 8, lv = j ? Math.log2(j & -j) : 3;
+                const f = geo.clamp(1 - (T.hLit * 0.55) / (gap * 2 ** lv), 0.15, 0.9);
                 const top = [x + Re * (1 - f) * c, y + Re * (1 - f) * s, z + h * f];
                 inKind(S, lit ? T.tones.lit : T.tones.dark, () => S.line([rim(a), top]));
             }
@@ -527,9 +560,11 @@
         const S = T.S, { x, y, r } = tw, n = Math.max(28, T.segs(r + 0.8));
         S.kind = INK;
         let z = tw.z0;
+        // the battered foot stops just under the ground, or its top would show
+        // as a stray arc where the tower bulges into the town
         if (z < LAND - 0.5) {
-            S.frustum(x, y, z, z + 2.6, r + 0.75, r, n);
-            z += 2.6;
+            S.frustum(x, y, z, LAND - 0.05, r + 0.75, r, n);
+            z = LAND - 0.05;
         }
         const zs = geo.lerp(z, tw.h, 0.6);
         drum(S, x, y, r, z, zs, n);
@@ -732,7 +767,8 @@
     }
 
     // Ripple lines following the banks a little way out on paper, as round the
-    // coast on an old chart: the nearest solid, the next in dashes
+    // coast on an old chart: the nearest solid, the next in dashes. Bits shorter
+    // than 2.5 mm, left where the shadows cut them up, are dropped.
     function ripples(T, town, clear) {
         const { S, k } = T, dist = moatDistance(town), [x0, y0, x1, y1] = bounds(town.moat);
         const field = PG.sampleField(dist, x0, y0, x1 - x0, y1 - y0, Math.max(0.9, 0.8 / k));
@@ -743,7 +779,7 @@
             for (const path of PG.isolines(field, mm / k, dist)) {
                 let run = [], t = (path.length * 1.7) % 3;
                 const flush = () => {
-                    if (run.length > 1) S.line(run.map(([x, y]) => [x, y, 0]));
+                    if (run.length * step * k >= 2.5) S.line(run.map(([x, y]) => [x, y, 0]));
                     run = [];
                 };
                 for (let i = 0; i + 1 < path.length; i++) {
@@ -961,7 +997,7 @@
         const ok = (F, a, b, a2, b2) => [[a, b], [a2, b], [a2, b2], [a, b2]].every(([u, v]) => { const q = F.P(u, v, 0); return depth(town.inner, q[0], q[1]) > -0.05; });
         for (const r of rows) {
             if (onSquare(r) && cell.full && r.a1 - r.a0 > 8) {
-                terrace(T, r.F, [r.a0 + 0.2, 0.2, r.a1 - 0.2, D - 0.6], rng, { floors: p.floors, shops: 0.75 });
+                terrace(T, r.F, [r.a0 + 0.2, 0.2, r.a1 - 0.2, D - 0.6], rng, { floors: p.floors, shops: 0.75, stripe: GOLD });
                 built.push(bounds([r.F.P(r.a0, 0, 0), r.F.P(r.a1, D, 0)]));
                 continue;
             }
@@ -1054,13 +1090,13 @@
         canopy(T, F, -L / 2 - 0.15, L / 2 + 0.15, -D / 2 - 0.45, D / 2 + 0.45, 2.1, 0.6, GOLD);
     }
 
-    // Market cross: stepped base and a tall shaft with a cross on top. Returns its radius.
+    // Market cross: a base of two steps and a tall shaft with a cross on top.
+    // Returns its radius. More, thinner steps just fill in at this scale.
     function marketCross(T, x, y) {
         const S = T.S, F = frame(x, y, LAND, 0);
         S.kind = INK;
-        S.box(F, -1.5, -1.5, 0, 1.5, 1.5, 0.3);
-        S.box(F, -1.1, -1.1, 0.3, 1.1, 1.1, 0.6);
-        S.box(F, -0.7, -0.7, 0.6, 0.7, 0.7, 0.9);
+        S.box(F, -1.5, -1.5, 0, 1.5, 1.5, 0.45);
+        S.box(F, -0.9, -0.9, 0.45, 0.9, 0.9, 0.9);
         S.frustum(x, y, LAND + 0.9, LAND + 5.2, 0.22, 0.16, 10);
         const P = card(T, x, y, LAND + 5.2, 0);
         S.line([P(0, 0), P(0, 1.2)]);
@@ -1074,14 +1110,19 @@
         S.loop(at3(rectPoly(cell.rect), LAND));
         S.loop(at3(rectPoly([x0 + 1.1, y0 + 1.1, x1 - 1.1, y1 - 1.1]), LAND));
         const F = frame(x0, y0, LAND, 0), occ = new Occupancy(w, d);
+        // how far back the fountain or cross can go and stay clear of the hall
+        let room = d - 1;
         if (p.market && w >= 15 && d >= 15) {
             const L = Math.min(w - 4.5, rng.range(12, 16)), D = rng.range(6.5, 7.5), a = (w - L) / 2, b = d - D - 1.6;
             marketHall(T, F, [a, b, a + L, b + D], rng);
             occ.add(a - 0.6, b - 1, a + L + 0.6, b + D + 0.6);
+            room = b - 1;
         }
-        const fx = w / 2, fy = Math.max(4, Math.min(d * 0.38, d - 13));
+        // a fountain is up to 2.85 m across the basin, the cross 1.6 m
+        const big = rng.chance(0.55) && room >= 7.4;
+        const fx = w / 2, fy = Math.max(big ? 3.7 : 2.4, Math.min(d * 0.38, d - 13, room - (big ? 3.7 : 2.4)));
         const [cx, cy] = F.P(fx, fy, 0);
-        const rr = rng.chance(0.55) ? fountain(T, cx, cy, LAND, rng) : marketCross(T, cx, cy);
+        const rr = big ? fountain(T, cx, cy, LAND, rng) : marketCross(T, cx, cy);
         S.kind = INK;
         const pave = rr + 1.2;
         if (pave < Math.min(fx, fy) - 0.5) S.loop(ring(T.segs(pave), (c, s) => [cx + pave * c, cy + pave * s, LAND]));
@@ -1397,10 +1438,13 @@
         const B = scaled(turned(x, y, z, Math.atan2(-cam.fx, cam.fy) + rng.sign() * 0.45), m), bw = 2.2, bd = 2.9;
         S.kind = WOOD;
         S.box(B, -bw / 2, -bd / 2, 3.2, bw / 2, bd / 2, 7.4);
+        // boards and sail bars at least 1.6 and 2 mm apart on paper, or the
+        // body fills in behind the sails
+        const board = Math.max(0.45, 1.6 / (T.k * m)), bar = Math.max(0.8, 2 / (T.k * m));
         if (T.detail) {
             for (const side of [0, 1, 3]) {
                 const W = wall(B, side, [-bw / 2, -bd / 2, bw / 2, bd / 2]);
-                if (T.sees(W.n)) for (let c = 3.65; c < 7.3; c += 0.45) S.line([W.at(0, c), W.at(W.len, c)]);
+                if (T.sees(W.n)) for (let c = 3.2 + board; c < 7.3; c += board) S.line([W.at(0, c), W.at(W.len, c)]);
             }
         }
         S.kind = INK;
@@ -1412,7 +1456,8 @@
         // sails on the front
         const hub = B.P(0, -bd / 2 - 0.5, 6.4), ux = B.V(1, 0, 0), uz = B.V(0, 0, 1);
         const at = (s, c) => [hub[0] + ux[0] * s, hub[1] + ux[1] * s, hub[2] + uz[2] * c];
-        const phi0 = rng.range(0, Math.PI / 2);
+        // sails set in an X, so the body shows between the top two and the trestle between the bottom two
+        const phi0 = Math.PI / 4 + rng.range(-0.1, 0.1);
         for (let i = 0; i < 4; i++) {
             const a = phi0 + (i * Math.PI) / 2, cx = Math.cos(a), cy = Math.sin(a);
             const q = (s, t) => at(cx * s - cy * t, cy * s + cx * t);
@@ -1422,7 +1467,7 @@
             S.loop(sail);
             S.line([q(0, 0.02), q(s0, 0.02)]);
             if (T.detail) {
-                const n = Math.max(3, Math.round((s1 - s0) / 0.8));
+                const n = Math.max(3, Math.round((s1 - s0) / bar));
                 for (let j = 1; j < n; j++) S.line([q(s0 + ((s1 - s0) * j) / n, 0), q(s0 + ((s1 - s0) * j) / n, wd)]);
                 S.line([q(s0, wd / 2), q(s1, wd / 2)]);
             }
@@ -1462,32 +1507,36 @@
     }
 
     // Tournament: a tilt barrier with a knight riding at each end, pavilions
-    // along the far side and a stand for the crowd
+    // along the far side and a stand for the crowd. The stand goes right on the
+    // near edge of the field, low and well back from the barrier, or its
+    // canopy covers the lists on the page.
     function tournament(T, r, rng) {
         const S = T.S, [x0, y0, x1, y1] = r, long = x1 - x0 >= y1 - y0;
         const F = long ? frame(x0, y0, LAND, 0) : frame(x0, y1, LAND, 3), U = long ? x1 - x0 : y1 - y0, V = long ? y1 - y0 : x1 - x0;
         S.kind = WOOD;
-        const vm = V * 0.42, L = Math.min(U - 6, 34), u0 = (U - L) / 2;
+        const vm = Math.min(V - 7.5, Math.max(8.3, V * 0.45)), L = Math.min(U - 6, 34), u0 = (U - L) / 2;
         S.box(F, u0, vm - 0.12, 0, u0 + L, vm + 0.12, 1.3);
         if (T.detail) for (let u = u0 + 2; u < u0 + L - 1; u += 2) S.line([F.P(u, vm - 0.13, 0), F.P(u, vm - 0.13, 1.3)]);
-        // the stand: rows of benches under a striped roof
+        // the stand: two rows of benches under a striped roof
         const sw = Math.min(10, L * 0.4), su = U / 2 - sw / 2;
-        for (let i = 0; i < 3; i++) S.box(F, su, vm - 4.5 - i * 0.7, 0, su + sw, vm - 3.8 - i * 0.7, 0.45 * (i + 1));
-        for (const u of [su + 0.1, su + sw - 0.1]) for (const v of [vm - 3.8, vm - 6.2]) S.line([F.P(u, v, v > vm - 4 ? 0 : 1.35), F.P(u, v, 3.4)]);
+        for (let i = 0; i < 2; i++) S.box(F, su, 1.7 - i * 0.7, 0, su + sw, 2.4 - i * 0.7, 0.45 * (i + 1));
+        for (const u of [su + 0.1, su + sw - 0.1]) for (const v of [2.3, 1.1]) S.line([F.P(u, v, v > 2 ? 0 : 0.9), F.P(u, v, 3)]);
         S.kind = INK;
-        canopy(T, F, su - 0.2, su + sw + 0.2, vm - 6.5, vm - 3.5, 3.4, 1.1, RED);
+        canopy(T, F, su - 0.2, su + sw + 0.2, 0.7, 2.9, 3, 0.5, RED);
         for (let i = 0; i < 8; i++) {
-            const [px, py] = F.P(su + 0.6 + (sw - 1.2) * (i / 7), vm - 4.1 - (i % 3) * 0.7, 0);
-            person(T, px, py, LAND + 0.45 * ((i % 3) + 1), rng);
+            const [px, py] = F.P(su + 0.6 + (sw - 1.2) * (i / 7), 2.05 - (i % 2) * 0.7, 0);
+            person(T, px, py, LAND + 0.45 * ((i % 2) + 1), rng);
         }
         // knights at either end, one each side of the barrier
         const sx = F.V(1, 0, 0), dir = sx[0] * T.cam.rx + sx[1] * T.cam.ry >= 0 ? 1 : -1;
         const [ax, ay] = F.P(u0 + 3, vm - 1.4, 0), [bx, by] = F.P(u0 + L - 3, vm + 1.4, 0);
         horse(T, ax, ay, LAND, dir, rng, true, true);
         horse(T, bx, by, LAND, -dir, rng, true, true);
-        // pavilions behind
-        for (let u = 3.5; u < U - 3; u += rng.range(6, 8)) {
-            const [px, py] = F.P(u, Math.min(V - 3, vm + 6.5) + rng.range(-0.8, 0.8), 0);
+        // pavilions behind, far enough apart along the field that they don't
+        // overlap on the page when it runs away from the camera
+        const across = Math.max(0.25, Math.abs(sx[0] * T.cam.rx + sx[1] * T.cam.ry));
+        for (let u = 3.5; u < U - 3; u += Math.max(rng.range(6, 8), 6.4 / across)) {
+            const [px, py] = F.P(u, Math.min(V - 3, vm + 6.5) + rng.range(-0.5, 0.5), 0);
             pavilion(T, px, py, rng.range(1.8, 2.4), rng);
         }
     }
@@ -1587,11 +1636,14 @@
                     for (let u = a + 0.6; u < a + w - 0.3; u += 0.6) S.line([F.P(u, v0 + 0.2, 0), F.P(u, v1 - 0.2, 0)]);
                 });
             }
+            // a tree gets a gap of its own between this cottage and the next
+            let gap = rng.range(3.5, 6);
             if (rng.chance(0.6)) {
-                const [tx, ty] = F.P(a + w + 2, b + d * 0.7, 0);
+                gap = rng.range(8, 9.5);
+                const [tx, ty] = F.P(a + w + gap / 2, b + d * 0.7, 0);
                 tree(T, tx, ty, LAND, rng);
             }
-            a += w + rng.range(3.5, 6);
+            a += w + gap;
         }
         S.kind = GREEN;
         for (let i = Math.round(((x1 - x0) * (y1 - y0)) / 90); i > 0; i--) {
@@ -1711,7 +1763,8 @@
             return options.length ? rng.pick(options) : null;
         };
         if (p.fair) {
-            const c = take(c => below(c) && c.near && c.r[2] - c.r[0] > 20 && c.r[3] - c.r[1] > 16);
+            // deep enough to keep the stand, the lists and the pavilions apart
+            const c = take(c => below(c) && c.near && Math.max(c.r[2] - c.r[0], c.r[3] - c.r[1]) > 20 && Math.min(c.r[2] - c.r[0], c.r[3] - c.r[1]) > 18);
             if (c) c.kind = 'fair';
         }
         if (p.mill) {
@@ -1748,6 +1801,8 @@
                 side = -side;
                 if (!rng.chance(0.4 + 0.5 * p.trees)) continue;
                 const [x, y] = P(a, side * 4.6);
+                // the cottages have their own trees, and these would stand on their fences
+                if (cells.some(c => c.kind === 'hamlet' && inRect(c.r, x, y, 3))) continue;
                 tree(T, x, y, LAND, rng);
             }
             const sx = rd.g.road.r, dirOut = -(sx[0] * cam.rx + sx[1] * cam.ry) >= 0 ? 1 : -1;
@@ -1896,9 +1951,12 @@
             });
         }
         if (p.water) {
-            const shaded = water ? water.polys.map(P => ({ P, b: bounds(P) })) : [], seen = inFront(T, town);
-            const clear = (x, y) => seen(x, y) && !shaded.some(({ P, b }) => inRect(b, x, y) && geo.pointInPolygon(x, y, P))
-                && !life.some(([u, v, r]) => Math.hypot(u - x, v - y) < r);
+            // ripples keep a millimeter clear of the shadows, so they don't run
+            // along the edges of the hatching or through narrow gaps in it
+            const shaded = water ? water.polys.map(P => ({ P, b: bounds(P) })) : [], seen = inFront(T, town), m = 1 / T.k;
+            const dark = (x, y) => shaded.some(({ P, b }) => inRect(b, x, y) && geo.pointInPolygon(x, y, P));
+            const clear = (x, y) => seen(x, y) && !life.some(([u, v, r]) => Math.hypot(u - x, v - y) < r)
+                && ![[0, 0], [m, 0], [-m, 0], [0, m], [0, -m]].some(([dx, dy]) => dark(x + dx, y + dy));
             ripples(T, town, clear);
         }
         if (p.shadows) {

@@ -746,7 +746,8 @@
 
     // Row of narrow houses sharing their side walls, each with its gable to
     // the street: plain, stepped or a neck gable, some with a hoist beam.
-    // o.shops puts a shop front with an awning on some of them.
+    // o.shops puts a shop front with an awning on some of them, striped in
+    // o.stripe (the current kind when not given).
     function terrace(T, F, fp, rng, o) {
         const S = T.S;
         const [a0, b0, a1, b1] = fp, L = a1 - a0, base = 0.3, t = 0.35;
@@ -781,7 +782,7 @@
                 if (shop) pane(T, front.at, d + 0.75, base + 0.6, w - d - 1.05, 1.7, 'wide');
             }
             windows(T, front, { base: shop ? base + FLOOR : base, floors: shop ? floors - 1 : floors, style: 'frame', winW: 0.85, winH: 1.4, gap: 0.55, doors: shop ? [] : [d] });
-            if (shop) awning(T, F, a + 0.15, a + w - 0.15, b0, base + 2.75, 1.1);
+            if (shop) awning(T, F, a + 0.15, a + w - 0.15, b0, base + 2.75, 1.1, o.stripe);
             windows(T, wall(F, 2, h), { base, floors, style: 'frame', winW: 0.85, winH: 1.3, gap: 0.8 });
             // only the ends of the row have windows down the side
             if (i === 0) windows(T, wall(F, 3, h), { base, floors, style: 'frame', winW: 0.85, winH: 1.3, gap: 1.2 });
