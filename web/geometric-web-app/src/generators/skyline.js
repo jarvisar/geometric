@@ -197,16 +197,18 @@
             // every third floor a dark band, the others with strip windows
             for (let f = 0; f < floors; f++) {
                 const z = z0 + f * fh;
+                const shaded = T.shade && W.dark;
                 if (f % 3 === 1) {
                     S.line([W.at(0, z + 0.4), W.at(L, z + 0.4)]);
                     S.line([W.at(0, z + fh - 0.4), W.at(L, z + fh - 0.4)]);
-                    S.hatch([W.at(0, z + 0.4), W.at(L, z + 0.4), W.at(L, z + fh - 0.4), W.at(0, z + fh - 0.4)], [0, 0, 1], 0.62);
-                } else if (T.detail) S.line([W.at(0, z + fh - 0.9), W.at(L, z + fh - 0.9)]);
+                    // a shaded wall is hatched already, the two together went solid
+                    if (!shaded) S.hatch([W.at(0, z + 0.4), W.at(L, z + 0.4), W.at(L, z + fh - 0.4), W.at(0, z + fh - 0.4)], [0, 0, 1], 0.7);
+                } else if (T.detail && !shaded) S.line([W.at(0, z + fh - 0.9), W.at(L, z + fh - 0.9)]);
             }
         } else if (style === 'dark') {
             // dark cladding with a slit every four floors. It's a material, not
             // shade, so it stays in black ink while the shade goes blue.
-            const gap = W.dark ? 0.62 : 0.85;
+            const gap = W.dark ? 0.7 : 0.95;
             inKind(S, ARCH, () => {
                 for (let z = z0; z < z1 - 0.5; z += 4 * fh) {
                     const zt = Math.min(z1, z + 4 * fh - 0.9);
@@ -244,12 +246,18 @@
     // Signs, pipes and clutter
     // ------------------------------------------------------------------
 
+    // Signs, pipes and rooms claim the stretch of wall they're fixed to ([s0, s1, z0, z1]),
+    // so the next thing hung on it goes somewhere else instead of through them
+    const take = (W, ...spans) => (W.busy ||= []).push(...spans);
+    const taken = (W, s0, s1, z0, z1, pad = 0) => !!W.busy && W.busy.some(b => s0 < b[1] + pad && s1 > b[0] - pad && z0 < b[3] + pad && z1 > b[2] - pad);
+
     // Blade sign standing out from a wall, lettered down whichever side we see
     function blade(T, W, s, z0, z1, rng) {
         if (!W.seen || z1 - z0 < 3) return;
         const S = T.S, out = rng.range(1.5, 2.3), t = 0.3;
         S.kind = SIGN;
         wallBox(S, W, s - t / 2, s + t / 2, z0, z1, 0.1, out);
+        take(W, [s - 0.6, s + 0.6, z0, z1]);
         const side = T.sees([-W.u[0], -W.u[1], 0]) ? s - t / 2 - 0.01 : s + t / 2 + 0.01;
         const at = (o, z) => W.at(side, z, o);
         if (T.detail) {
@@ -268,6 +276,7 @@
         const q = [at(s0, z0), at(s1, z0), at(s1, z1), at(s0, z1)];
         S.face(q, false);
         S.loop(q);
+        take(W, [s0, s1, z0, z1]);
         if (T.detail) {
             S.loop([at(s0 + 0.35, z0 + 0.35), at(s1 - 0.35, z0 + 0.35), at(s1 - 0.35, z1 - 0.35), at(s0 + 0.35, z1 - 0.35)]);
             const sz = Math.min(z1 - z0 - 1.4, 3), n = Math.floor((s1 - s0 - 1) / (sz * 1.4));
@@ -280,6 +289,9 @@
         if (!W.seen) return;
         const S = T.S, r = 0.24, zj = geo.lerp(z0, z1, rng.range(0.25, 0.75));
         const s2 = geo.clamp(s + rng.range(-5, 5), 0.6, W.len - 0.6);
+        const runs = [[s - r, s + r, z0, zj], [Math.min(s, s2) - r, Math.max(s, s2) + r, zj - r, zj + r], [s2 - r, s2 + r, zj, z1]];
+        if (runs.some(a => taken(W, ...a))) return;
+        take(W, ...runs);
         S.kind = SIGN;
         wallBox(S, W, s - r, s + r, z0, zj - r, 0.05, 0.05 + 2 * r);
         wallBox(S, W, Math.min(s, s2) - r, Math.max(s, s2) + r, zj - r, zj + r, 0.08, 0.08 + 2 * r);
@@ -313,8 +325,14 @@
             const s0 = 0.2 + c * cw + 0.12, s1 = 0.2 + (c + w) * cw - 0.12, zb = z0 + r * FL + 0.5;
             // below the roof of a close neighbor it's hidden anyway, or pokes up through it
             if (zb < cover(L, W, s0 - 0.5, s1 + 0.5)) continue;
+            const zt = z0 + (r + n) * FL - 0.4, mid = W.at((s0 + s1) / 2, 0, 1);
+            // not through a sign or a pipe on the same wall, or the crown of a street tree below
+            if (taken(W, s0, s1, zb, zt, 0.3)) continue;
+            if (zb < 8.5 && T.trees.some(q => Math.hypot(q[0] - mid[0], q[1] - mid[1]) < 4.2)) continue;
             for (let rr = r; rr < r + n; rr++) for (let cc = c; cc < c + w; cc++) used[rr * cols + cc] = 1;
-            room(T, W, s0, s1, zb, z0 + (r + n) * FL - 0.4, rng.range(0.8, 1.8), rng);
+            const out = rng.range(0.8, 1.8);
+            room(T, W, s0, s1, zb, zt, out, rng);
+            T.block([W.at(s0, 0, 0), W.at(s1, 0, out)], zt, L.id);
         }
     }
 
@@ -336,18 +354,14 @@
         }
     }
 
-    // Two-pole aerials with crossbars, a Kowloon rooftop forest
-    function aerials(T, x0, y0, x1, y1, z, n, rng) {
-        const S = T.S;
+    // Aerial with crossbars. A Kowloon rooftop has a forest of them.
+    function aerial(T, x, y, z, rng) {
+        const S = T.S, h = rng.range(3.6, 6), a = rng.range(0, Math.PI), dx = Math.cos(a), dy = Math.sin(a);
         inKind(S, CABLE, () => {
-            for (let i = 0; i < n; i++) {
-                const x = rng.range(x0, x1), y = rng.range(y0, y1), h = rng.range(2.5, 6), a = rng.range(0, Math.PI);
-                const dx = Math.cos(a), dy = Math.sin(a);
-                S.line([[x, y, z], [x, y, z + h]]);
-                for (let k = rng.int(1, 3); k > 0; k--) {
-                    const zz = z + h - k * 0.6, w = 0.5 + 0.25 * k;
-                    S.line([[x - dx * w, y - dy * w, zz], [x + dx * w, y + dy * w, zz]]);
-                }
+            S.line([[x, y, z], [x, y, z + h]]);
+            for (let k = rng.int(1, 3); k > 0; k--) {
+                const zz = z + h - k * 0.6, w = 0.5 + 0.25 * k;
+                S.line([[x - dx * w, y - dy * w, zz], [x + dx * w, y + dy * w, zz]]);
             }
         });
     }
@@ -526,6 +540,11 @@
                 const q = n[1] ? spot(bw, 1.6) : spot(1.6, bw);
                 if (q && bw > 3) billboard(T, q[0] + (n[1] ? bw / 2 : 0.8), q[1] + (n[1] ? 0.8 : bw / 2), z, bw, rng.range(2.8, 4.2), n, rng);
             }
+            // squatters' shacks, each on its own patch of roof with room for the eaves
+            for (let i = o.shacks || 0; i > 0; i--) {
+                const sw = rng.range(2, 3.5), sd = rng.range(2, 3), q = spot(sw + 0.4, sd + 0.5);
+                if (q) shack(T, q[0] + 0.2, q[1] + 0.3, z, sw, sd, rng);
+            }
             if (T.detail) {
                 for (let i = rng.int(0, 3); i > 0; i--) { const q = spot(1.3, 1.3); if (q) kit.roofUnit(T, F0, q[0] + 0.65, q[1] + 0.65, z, 1.2); }
                 if (rng.chance(o.tank || 0.3)) { const q = spot(4, 4); if (q) waterTower(T, q[0] + 2, q[1] + 2, z, rng); }
@@ -538,6 +557,11 @@
             if (rng.chance(o.people || 0.15)) {
                 const q = spot(1, 1);
                 if (q) inKind(S, LIFE, () => kit.person(T, q[0] + 0.5, q[1] + 0.5, z, rng));
+            }
+            // room round each for its crossbars
+            for (let i = o.aerials || 0; i > 0; i--) {
+                const q = spot(2.4, 2.4);
+                if (q) aerial(T, q[0] + 1.2, q[1] + 1.2, z, rng);
             }
         });
     }
@@ -555,8 +579,8 @@
                 blade(T, W, s, zb, Math.min(z1 - 2, zb + rng.range(6, 14)), rng);
             }
             if (rng.chance(p.signs * 0.35) && z1 - z0 > 16) {
-                const w = Math.min(W.len - 2, rng.range(6, 12)), s = rng.range(1, W.len - 1 - w), zb = z0 + rng.range(6, Math.max(7, z1 - z0 - 10));
-                panel(T, W, s, s + w, zb, zb + rng.range(3, 5), rng);
+                const w = Math.min(W.len - 2, rng.range(6, 12)), s = rng.range(1, W.len - 1 - w), zb = z0 + rng.range(6, Math.max(7, z1 - z0 - 10)), zt = zb + rng.range(3, 5);
+                if (!taken(W, s, s + w, zb, zt)) panel(T, W, s, s + w, zb, zt, rng);
             }
             if (rng.chance(p.signs * 0.2)) pipe(T, W, rng.range(1, W.len - 1), z0, Math.min(z1, z0 + rng.range(10, 40)), rng);
         }
@@ -593,7 +617,7 @@
             if (T.sees(n)) {
                 S.kind = GLASS;
                 const len = Math.hypot(lo1[0] - lo0[0], lo1[1] - lo0[1]), k = Math.max(2, Math.round(len / 1.8));
-                for (let i = 1; i < k; i++) S.line([lerp3(pts[0], pts[1], i / k), lerp3(pts[3], pts[2], i / k)]);
+                if (!(T.shade && T.light(n) <= 0)) for (let i = 1; i < k; i++) S.line([lerp3(pts[0], pts[1], i / k), lerp3(pts[3], pts[2], i / k)]);
                 shadeFace(T, pts, n, [lo1[0] - lo0[0], lo1[1] - lo0[1], 0]);
             }
             if (rng.chance(0.3)) quiet(S, () => mast(T, (hi0[0] + hi1[0]) / 2, (hi0[1] + hi1[1]) / 2, top + rise, rng.range(8, 18), 0));
@@ -632,8 +656,8 @@
             if (t < tiers - 1) {
                 const w = x1 - x0, d = y1 - y0, nx0 = x0 + w * rng.range(0.12, 0.25), ny0 = y0 + d * rng.range(0.12, 0.25);
                 const nx1 = x1 - w * rng.range(0, 0.1), ny1 = y1 - d * rng.range(0, 0.1);
-                // life on the terrace we step back from
-                if (rng.chance(0.5)) quiet(T.S, () => tree(T, (x0 + nx0) / 2, (y0 + ny0) / 2 + d * 0.3, z, rng));
+                // life on the terrace we step back from, in the corner where it's widest
+                if (rng.chance(0.5) && Math.min(nx0 - x0, ny0 - y0) > 2) quiet(T.S, () => tree(T, (x0 + nx0) / 2, (y0 + ny0) / 2, z, rng));
                 x0 = nx0; y0 = ny0; x1 = nx1; y1 = ny1;
             }
         }
@@ -706,8 +730,14 @@
             }
         }
         S.kind = ARCH;
-        if (style === 'bands') for (let f = 1; f < floors; f += 3) shadeRound(T, cx, cy, f * fh + 0.3, (f + 1) * fh - 0.3, r, r, true, 0.5);
-        shadeRound(T, cx, cy, 0, h, r, r);
+        if (style === 'bands') {
+            // a dark band every third floor, with the shade only between them so the two don't pile up
+            shadeRound(T, cx, cy, 0, fh, r, r);
+            for (let f = 1; f < floors; f += 3) {
+                shadeRound(T, cx, cy, f * fh + 0.3, (f + 1) * fh - 0.3, r, r, true, 0.7);
+                if (f + 1 < floors) shadeRound(T, cx, cy, (f + 1) * fh, Math.min(floors, f + 3) * fh, r, r);
+            }
+        } else shadeRound(T, cx, cy, 0, h, r, r);
         for (let k = 0; k < 2; k++) {
             const a = rng.range(0, TAU);
             T.anchor([cx + (r + 0.05) * Math.cos(a), cy + (r + 0.05) * Math.sin(a), rng.range(5, Math.min(h - 1, 32))], [Math.cos(a), Math.sin(a), 0], L.id);
@@ -740,12 +770,14 @@
             if (!T.sees(nn)) continue;
             // paper width of the facet, so edge-on ones don't fill up with lines
             const wide = T.k * Math.abs((b0[j][0] - b0[i][0]) * T.cam.rx + (b0[j][1] - b0[i][1]) * T.cam.ry);
-            if (glass) {
+            // like the flat walls, a shaded facet is left to its hatching
+            const dark = T.shade && T.light(nn) <= 0;
+            if (glass && !dark) {
                 const k = Math.min(Math.floor(wide / 0.7), Math.max(2, Math.round(Math.hypot(b0[j][0] - b0[i][0], b0[j][1] - b0[i][1]) / 2.2)));
                 inKind(S, GLASS, () => { for (let m = 1; m < k; m++) S.line([lerp3(q[0], q[1], m / k), lerp3(q[3], q[2], m / k)]); });
             }
             shadeFace(T, q, nn, [b0[j][0] - b0[i][0], b0[j][1] - b0[i][1], 0]);
-            if (!glass && T.detail && wide * t > 2.5) {
+            if (!glass && !dark && T.detail && wide * t > 2.5) {
                 const seg = [q[0], q[1]], k = Math.max(1, Math.min(Math.floor(wide * t / 2.5), Math.round(Math.hypot(b0[j][0] - b0[i][0], b0[j][1] - b0[i][1]) / 3)));
                 for (let f = 0; f < floors; f++) for (let m = 0; m < k; m++) {
                     const z = f * fh + 1, z2 = z + Math.min(1.6, fh - 1.4), g = (m + 0.3) / k, g2 = (m + 0.7) / k;
@@ -764,26 +796,31 @@
 
     function twistTower(T, L) {
         const { rng } = L, S = T.S, cx = (L.x0 + L.x1) / 2, cy = (L.y0 + L.y1) / 2, half = Math.min(L.x1 - L.x0, L.y1 - L.y0) / 2 - 0.4;
-        const total = rng.range(0.7, 1.2) * rng.sign(), floors = Math.max(4, Math.round(L.h / FL)), th0 = rng.range(0, Math.PI / 2), plate = 0.4;
+        const total = rng.range(0.7, 1.2) * rng.sign(), floors = Math.max(4, Math.round(L.h / FL)), th0 = rng.range(0, Math.PI / 2);
         // sized by the widest any floor gets once turned, so none pokes out of the lot
         let e = 1;
         for (let f = 0; f < floors; f++) {
             const th = th0 - total / 2 + total * f / (floors - 1);
             e = Math.max(e, Math.abs(Math.cos(th)) + Math.abs(Math.sin(th)));
         }
-        const a = half / e - 0.5;
+        const a = half / e - 0.5, b = a + 0.45;
         S.kind = ARCH;
         T.block([[cx - half, cy - half], [cx + half, cy + half]], L.h, L.id);
         for (let f = 0; f < floors; f++) {
             const th = th0 - total / 2 + total * f / (floors - 1), F = turned(cx, cy, f * FL, th);
-            S.box(F, -a, -a, 0, a, a, FL - plate);
-            S.box(F, -a - 0.45, -a - 0.45, FL - plate, a + 0.45, a + 0.45, FL);
+            // Each floor is its corners under the one outline of its floor plate. As a slab
+            // on a box every floor had four edges running together into a black band.
+            S.solid([F.P(-a, -a, 0), F.P(a, -a, 0), F.P(a, a, 0), F.P(-a, a, 0), F.P(-a, -a, FL), F.P(a, -a, FL), F.P(a, a, FL), F.P(-a, a, FL)], BOX, null, true);
+            for (const [u, v] of [[-a, -a], [a, -a], [a, a], [-a, a]]) S.line([F.P(u, v, 0), F.P(u, v, FL)]);
+            const slab = [F.P(-b, -b, FL), F.P(b, -b, FL), F.P(b, b, FL), F.P(-b, b, FL)];
+            S.face(slab);
+            S.loop(slab);
             for (let k = 0; k < 4; k++) {
                 const c = Math.cos(th + k * Math.PI / 2), s = Math.sin(th + k * Math.PI / 2), nn = [s, -c, 0];
                 if (!T.sees(nn)) continue;
                 const W = { at: (u, z) => [cx + c * u + s * a, cy + s * u - c * a, f * FL + z] };
-                if (T.shade && T.dark(nn)) inKind(S, SHADE, () => S.hatch([W.at(-a, 0), W.at(a, 0), W.at(a, FL - plate), W.at(-a, FL - plate)], [c, s, 0], T.gap));
-                else if (T.detail) inKind(S, GLASS, () => { for (let i = -2; i <= 2; i++) S.line([W.at(i * a / 3, 0), W.at(i * a / 3, FL - plate)]); });
+                if (T.shade && T.dark(nn)) inKind(S, SHADE, () => S.hatch([W.at(-a, 0), W.at(a, 0), W.at(a, FL), W.at(-a, FL)], [c, s, 0], T.gap));
+                else if (T.detail) inKind(S, GLASS, () => { for (let i = -2; i <= 2; i++) S.line([W.at(i * a / 3, 0), W.at(i * a / 3, FL)]); });
             }
         }
         const z = floors * FL;
@@ -880,24 +917,15 @@
         for (const W of ws) {
             if (!W.seen) continue;
             shopfront(T, W, 0, rng);
-            quiet(S, () => barnacles(T, W, FL + 0.5, h - 1.5, rng, T.p.clutter, L));
             if (rng.chance(T.p.signs)) {
                 const s = rng.chance(0.5) ? 0.8 : W.len - 0.8;
                 blade(T, W, s, Math.max(rng.range(5, 9), cover(L, W, s - 0.5, s + 0.5)), Math.min(h - 2, rng.range(14, 24)), rng);
             }
             for (let k = rng.int(0, Math.round(3 * T.p.signs)); k > 0; k--) pipe(T, W, rng.range(0.8, W.len - 0.8), rng.range(0, 6), h + 0.2, rng);
+            quiet(S, () => barnacles(T, W, FL + 0.5, h - 1.5, rng, T.p.clutter, L));
         }
-        const z = parapet(T, poly, h);
-        quiet(S, () => {
-            const x0 = L.x0 + 1.2, y0 = L.y0 + 1.2, x1 = L.x1 - 1.2, y1 = L.y1 - 1.2;
-            const k = Math.floor((x1 - x0) * (y1 - y0) / 45);
-            for (let i = 0; i < k; i++) {
-                const w = rng.range(2, 3.5), d = rng.range(2, 3), x = rng.range(x0, x1 - w), y = rng.range(y0, y1 - d);
-                if (rng.chance(0.55)) shack(T, x, y, z, w, d, rng);
-            }
-            aerials(T, x0, y0, x1, y1, z, Math.round((x1 - x0) * (y1 - y0) / 25), rng);
-        });
-        rooftop(T, L.x0 + 1, L.y0 + 1, L.x1 - 1, L.y1 - 1, z, rng, { tank: 0.7, sign: T.p.signs * 0.6 });
+        const z = parapet(T, poly, h), area = (L.x1 - L.x0 - 2) * (L.y1 - L.y0 - 2);
+        rooftop(T, L.x0 + 1, L.y0 + 1, L.x1 - 1, L.y1 - 1, z, rng, { tank: 0.7, sign: T.p.signs * 0.6, shacks: Math.round(area / 70), aerials: Math.round(area / 45) });
     }
 
     function monolith(T, L) {
@@ -912,7 +940,7 @@
             for (let i = 1; i < n; i++) S.line([W.at(W.len * i / n, crown + 0.3), W.at(W.len * i / n, crown + FL * 0.8 - 0.3)]);
         });
         const cap = prism(T, poly, crown + FL * 0.8, L.h);
-        for (const W of cap) if (W.seen) inKind(S, ARCH, () => S.hatch([W.at(0, crown + FL * 0.8), W.at(W.len, crown + FL * 0.8), W.at(W.len, L.h), W.at(0, L.h)], [0, 0, 1], W.dark ? 0.62 : 0.85));
+        for (const W of cap) if (W.seen) inKind(S, ARCH, () => S.hatch([W.at(0, crown + FL * 0.8), W.at(W.len, crown + FL * 0.8), W.at(W.len, L.h), W.at(0, L.h)], [0, 0, 1], W.dark ? 0.7 : 0.95));
         const z = parapet(T, poly, L.h, 0.5);
         if (rng.chance(0.3)) extras(T, L, ws, 0, crown, rng);
         quiet(S, () => { if (rng.chance(0.4)) mast(T, (x0 + x1) / 2, (y0 + y1) / 2, z, rng.range(10, 26), m * 0.35); });
@@ -965,7 +993,7 @@
             for (let u = -Lc; u <= Lj; u += 2) if (T.solids.hit(...P(u), z0 + hm - 2, id, id)) return true;
             for (const u of [d - 2.2, d, d + 2.2]) for (const v of [-0.6, 0.6]) {
                 const q = P(u, v);
-                if (T.solids.hit(...q, z0 + hm + hz - 2.4, id, id) || T.paths.some(([path, half, , hi]) => z0 + hm + hz - 2.4 < hi && path.dist(...q) < half + 2.2)) return true;
+                if (T.solids.hit(...q, z0 + hm + hz - 2.4, id, id) || T.paths.some(([path, half, hi]) => z0 + hm + hz - 2.4 < hi && path.dist(...q) < half + 2.2)) return true;
             }
             return false;
         };
@@ -1015,14 +1043,14 @@
             rings.push(verts.length);
             for (let i = 0; i < n; i++) verts.push([x + rr * Math.cos(off + TAU * i / n), y + rr * Math.sin(off + TAU * i / n), z + r * Math.sin(ph)]);
         }
-        const apex = verts.length;
-        verts.push([x, y, z + r]);
         faces.push(Array.from({ length: n }, (_, i) => i));
         strips(faces, rings, n);
-        const a = rings[m - 1];
-        for (let i = 0; i < n; i++) faces.push([a + i, a + (i + 1) % n, apex]);
+        // flat on top under a low lantern. Struts meeting at a point just filled it in black.
+        const a = rings[m - 1], ph = Math.PI / 2 * (m - 1) / m, zt = z + r * Math.sin(ph), rl = r * Math.cos(ph) * 0.5;
+        faces.push(Array.from({ length: n }, (_, i) => a + i));
         S.solid(verts, faces);
         shadeSolid(T, verts, faces, [x, y, z + r * 0.3]);
+        S.lathe(x, y, [[rl, zt], [rl, zt + 0.7]], T.segs(rl));
     }
 
     // Every other ring is turned half a step, so the strips between them are triangles
@@ -1075,8 +1103,7 @@
             if (W.len > 3 && rng.chance(0.7)) T.anchor(W.at(rng.range(0.5, W.len - 0.5), h - 0.8, 0.03), W.n, L.id);
         }
         const z = parapet(T, poly, h, 0.6);
-        rooftop(T, L.x0 + 1, L.y0 + 1, L.x1 - 1, L.y1 - 1, z, rng, { tank: 0.5, sign: T.p.signs * 0.5, people: 0.3, garden: 0.3, court: 0.2 });
-        quiet(S, () => aerials(T, L.x0 + 1, L.y0 + 1, L.x1 - 1, L.y1 - 1, z, rng.int(0, 4), rng));
+        rooftop(T, L.x0 + 1, L.y0 + 1, L.x1 - 1, L.y1 - 1, z, rng, { tank: 0.5, sign: T.p.signs * 0.5, people: 0.3, garden: 0.3, court: 0.2, aerials: rng.int(0, 4) });
     }
 
     // Car park: open decks with a dark gap between each, cars on the roof
@@ -1294,12 +1321,13 @@
 
     // Faceted bullet of a tower, triangulated like a diagrid
     function cone(T, x, y, R, H, rng) {
-        const S = T.S, n = 14, m = 12, rot = rng.range(0, TAU), verts = [], rings = [];
+        const S = T.S, n = 14, m = 12, rot = rng.range(0, TAU), verts = [], rings = [], zb = 5;
         const radius = t => R * Math.pow(Math.max(0, 1 - Math.pow(t, 1.9)), 0.62);
+        // from the top of the base ring up, so the struts end on the ring instead of stopping short inside it
         for (let j = 0; j < m; j++) {
             const t = 0.955 * j / (m - 1), r = radius(t), off = rot + (j % 2) * Math.PI / n;
             rings.push(verts.length);
-            for (let i = 0; i < n; i++) verts.push([x + r * Math.cos(off + TAU * i / n), y + r * Math.sin(off + TAU * i / n), H * t]);
+            for (let i = 0; i < n; i++) verts.push([x + r * Math.cos(off + TAU * i / n), y + r * Math.sin(off + TAU * i / n), zb + (H - zb) * t]);
         }
         const faces = [Array.from({ length: n }, (_, i) => i)];
         strips(faces, rings, n);
@@ -1308,14 +1336,10 @@
         S.solid(verts, faces);
         T.block([[x - R, y - R], [x + R, y + R]], H, -1);
         shadeSolid(T, verts, faces, [x, y, H * 0.3]);
-        const zt = H * 0.955, rt = radius(0.955);
+        const zt = zb + (H - zb) * 0.955, rt = radius(0.955);
         S.lathe(x, y, [[rt * 0.7, zt], [rt * 0.7, zt + 3], [rt * 0.4, zt + 6]], 12, false);
         quiet(S, () => mast(T, x, y, zt + 6, H * 0.16, 0));
-        S.lathe(x, y, [[R + 3, 0], [R + 3, 4.2], [R + 1, 5]], n, false, rot);
-        for (let i = 0; i < 4; i++) {
-            const a = rot + TAU * (i + 0.5) / 4;
-            T.anchor([x + (R + 3) * Math.cos(a), y + (R + 3) * Math.sin(a), 4], [Math.cos(a), Math.sin(a), 0], -1);
-        }
+        S.lathe(x, y, [[R + 3, 0], [R + 3, zb - 0.8], [R + 1, zb]], n, false, rot);
     }
 
     // TV tower: three splayed legs, a tapering shaft, a pod and an antenna
@@ -1430,6 +1454,8 @@
         S.solid(verts, faces, faces.map(() => 1));
         for (const u of [0.2, 0.4, 0.6, 0.8]) S.loop(ring(n * 2, (cc, ss) => at(u, Math.atan2(ss, cc), rad(u) + 0.08)));
         const cam = T.cam, side = [-s, c, 0], face = side[0] * cam.fx + side[1] * cam.fy > 0 ? Math.PI : 0;
+        // the sign band on the side we see, up a little from the waist
+        const th0 = face + (face ? -0.35 : 0.35), band = 0.42, u0 = 0.28, u1 = 0.78;
         // spaced by how far apart they land on paper across the hull
         if (T.shade) inKind(S, SHADE, () => {
             const o = cam.project(x, y, z), e = cam.project(x + c, y + s, z), el = Math.hypot(e[0] - o[0], e[1] - o[1]) || 1;
@@ -1441,13 +1467,12 @@
                 const q = cam.project(...at(0.5, th)), off = Math.floor(((q[0] - o[0]) * px + (q[1] - o[1]) * py) / T.gap);
                 if (off === last) continue;
                 last = off;
-                const pts = [];
-                for (let u = 0.08; u <= 0.93; u += 0.05) pts.push(at(u, th, rad(u) + 0.08));
+                // from past the fins, or past the sign band if the line would run through it
+                const d = Math.atan2(Math.sin(th - th0), Math.cos(th - th0)), pts = [];
+                for (let u = Math.abs(d) < band + 0.06 ? u1 + 0.03 : 0.23; u <= 0.93; u += 0.05) pts.push(at(u, th, rad(u) + 0.08));
                 S.line(pts);
             }
         });
-        // the sign band on the side we see, up a little from the waist
-        const th0 = face + (face ? -0.35 : 0.35), band = 0.42, u0 = 0.28, u1 = 0.78;
         const on = (u, th) => at(u, th, rad(u) + 0.25);
         inKind(S, SIGN, () => {
             for (const th of [th0 - band, th0 + band]) {
@@ -1467,11 +1492,14 @@
         });
         const F = turned(x, y, z, ang);
         S.box(F, -L * 0.1, -1.6, -rad(0.5) - 2.4, L * 0.08, 1.6, -rad(0.5) + 0.4);
+        // Fins rooted inside the hull, with the seam drawn along its curve. A straight root line
+        // dipped in and out of the hull and broke up the tail.
         for (const [dy, dz] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
             const P = (u, r) => F.P(-L * 0.5 + u, dy * r, dz * r);
-            const fin = [P(L * 0.04, rad(0.04) + 0.2), P(L * 0.2, rad(0.2) + 0.2), P(L * 0.1, rad(0.2) + R * 0.55), P(-0.5, rad(0.04) + R * 0.6)];
+            const fin = [P(L * 0.04, rad(0.04) * 0.5), P(L * 0.2, rad(0.2) * 0.5), P(L * 0.1, rad(0.2) + R * 0.55), P(-0.5, rad(0.04) + R * 0.6)];
             S.face(fin);
-            S.loop(fin);
+            S.line([fin[1], fin[2], fin[3], fin[0]]);
+            S.line(Array.from({ length: 7 }, (_, i) => P(L * (0.04 + 0.16 * i / 6), rad(0.04 + 0.16 * i / 6) + 0.05)));
         }
         T.solids.add(x - L / 2, y - L / 2, x + L / 2, y + L / 2, 1e4, -7);
     }
@@ -1552,9 +1580,19 @@
         for (const [a, b, n] of edges) {
             const len = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / len, uy = (b[1] - a[1]) / len;
             const at = (s, o) => [a[0] + ux * s - n[0] * o, a[1] + uy * s - n[1] * o];
-            for (let s = 4 + rng.range(0, 6); s < len - 3; s += rng.range(14, 20)) lamp(T, ...at(s, 0.6), n[0], n[1]);
+            const lamps = [];
+            for (let s = 4 + rng.range(0, 6); s < len - 3; s += rng.range(14, 20)) {
+                lamp(T, ...at(s, 0.6), n[0], n[1]);
+                lamps.push(s);
+            }
             if (wide[n[0] ? (n[0] < 0 ? 0 : 1) : (n[1] < 0 ? 2 : 3)]) {
-                for (let s = 7; s < len - 4; s += rng.range(8, 11)) tree(T, ...at(s, 1.2), 0.2, rng);
+                // near the curb so the crowns stay off the walls, and never right beside a lamp
+                for (let s = 7; s < len - 4; s += rng.range(8, 11)) {
+                    if (lamps.some(l => Math.abs(l - s) < 2.5)) continue;
+                    const q = at(s, 0.9);
+                    tree(T, ...q, 0.2, rng);
+                    T.trees.push(q);
+                }
             }
             quiet(S, () => {
                 for (let k = Math.round(len / 12 * p.traffic * rng.range(0.3, 1.2)); k > 0; k--) inKind(S, LIFE, () => kit.person(T, ...at(rng.range(1, len - 1), rng.range(0.7, 1.9)), 0.2, rng));
@@ -1728,40 +1766,51 @@
             const k = key(Math.floor(a.p[0] / 20), Math.floor(a.p[1] / 20));
             (cells.get(k) || cells.set(k, []).get(k)).push(a);
         }
+        // over a roof it has to clear the plant rooms and tanks, and nothing is strung across an
+        // elevated road or between its piers
         const blocked = (x, y, z, a, b) => {
-            if (T.solids.hit(x, y, z, a, b)) return true;
-            for (const [P, half, lo, hi] of paths) if (z > lo && z < hi && P.dist(x, y) < half) return true;
+            if (T.solids.hit(x, y, z - 4, a, b)) return true;
+            for (const [P, half, hi] of paths) if (z < hi && P.dist(x, y) < half) return true;
             return false;
         };
+        // more than a couple of cables into one point makes a spider's web, and a lamp only takes one
+        const full = q => (q.used || 0) > (q.id === -10 ? 0 : 1);
         S.kind = CABLE;
         for (const a of A) {
-            if (!rng.chance(T.p.cables)) continue;
+            if (!rng.chance(T.p.cables) || full(a)) continue;
             const i0 = Math.floor(a.p[0] / 20), j0 = Math.floor(a.p[1] / 20), cand = [];
             for (let i = i0 - 2; i <= i0 + 2; i++) for (let j = j0 - 2; j <= j0 + 2; j++) for (const b of cells.get(key(i, j)) || []) {
-                if (b === a || b.id === a.id) continue;
-                const dx = b.p[0] - a.p[0], dy = b.p[1] - a.p[1], L = Math.hypot(dx, dy);
-                if (L < 6 || L > 45 || Math.abs(b.p[2] - a.p[2]) > L * 0.35 + 2 || b.used > 1) continue;
+                if (b === a || b.id === a.id || full(b)) continue;
+                const dx = b.p[0] - a.p[0], dy = b.p[1] - a.p[1], L = Math.hypot(dx, dy), lamp = a.id === -10 || b.id === -10;
+                // Short and near level. Long ones dropping from a tower to the street read as stray lines.
+                if (L < 6 || L > (lamp ? 18 : 36) || Math.abs(b.p[2] - a.p[2]) > L * 0.18 + 1.5) continue;
                 if (T.river && Math.min(a.p[1], b.p[1]) < T.river.yb && Math.max(a.p[1], b.p[1]) > T.river.ya) continue;
                 if (dx * a.n[0] + dy * a.n[1] < 0.3 * L || -dx * b.n[0] - dy * b.n[1] < 0.3 * L) continue;
                 cand.push(b);
             }
-            if (!cand.length) continue;
-            const b = rng.pick(cand), L = Math.hypot(b.p[0] - a.p[0], b.p[1] - a.p[1]);
-            // more than a couple of cables into one point makes a spider's web
-            if (a.used > 1) continue;
-            a.used = (a.used || 0) + 1;
-            b.used = (b.used || 0) + 1;
-            const wires = rng.weighted([[3, 1], [2, 2], [1, 3]]), sag0 = L * rng.range(0.04, 0.1);
-            for (let w = 0; w < wires; w++) {
-                const sag = sag0 * (1 + 0.45 * w);
-                const at = f => [a.p[0] + (b.p[0] - a.p[0]) * f, a.p[1] + (b.p[1] - a.p[1]) * f, a.p[2] + (b.p[2] - a.p[2]) * f - 4 * sag * f * (1 - f)];
-                // tested every meter, finer than it's drawn, or it cuts through building corners
-                let ok = true;
-                for (let k = 1, n = Math.ceil(L); k < n && ok; k++) {
-                    const q = at(k / n);
-                    if (q[2] < 2.5 || blocked(q[0], q[1], q[2], a.id, b.id)) ok = false;
+            // a few tries at a partner the wires can reach without hitting anything
+            for (const b of rng.shuffle(cand).slice(0, 3)) {
+                const L = Math.hypot(b.p[0] - a.p[0], b.p[1] - a.p[1]), lamp = a.id === -10 || b.id === -10;
+                const wires = lamp ? 1 : rng.weighted([[3, 1], [2, 2], [1, 3]]), sag0 = L * rng.range(0.04, 0.1);
+                let hung = 0;
+                for (let w = 0; w < wires; w++) {
+                    const sag = sag0 * (1 + 0.45 * w);
+                    const at = f => [a.p[0] + (b.p[0] - a.p[0]) * f, a.p[1] + (b.p[1] - a.p[1]) * f, a.p[2] + (b.p[2] - a.p[2]) * f - 4 * sag * f * (1 - f)];
+                    // Tested every meter, finer than it's drawn, or it cuts through building corners.
+                    // Past the first few meters it has to clear the buildings it hangs from as well.
+                    let ok = true;
+                    for (let k = 1, n = Math.ceil(L); k < n && ok; k++) {
+                        const q = at(k / n), d = L * k / n, own = d < 3 || L - d < 3;
+                        if (q[2] < 5.5 || blocked(q[0], q[1], q[2], own ? a.id : -99, own ? b.id : -99)) ok = false;
+                    }
+                    if (!ok) continue;
+                    S.line(Array.from({ length: 13 }, (_, k) => at(k / 12)));
+                    hung++;
                 }
-                if (ok) S.line(Array.from({ length: 13 }, (_, k) => at(k / 12)));
+                if (!hung) continue;
+                a.used = (a.used || 0) + 1;
+                b.used = (b.used || 0) + 1;
+                break;
             }
         }
     }
@@ -1791,7 +1840,7 @@
                 S.box(F0, box[0] - 0.15, box[1] - 0.15, z + 3.4, box[2] + 0.15, box[3] + 0.15, z + 3.8);
                 for (const W of ws) {
                     if (!W.seen || W.len < 5) continue;
-                    inKind(S, GLASS, () => {
+                    if (!(T.shade && W.dark)) inKind(S, GLASS, () => {
                         S.line([W.at(0, z + 1), W.at(W.len, z + 1)]);
                         S.line([W.at(0, z + 2.9), W.at(W.len, z + 2.9)]);
                         for (let s = 1.5; s < W.len - 0.5; s += 1.5) S.line([W.at(s, z + 1), W.at(s, z + 2.9)]);
@@ -1823,15 +1872,26 @@
         inKind(S, WATER, () => {
             for (let x = x0 + rng.range(0, 6); x < x1; x += rng.range(4, 9)) S.line([[x, yb - 0.02, ZW + 0.6], [x + rng.range(2, 5), yb - 0.02, ZW + 0.6]]);
         });
-        // railings along both edges, then trees, lamps and people on the promenades
+        // the rail stops at each bridge parapet, where the road goes through
+        const gaps = R.bridges.map(([bx, bh]) => [bx - bh, bx + bh]).sort((a, b) => a[0] - b[0]).concat([[x1, x1]]);
+        // nothing stands round a highway pier
+        const open = (x, y, pad) => offBridge(R, x, pad) && !T.piers.some(q => Math.hypot(q[0] - x, q[1] - y) < 3.5);
+        // railings along both edges, then lamps, trees and people on the promenades
         for (const [ye, side] of [[ya - 0.3, -1], [yb + 0.3, 1]]) {
-            S.line([[x0, ye, 1.25], [x1, ye, 1.25]]);
+            let from = x0;
+            for (const [g0, g1] of gaps) {
+                if (g0 > from) S.line([[from, ye, 1.25], [g0, ye, 1.25]]);
+                from = Math.max(from, g1);
+            }
             for (let x = Math.ceil(x0 / 2.5) * 2.5; x < x1; x += 2.5) if (offBridge(R, x, 0.3)) S.line([[x, ye, 0.2], [x, ye, 1.25]]);
-            const mid = ye + side * (PROM / 2 - 0.3);
-            for (let x = x0 + rng.range(0, 9); x < x1; x += rng.range(8, 11)) if (offBridge(R, x, 3)) tree(T, x, mid, 0.2, rng);
-            for (let x = x0 + rng.range(0, 18); x < x1; x += rng.range(16, 22)) if (offBridge(R, x, 1.5)) lamp(T, x, ye + side * 0.4, 0, -side);
+            const mid = ye + side * (PROM / 2 - 0.3), lamps = [];
+            for (let x = x0 + rng.range(0, 18); x < x1; x += rng.range(16, 22)) if (open(x, ye + side * 0.4, 1.5)) {
+                lamp(T, x, ye + side * 0.4, 0, -side);
+                lamps.push(x);
+            }
+            for (let x = x0 + rng.range(0, 9); x < x1; x += rng.range(8, 11)) if (open(x, mid, 3) && !lamps.some(l => Math.abs(l - x) < 2.5)) tree(T, x, mid, 0.2, rng);
             quiet(S, () => {
-                for (let x = x0 + rng.range(0, 30); x < x1; x += rng.range(20, 40)) if (offBridge(R, x, 2) && rng.chance(0.5)) inKind(S, ARCH, () => kit.bench(T, x, ye + side * 1.4, 0.2, side > 0 ? 3 : 1));
+                for (let x = x0 + rng.range(0, 30); x < x1; x += rng.range(20, 40)) if (open(x, ye + side * 1.4, 2) && rng.chance(0.5)) inKind(S, ARCH, () => kit.bench(T, x, ye + side * 1.4, 0.2, side > 0 ? 3 : 1));
                 for (let k = Math.round((x1 - x0) / 9 * T.p.traffic); k > 0; k--) {
                     const x = rng.range(x0, x1);
                     if (offBridge(R, x, 1)) inKind(S, LIFE, () => kit.person(T, x, ye + side * rng.range(0.8, PROM - 0.8), 0.2, rng));
@@ -1876,8 +1936,8 @@
                 S.line([[xs, ya + dy, zp + ht], ...zig.slice(1)]);
                 for (let k = 2; k < n - 1; k += 2) S.line([[xs, ya + k * dy, zp], [xs, ya + k * dy, zp + ht]]);
             }
+            // struts across the top. Diagonals between them as well made a tangle with the two trusses.
             for (let k = 1; k < n; k++) S.line([[x - h + 0.2, ya + k * dy, zp + ht], [x + h - 0.2, ya + k * dy, zp + ht]]);
-            for (let k = 1; k < n - 1; k++) S.line([[x - h + 0.2, ya + k * dy, zp + ht], [x + h - 0.2, ya + (k + 1) * dy, zp + ht]]);
         } else if (style === 'suspension') {
             // two towers standing in the water near the banks, main cables slung between
             const ht = geo.clamp(span * 0.32, 14, 26), ys = [ya + span * 0.16, yb - span * 0.16], zt = zd + ht;
@@ -1908,8 +1968,9 @@
             T.block([[x - h - 1.4, ym - 0.9], [x + h + 1.4, ym + 0.9]], zt, -6);
             S.box(F0, x - 0.9, ym - 0.7, zt, x + 0.9, ym + 0.7, zt + 1.6);
             inKind(S, CABLE, () => {
-                for (const s of [-1, 1]) for (const d of [-1, 1]) for (let k = 1; k <= 7; k++) {
-                    const y = ym + d * (span / 2 + 2) * k / 7, z = zt - 0.6 - k * 0.55;
+                // spread down the pylon, or the fan closes up into a black wedge at the top
+                for (const s of [-1, 1]) for (const d of [-1, 1]) for (let k = 1; k <= 6; k++) {
+                    const y = ym + d * (span / 2 + 2) * k / 6, z = zt - 0.6 - k * 1.1;
                     S.line([[x + s * 0.4 * (1 - z / zt), ym + d * 0.4, z], [x + s * (h - 0.2), y, zp]]);
                 }
             });
@@ -2156,7 +2217,7 @@
                 S, cam, p, k, B, W, H, seed, detail: p.detail, sees: n => cam.facing(n[0], n[1], n[2] || 0), segs: r => segments(r, k),
                 picket: Math.max(0.45, 0.75 / k), tones: p.shade ? { lit: ROOF, dark: SHADE } : null, hLit: p.gap, hDark: p.gap, gap: p.gap, shade: p.shade,
                 light, lit: n => light(n) >= 0.02, dark: n => light(n) < 0.02, anchors: [], solids: new Solids(), waterKind: WATER, lm, piers: [], paths: [], cranes: [],
-                noise: ctx.noise, churches: 0, pads: [], river: null,
+                noise: ctx.noise, churches: 0, pads: [], river: null, trees: [],
             };
             T.anchor = (q, n, id) => T.anchors.push({ p: q, n, id });
             T.pad = (x, y, z, r) => T.pads.push([x, y, z, r]);
@@ -2247,8 +2308,9 @@
 
             // elevated roads before the streets, so the cars below keep clear of the highway piers
             const paths = T.paths;
-            if (hw) { highway(T, hw, rng, mono); paths.push([hw, 8, 7, 14]); }
-            if (mono) { monorail(T, mono, 21, hw, rng); paths.push([mono, 2.5, 16, 25]); }
+            // [path, half width, top] for the cables and cranes to keep clear of
+            if (hw) { highway(T, hw, rng, mono); paths.push([hw, 8, 14]); }
+            if (mono) { monorail(T, mono, 21, hw, rng); paths.push([mono, 2.5, 25]); }
 
             for (let i = i0; i <= i1 + 1; i++) for (let j = j0; j <= j1; j++) {
                 if (lm && i === 0 && (j === -1 || j === 0) || wet(j)) continue;
@@ -2276,8 +2338,11 @@
                 // over whichever helipad sits nearest the middle of the page, if it's clear above
                 const hrng = new PG.RNG(hash(seed, 37)), mid = q => Math.hypot(q[0] - W / 2, q[1] - H * 0.45);
                 const pads = T.pads.map(q => [q, cam.project(q[0], q[1], q[2])]).filter(([, q]) => q[0] > W * 0.1 && q[0] < W * 0.9 && q[1] > H * 0.15 && q[1] < H * 0.9).sort((a, b) => mid(a[1]) - mid(b[1]));
+                // a pad in front of the landmark or behind it would draw the helicopter across it
+                const base = lm && cam.project(0, 0, 0), over = q => lm && Math.abs(q[0] - base[0]) < (lm.R + 10) * k && q[1] < base[1] + (lm.R + 10) * k * se;
                 for (const [[x, y, z]] of pads) {
                     const hz = z + hrng.range(10, 16), hx = x + hrng.range(-4, 4), hy = y + hrng.range(-4, 4);
+                    if (over(cam.project(hx, hy, hz))) continue;
                     let top = 0;
                     for (let dx = -8; dx <= 8; dx += 4) for (let dy = -8; dy <= 8; dy += 4) top = Math.max(top, T.solids.top(hx + dx, hy + dy));
                     if (top > hz - 5) continue;

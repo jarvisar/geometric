@@ -35,9 +35,12 @@
         tidal: profile(3, 'Blue water and black land. More pens add the cut block, lowland and hill bands, red survey marks and a lighter sea surface.', [BLUE, INK, BROWN, GREEN, RED, CYAN, GOLD, PURPLE]),
         cosmic: profile(3, 'Dark outlines, a warm sun and sunsets, and cool skies and water. More pens split off sand, distant ranges, plants, crystals and rock.', [INK, RED, BLUE, GOLD, PURPLE, GREEN, CYAN, BROWN]),
         skyline: profile(5, 'Black architecture, red signs and roofs, blue shade, shadows and water, yellow pads, markings, taxis and cranes, green trees. More pens separate glass, traffic and streets.'),
+        stadium: profile(5, 'Black structure, red roofs and seats, blue shadows and seats, gold lights, flags and seats, green grass and trees. More pens separate people, glass and the track.'),
+        megastructure: profile(1, 'One black pen, like an old plotter drawing. More pens pick out the fins and grilles, then the slab stacks, the studs and teeth, the ducts and frames, loose blocks, the plinth and every other tier. Hatching takes the second pen when it is on.', [INK, RED, BLUE, GOLD, GREEN, PURPLE, BROWN, CYAN]),
         flowfield: profile(4, 'Color follows flow direction, position or patches of noise.', cool),
         ridgelines: profile(4, 'Colors separate near and distant ridges.', cool),
         topo: profile(4, 'Elevation bands share the colors. Index contours stay on the first pen.', [INK, GREEN, BROWN, BLUE, GOLD, RED, PURPLE, CYAN]),
+        wireframe: profile(4, 'Colors run from the lowest ground to the peaks, from near to far, or follow the direction of the lines.', [BLUE, RED, PURPLE, GOLD, CYAN, BROWN, GREEN, INK]),
         chladni: profile(4, 'Nodal lines anchor the drawing. Colors distinguish vibration bands on either side.', [INK, BLUE, RED, CYAN, GOLD, PURPLE, GREEN, BROWN]),
         fieldlines: profile(4, 'Source fans and potential levels form color families.', [INK, BLUE, RED, CYAN, PURPLE, GOLD, GREEN, BROWN]),
         moire: profile(3, 'Each line family gets a palette, split into broad bands as more pens are added.', jewel, 'families'),
@@ -59,7 +62,7 @@
         castle: profile(5, 'Black masonry, red roofs and banners, blue shadows and moat, gold awnings and heraldry, green trees and fields. More pens separate people, the moat and timber.'),
         fairground: profile(4, 'Rides, tents and shadows use separate inks. More pens separate plants, people, water and paths.'),
         trainyard: profile(5, 'Black trains and buildings, red roofs and paint, blue shadows, gold trim and brown track. More pens separate plants, people and steam.'),
-        moonbase: profile(6, 'Black structures, red pressure collars, blue shadows and solar cells, gold equipment, green gardens and light blue glazing. Seven pens separate astronauts; eight add brown lunar dust.'),
+        moonbase: profile(6, 'Black structures, red pressure collars, blue shadows and solar cells, gold equipment, green gardens and light blue glazing. Seven pens separate astronauts, and eight add brown dust. On Mars the ground is drawn with the red pen until the eighth pen takes it over.'),
         alpine: profile(4, 'Dark architecture, red roofs, blue shade and gold details. More pens separate fir woods, people, water and timber.'),
         image: profile(3, 'Colors follow image darkness in every drawing mode.', [BLUE, PURPLE, INK, RED, BROWN, GREEN, CYAN, GOLD]),
     };
@@ -75,6 +78,12 @@
         [INK, RED, BLUE, GOLD, GREEN, PURPLE, CYAN, BROWN],
     ];
     const scene = (maps, groups, roles) => ({ maps, groups, roles });
+    const moonbase = [
+        ...illustrated.slice(0, 5),
+        [INK, RED, BLUE, GOLD, GREEN, INK, CYAN, INK],
+        [INK, RED, BLUE, GOLD, GREEN, PURPLE, CYAN, INK],
+        illustrated[7],
+    ];
     P.scenes = {
         // Water shares the shade pen like Harbor, and church roofs get the red of Town and Harbor's roofs
         skyline: scene([
@@ -100,12 +109,10 @@
         harbour: scene(illustrated, [0, 1, 2, 3, 0, 0, 2, 0], ['Structure', 'Roofs', 'Shadows', 'Awnings', 'Plants', 'Figures', 'Water', 'Wood']),
         castle: scene(illustrated, [0, 1, 2, 3, 4, 5, 6, 7], ['Masonry & buildings', 'Roofs & banners', 'Shadows', 'Awnings & heraldry', 'Trees & fields', 'People & horses', 'Moat', 'Timber & tracks']),
         fairground: scene(illustrated, [0, 1, 2, 3, 0, 0, 2, 0], ['Structure', 'Tents', 'Shadows', 'Rides & flags', 'Plants', 'People', 'Water', 'Paths']),
-        moonbase: scene([
-            ...illustrated.slice(0, 5),
-            [INK, RED, BLUE, GOLD, GREEN, INK, CYAN, INK],
-            [INK, RED, BLUE, GOLD, GREEN, PURPLE, CYAN, INK],
-            illustrated[7],
-        ], [0, 1, 2, 3, 4, 5, 6, 7], ['Structures & tunnels', 'Pressure collars & markings', 'Shadows & solar cells', 'Lander & equipment', 'Biosphere gardens', 'Astronauts', 'Glazing', 'Regolith & tracks']),
+        moonbase: scene(moonbase, [0, 1, 2, 3, 4, 5, 6, 7], ['Structures & tunnels', 'Pressure collars & markings', 'Shadows & solar cells', 'Lander & equipment', 'Biosphere gardens', 'Astronauts', 'Glazing', 'Regolith & tracks']),
+        // Moon Base on Mars. It's the red planet, so the ground shares the red pen from two pens up, until the eighth pen gives it brown.
+        marsbase: scene(moonbase.map((map, i) => i > 0 && i < 7 ? [...map.slice(0, 7), RED] : map), [0, 1, 2, 3, 4, 5, 6, 7],
+            ['Structures & tunnels', 'Pressure collars & markings', 'Shadows & solar cells', 'Lander & equipment', 'Biosphere gardens', 'Astronauts', 'Glazing', 'Dust, dunes & tracks']),
         // Track is most of the drawing, so it gets its own pen before plants and people do
         trainyard: scene([
             [INK, INK, INK, INK, INK, INK, INK, INK],
@@ -117,6 +124,17 @@
             [INK, RED, BLUE, GOLD, GREEN, PURPLE, BLUE, BROWN],
             [INK, RED, BLUE, GOLD, GREEN, PURPLE, CYAN, BROWN],
         ], [0, 1, 2, 3, 4, 5, 6, 7], ['Structure & trains', 'Roofs & paint', 'Shadows', 'Signals & trim', 'Plants', 'People', 'Steam & water', 'Track']),
+        // The running track is red until brown has a pen of its own, and takes the streets with it
+        stadium: scene([
+            [INK, INK, INK, INK, INK, INK, INK, INK, INK],
+            [INK, RED, INK, RED, INK, INK, INK, RED, INK],
+            [INK, RED, BLUE, RED, INK, INK, BLUE, RED, INK],
+            [INK, RED, BLUE, GOLD, INK, INK, BLUE, RED, INK],
+            [INK, RED, BLUE, GOLD, GREEN, INK, BLUE, RED, INK],
+            [INK, RED, BLUE, GOLD, GREEN, PURPLE, BLUE, RED, INK],
+            [INK, RED, BLUE, GOLD, GREEN, PURPLE, CYAN, RED, INK],
+            [INK, RED, BLUE, GOLD, GREEN, PURPLE, CYAN, BROWN, BROWN],
+        ], [0, 1, 2, 3, 4, 5, 6, 7, 8], ['Structure', 'Roofs & seats', 'Shadows & seats', 'Lights, flags & seats', 'Grass & trees', 'People & players', 'Glass & water', 'Track & clay', 'Streets & paths']),
         alpine: scene(illustrated, [0, 1, 2, 3, 0, 0, 2, 0], ['Architecture & rock', 'Roofs & trains', 'Shade & snow', 'Shutters & balconies', 'Fir woods', 'People & fliers', 'Water', 'Timber & paths']),
     };
 
@@ -218,13 +236,15 @@
         PG.iso.renderPens(S, config.maps[P.count(pens) - 1], config.groups).forEach((paths, pen) => layers.push({ pen, paths }));
         return { layers };
     };
+    // A design can pick its scene maps from its params, like Moon Base does for Mars
+    const sceneOf = (def, p) => P.scenes[def.penScene ? def.penScene(p) : def.id];
     P.slots = (def, p) => {
-        const n = P.count(p.pens), scene = P.scenes[def.id];
+        const n = P.count(p.pens), scene = sceneOf(def, p);
         const order = P.designs[def.id]?.order || [INK, RED, BLUE, GREEN, GOLD, PURPLE, CYAN, BROWN];
         return scene ? [...new Set(scene.maps[n - 1])] : n === 1 ? [INK] : order.slice(0, n);
     };
     P.roles = (def, p) => {
-        const scene = P.scenes[def.id], roles = {};
+        const scene = sceneOf(def, p), roles = {};
         if (scene) scene.maps[P.count(p.pens) - 1].forEach((pen, i) => (roles[pen] ||= []).push(scene.roles[i]));
         else P.slots(def, p).forEach((pen, i) => { roles[pen] = [`Color ${i + 1}`]; });
         return roles;

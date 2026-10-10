@@ -1,5 +1,5 @@
 const assert = (ok, message) => { if (!ok) throw new Error(message); };
-const ids = ['ribbons', 'stairwell', 'tidal', 'cosmic', 'skyline'];
+const ids = ['ribbons', 'stairwell', 'tidal', 'cosmic', 'skyline', 'megastructure', 'stadium'];
 await open('index.html');
 // scenes are hidden from the gallery until unlocked
 await evaluate(`localStorage.setItem('plotter-geometry:scenes:v1', 'true')`);
@@ -22,7 +22,7 @@ const setup = async () => evaluate(`
     URL.createObjectURL = blob => { if (blob.type !== 'text/javascript') __downloads.push(blob); return create(blob); };
     HTMLAnchorElement.prototype.click = function () {};
 `);
-const modes = { ribbons: ['form', 'rosette'], stairwell: ['rail', 'none'], tidal: ['style', 'contours'], cosmic: ['layout', 'single'], skyline: ['landmark', 'none'] };
+const modes = { ribbons: ['form', 'rosette'], stairwell: ['rail', 'none'], tidal: ['style', 'contours'], cosmic: ['layout', 'single'], skyline: ['landmark', 'none'], megastructure: ['shade', 'left'], stadium: ['type', 'bowl'] };
 await setup();
 for (const id of ids) {
     await evaluate(`plotterApp.select('${id}'); plotterApp.resetParams(); plotterApp.regenerate()`);
@@ -56,7 +56,7 @@ for (const id of ids) {
     log(`${id}: controls, dependent fields, reload, reset, 1/8 pens and SVG passed`);
 }
 await click('#designBtn');
-assert(await evaluate(`['ribbons', 'stairwell', 'tidal', 'cosmic', 'skyline'].every(id => document.querySelector('#galleryBody').textContent.includes(PG.byId[id].name))`), 'New designs missing from gallery');
+assert(await evaluate(`${JSON.stringify(ids)}.every(id => document.querySelector('#galleryBody').textContent.includes(PG.byId[id].name))`), 'New designs missing from gallery');
 await evaluate(`document.querySelector('#gallerySearch').value = 'cosmic'; document.querySelector('#gallerySearch').dispatchEvent(new Event('input', {bubbles: true}));`);
 await sleep(200);
 await key('Enter');

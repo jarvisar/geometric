@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const src = path.resolve(__dirname, '../src');
 const load = file => vm.runInThisContext(fs.readFileSync(path.join(src, file), 'utf8'), { filename: file });
 ['core', 'pens', 'noise', 'contours', 'iso', 'isokit', 'optimize', 'pipeline', 'export'].forEach(n => load(`lib/${n}.js`));
-const ids = ['ribbons', 'stairwell', 'tidal', 'cosmic', 'skyline', 'trainyard'];
+const ids = ['ribbons', 'stairwell', 'tidal', 'cosmic', 'skyline', 'trainyard', 'megastructure', 'wireframe', 'stadium'];
 let label;
 const finite = points => {
     for (const point of points) assert.ok(point.every(Number.isFinite), `${label}: invalid coordinate ${point}`);
@@ -52,6 +52,18 @@ for (const id of ids) {
         cases.push([`small dense ${layout}`, { ...defaults, layout, panels: 40, cols: 5, rows: 8, gutter: 8, detail: 1, stars: 2, spacing: 0.35 }, { paperW: 105, paperH: 148 }]);
     }
     if (id === 'skyline') cases.push(['tall dense city', { ...defaults, scale: 0.7, block: 36, height: 120, variety: 1, elev: 25, bridges: 1, cables: 1, clutter: 1, signs: 1, parks: 0 }, { paperW: 420, paperH: 594 }]);
+    if (id === 'megastructure') for (const shade of ['left', 'right']) {
+        cases.push([`fine dense ${shade}`, { ...defaults, shade, cell: 0.8, density: 1, stacks: 1, fins: 1, panels: 1, tiers: 7, setback: 1, shadeGap: 0.5, pens: 8 }, { paperW: 420, paperH: 594 }]);
+        cases.push([`squat ${shade} on a card`, { ...defaults, shade, height: 0.5, skew: 0.4, cell: 2.5, tiers: 7, yaw: 20, elev: 60, mirror: true }, { paperW: 50, paperH: 40, margin: 3 }]);
+    }
+    if (id === 'wireframe') for (const frame of ['page', 'tile']) {
+        cases.push([`fine steep ${frame}`, { ...defaults, frame, cells: 100, pattern: 'cross', relief: 1, terraces: 10, scale: 0.15, irregular: 1, fray: 1, pitch: 20, persp: 1, yaw: 45, pens: 8 }, { paperW: 420, paperH: 594 }]);
+        cases.push([`coarse ${frame} on a card`, { ...defaults, frame, cells: 12, terrain: 'ripples', sea: 0.7, pitch: 90, yaw: -90, solid: false, penMode: 'direction' }, { paperW: 50, paperH: 40, margin: 3 }]);
+    }
+    if (id === 'stadium') for (const type of ['ground', 'bowl', 'oval', 'horseshoe', 'ballpark', 'cricket', 'bullring']) {
+        cases.push([`fine dense ${type}`, { ...defaults, type, size: 1.4, rowGap: 0.6, grassGap: 0.6, roofGap: 0.4, shadowGap: 0.3, people: 1, trees: 1, cars: 1, block: 40, blimp: true, pens: 8 }, { paperW: 420, paperH: 594 }]);
+        cases.push([`low ${type} on a card`, { ...defaults, type, size: 0.7, yaw: 20, elev: 30, zoom: 2 }, { paperW: 50, paperH: 40, margin: 3 }]);
+    }
     let worst = 0;
     for (const [name, params, changes] of cases) {
         label = `${id}: ${name}`;

@@ -5,24 +5,28 @@
  *
  * Everything is planned in meters first and the camera is fitted round the
  * moat afterwards. The wall follows a rectangle with some corners cut off,
- * so every stretch of it is square to the streets or at 45 degrees. Round
- * towers stand at the corners and along the walls, the gatehouses face the
- * camera, and the castle takes the back corner so its keep has the whole
- * town in front of it. Inside, the streets are a grid like a planned bastide
- * town: the gate streets meet at the market square, the church has a block
- * next to it, and the other blocks are rows of narrow houses round a yard.
- * Outside there are roads out of the gates with cottages along them, a
- * patchwork of fields and woods, a post mill and a tournament.
+ * so every stretch of it is square to the streets or at 45 degrees. Towers
+ * stand at the corners and along the walls, the gatehouses face the camera,
+ * and the castle takes the back corner or the one on the right, with the
+ * town in front of its keep. Inside, the streets are a grid like a planned
+ * bastide town: the gate streets meet at the market square, the church has
+ * a block next to it, and the other blocks are rows of narrow houses round
+ * a yard. Outside there are roads out of the gates with cottages along
+ * them, a patchwork of fields and woods, a post mill and a tournament.
  *
- * Round towers are lathes and frustums, curtain walls are prisms and the
- * battlements are rows of small boxes. The church, market hall and terraces
+ * The seed also picks what kind of town it is (see character): the shape
+ * of the walls, round or square towers and how tall they are, and a hall
+ * or a belfry on the square.
+ *
+ * Round towers are lathes and frustums, square ones boxes, curtain walls
+ * are prisms and the battlements are rows of small boxes. The church, market hall and terraces
  * come from isokit. The moat is Harbor's water: the walls throw their
  * shadows onto it and ripple lines follow the banks.
  */
 (function () {
     'use strict';
     const { geo, TAU } = PG;
-    const { hash, makeCamera, frame, card, ring, Scene, segments } = PG.iso;
+    const { hash, makeCamera, frame, card, ring, Scene, segments, BOX } = PG.iso;
     const kit = PG.isokit;
     const {
         FLOOR, wall, pane, door, windows, gableRoof, hipRoof, chimney, dormer, inKind, withKind, outward, shade,
@@ -38,6 +42,25 @@
     const WALL = 2.6;             // curtain wall thickness
     const LANE = 4;               // lane round the inside of the walls
     const SUN_TURN = geo.rad(65); // as Harbor, shadows fall along +x turned this far towards -y
+    // Lines closer than this on paper (mm) run together under a 0.35 mm pen.
+    // Small details are spaced by it, and left out where they can't be.
+    const FINE = 0.7;
+    const UP = [0, 0, 1];
+
+    // Paper distance (mm) between two lines along world vector a that are
+    // world vector b apart
+    function apart(T, a, b) {
+        const c = T.cam, on = v => [v[0] * c.rx + v[1] * c.ry, (v[0] * c.fx + v[1] * c.fy) * c.se + v[2] * c.ce];
+        const p = on(a), q = on(b);
+        return (c.k * Math.abs(p[0] * q[1] - p[1] * q[0])) / (Math.hypot(p[0], p[1]) || 1);
+    }
+
+    // The same for a wall's at(s, c): mm between uprights a meter apart
+    // (pu) and between level lines a meter apart (pz)
+    function wallScale(T, at) {
+        const a = at(0, 0), b = at(1, 0), u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        return { pu: Math.max(apart(T, UP, u), 1e-6), pz: Math.max(apart(T, u, UP), 1e-6) };
+    }
 
     // ------------------------------------------------------------------
     // Flat geometry. Polygons run anticlockwise, x right and y up.
@@ -152,12 +175,45 @@
     // The plan: walls, towers, gates, the castle and the street grid, in meters
     // ------------------------------------------------------------------
 
-    function plan(p, rng) {
+    // What gives one town a different character from the next: its outline,
+    // where the castle stands, the build of its towers and what it has in the
+    // middle. These come from a stream of their own and are all drawn whatever
+    // the settings, so choosing one from its menu leaves the others, and the
+    // streets and houses, as they were.
+    function character(p, rng) {
+        const any = (v, pick) => (v === 'any' ? pick : v);
+        const right = rng.chance(0.45), shape = rng.weighted([[3, 'ragged'], [3, 'long'], [2, 'octagon'], [0.7, 'square']]);
+        const towers = rng.weighted([[5, 'round'], [3, 'square'], [2, 'mixed']]);
+        return {
+            turn: !!p.castle && any(p.castleAt, right ? 'right' : 'back') === 'right',
+            shape: any(p.shape, shape), towers: any(p.towers, towers),
+            // how far the towers stand above the walls, and how steep their roofs are
+            lofty: rng.range(0.8, 1.5), spire: rng.range(1.8, 2.7),
+            stretch: rng.range(0, 1), sideways: rng.chance(0.5), belfry: rng.chance(0.35), orchard: rng.chance(0.45),
+        };
+    }
+
+    function plan(p, rng, look) {
         const t = WALL, sw = p.street, main = p.street + 2;
-        const asp = rng.range(0.9, 1.1), A = (p.size / 2) * asp, B = p.size / 2 / asp, m = Math.min(A, B);
+        // The castle stands in the back corner or the one on the right. For the
+        // right the town is planned just the same and given a quarter turn at
+        // the end, so until then a few things have to ask which walls will
+        // face us.
+        const turn = look.turn;
+        const world = ([x, y]) => (turn ? [y, -x] : [x, y]);
+        // The outline: about square with its corners cut off by different amounts,
+        // by the same amount all round, or not at all, or a town up to half as
+        // long again one way as the other. A small town is stretched less, to
+        // leave room in front of the castle.
+        const shape = look.shape;
+        const stretch = shape === 'long' ? geo.lerp(1.2, geo.clamp(p.size / 65, 1.25, 1.45), look.stretch) : rng.range(0.9, 1.1);
+        const asp = shape === 'long' && look.sideways ? 1 / stretch : stretch;
+        const A = (p.size / 2) * asp, B = p.size / 2 / asp, m = Math.min(A, B);
         // cut corners, leaving every wall long enough for a gate or a couple of towers
+        const even = shape === 'octagon' ? Math.min(m - 24, p.corners * m * rng.range(0.45, 0.65)) : 0;
         const cut = () => {
-            const v = rng.chance(0.85) ? Math.min(m - 24, p.corners * m * rng.range(0.4, 0.75)) : 0;
+            if (shape === 'square') return 0;
+            const v = shape === 'octagon' ? even : rng.chance(0.85) ? Math.min(m - 24, p.corners * m * rng.range(0.4, 0.75)) : 0;
             return v < 5 ? 0 : v;
         };
         // the back corner stays square for the castle
@@ -197,6 +253,7 @@
             const type = p.keep === 'any' ? rng.weighted([[3, 'turrets'], [2, 'square'], [2, 'round']]) : p.keep;
             const h = LAND + rng.range(20, 24);
             castle.keep = { x: kx, y: ky, w: kw, h, type, top: h + (type === 'square' ? 5 : kw * 0.95) };
+            castle.local = { ward, kx, ky };
         }
 
         // The front gate lines up with the castle gate when it can, so the main
@@ -208,11 +265,13 @@
         if (castle && Math.abs(xg - xL) < sw + 9) xg = xL - sw - 9 > fx0 ? xL - sw - 9 : xL + sw + 9;
         gates.push({ e: front, s: xg - front.a[0], x: xg, y: front.a[1] });
         let yg = null;
-        if (p.gate2 && left) {
-            const ly0 = left.b[1] + 16, ly1 = Math.min(left.a[1] - 16, castle ? yL - sw - 9 : Infinity);
+        // the second gate goes in the other wall that faces us
+        const second = turn ? right : left;
+        if (p.gate2 && second) {
+            const ly0 = Math.min(second.a[1], second.b[1]) + 16, ly1 = Math.min(Math.max(second.a[1], second.b[1]) - 16, castle ? yL - sw - 9 : Infinity);
             if (ly1 > ly0) {
                 yg = rng.range(ly0, ly1);
-                gates.push({ e: left, s: left.a[1] - yg, x: left.a[0], y: yg });
+                gates.push({ e: second, s: Math.abs(yg - second.a[1]), x: second.a[0], y: yg });
             }
         }
         for (const g of gates) g.e.stops.push({ s: g.s, kind: 'gate', gate: g });
@@ -228,7 +287,10 @@
         // and the walls meet at mitred angles at its ends.
         const diagonal = e => Math.abs(e.n[0]) > 0.1 && Math.abs(e.n[1]) > 0.1;
         const yaw = geo.rad(p.yaw);
-        const endOn = e => diagonal(e) && e.len * Math.abs(e.d[0] * Math.cos(yaw) - e.d[1] * Math.sin(yaw)) < 10.5;
+        const endOn = e => {
+            const d = world(e.d);
+            return diagonal(e) && e.len * Math.abs(d[0] * Math.cos(yaw) - d[1] * Math.sin(yaw)) < 10.5;
+        };
         const mk = (e, s, v, r, kind) => {
             const [x, y] = e.F.P(s, v, 0), tw = { x, y, r, kind };
             towers.push(tw);
@@ -287,6 +349,7 @@
             const ct = { x: xc - 0.8, y: yc - 0.8, r: 4.3, kind: 'castle', castle: true };
             towers.push(ct);
             const side = edge([xc, B], [xc, yc]), fore = edge([xc, yc], [A, yc]);
+            castle.edges = [side, fore];
             castle.gate = { e: fore, s: castle.gx - xc, x: castle.gx, y: yc, castle: true };
             fore.stops.push({ s: castle.gate.s, kind: 'gate', gate: castle.gate });
             const o = { z0: LAND, zi: LAND, H: castle.H, castle: true };
@@ -294,17 +357,24 @@
             run(fore, [{ s: 0, r: ct.r, tw: ct }, ...stopsOf(fore, true), { s: fore.len, r: 3.7, tw: castle.joins[1].tw }], o);
         }
 
+        // One town's towers are round, another's square, and some have square
+        // ones along the walls between round ones at the corners and gates.
+        // They also differ in how far they stand above the walls and how
+        // steep their roofs are.
+        const built = look.towers, { lofty, spire } = look;
         for (const tw of towers) {
             tw.z0 = tw.castle ? LAND : 0;
             const base = tw.castle ? castle.H : H;
-            tw.h = base + (tw.kind === 'gate' ? rng.range(4, 5) : rng.range(3.2, 5)) + (tw.kind === 'corner' || tw.kind === 'castle' ? 1.6 : 0);
+            tw.h = base + (tw.kind === 'gate' ? rng.range(4, 5) : rng.range(3.2, 5)) * lofty + (tw.kind === 'corner' || tw.kind === 'castle' ? 1.6 : 0);
             tw.roof = towerRoof(p.towerRoofs, tw, rng);
-            tw.top = tw.h + (tw.roof === 'crenel' ? 2.4 : (tw.r + 1) * 2.5 + 1.5);
+            tw.spire = spire;
+            tw.top = tw.h + (tw.roof === 'crenel' ? 2.4 : (tw.r + 1) * (spire + 0.25) + 1.5);
+            if (built === 'square' || (built === 'mixed' && (tw.kind === 'wall' || tw.kind === 'join'))) tw.hw = tw.r * 0.88;
         }
         // the two towers of a gate match
         for (const g of gates.concat(castle ? [castle.gate] : [])) {
             const [t0, t1] = g.towers;
-            Object.assign(t1, { h: t0.h, roof: t0.roof, top: t0.top });
+            Object.assign(t1, { h: t0.h, roof: t0.roof, top: t0.top, hw: t0.hw });
         }
 
         // Streets: a grid lined up on the gates, with the castle's corner left out
@@ -333,7 +403,7 @@
             const [x0, y0, x1, y1] = cl.rect;
             if (x1 - x0 < 14 || y1 - y0 < 13) continue;
             // right behind the front walls the square would mostly be hidden
-            const behind = y0 < qy0 + 1 || x0 < qx0 + 1 ? 14 : 0;
+            const behind = y0 < qy0 + 1 || (turn ? x1 > qx1 - 1 : x0 < qx0 + 1) ? 14 : 0;
             const [mx, my] = mid(cl.rect), d = Math.hypot(mx - xg, my - cross) + behind + rng.range(0, 4);
             if (!square || d < square.d) square = { cl, d };
         }
@@ -350,10 +420,33 @@
             }
             if (best) best.cl.kind = 'church';
         }
+        // in some towns one of the smaller blocks is a walled orchard
+        const plots = usable.filter(cl => cl.kind === 'houses' && cl.area < 420);
+        if (look.orchard && plots.length > 3) rng.pick(plots).kind = 'orchard';
 
+        // the quarter turn, and the castle's ground for the things that keep off it
+        const turnRect = r => bounds([world([r[0], r[1]]), world([r[2], r[3]])]);
+        if (castle) {
+            Object.assign(castle, {
+                zone: turnRect([castle.xc - castle.tc / 2, castle.yc - castle.tc / 2, A + 60, B + 60]), ward: turnRect(castle.ward),
+                to: (x, y) => world([x, y]), turn: turn ? 3 : 0,
+            });
+        }
+        if (turn) {
+            for (const e of edges.concat(castle.edges)) {
+                for (const k of ['a', 'b', 'd', 'n']) e[k] = world(e[k]);
+                e.F = turned(e.a[0], e.a[1], 0, Math.atan2(e.d[1], e.d[0]));
+            }
+            for (const o of towers.concat(gates, [castle.gate, castle.keep])) [o.x, o.y] = world([o.x, o.y]);
+            for (const cl of cells) {
+                cl.rect = turnRect(cl.rect);
+                cl.poly = cl.poly.map(world);
+            }
+        }
+        const outline = poly.map(world);
         return {
-            A, B, H, poly, edges, inner, gates, castle, towers, walls, cells, square: square && square.cl,
-            wallIn: offset(poly, -t / 2), foot: offset(poly, t / 2 + 0.8), moat: offset(poly, t / 2 + p.moat),
+            H, look, poly: outline, edges, inner: inner.map(world), gates, castle, towers, walls, cells, square: square && square.cl,
+            wallIn: offset(outline, -t / 2), foot: offset(outline, t / 2 + 0.8), moat: offset(outline, t / 2 + p.moat),
         };
     }
 
@@ -392,21 +485,68 @@
     // Upright cylinder that leaves its bottom rim to whatever it stands on
     const drum = (S, x, y, r, z0, z1, n) => S.lathe(x, y, [[0, z0], [r, z0], [r, z0 + 0.01], [r, z1]], n);
 
-    // Where the line v (in from the wall's center line) leaves a tower's circle, as [s0, s1] along the wall
-    function chord(e, tw, v) {
+    // Where the line v (in from the wall's center line) crosses a tower, as
+    // [s0, s1] along the wall, or null when it misses. A square tower (one with
+    // a half width hw) is square to the axes whatever way the wall runs. `grow`
+    // makes the tower that much bigger, for its foot.
+    function across(e, tw, v, grow = 0) {
         const dx = tw.x - e.a[0], dy = tw.y - e.a[1];
-        const sc = dx * e.d[0] + dy * e.d[1], vc = -(dx * e.n[0] + dy * e.n[1]);
-        const h = Math.sqrt(Math.max(0, tw.r * tw.r - (v - vc) * (v - vc)));
-        return [sc - h, sc + h];
+        const sc = dx * e.d[0] + dy * e.d[1], vc = -(dx * e.n[0] + dy * e.n[1]), r = (tw.hw || tw.r) + grow;
+        if (!tw.hw) {
+            const q = r * r - (v - vc) * (v - vc);
+            return q > 0 ? [sc - Math.sqrt(q), sc + Math.sqrt(q)] : null;
+        }
+        // from the tower's center the line is o + u * d, and has to stay within r on both axes
+        const o = [-(v - vc) * e.n[0], -(v - vc) * e.n[1]];
+        let u0 = -Infinity, u1 = Infinity;
+        for (const k of [0, 1]) {
+            if (Math.abs(e.d[k]) < 1e-9) {
+                if (Math.abs(o[k]) >= r) return null;
+                continue;
+            }
+            const a = (-r - o[k]) / e.d[k], b = (r - o[k]) / e.d[k];
+            u0 = Math.max(u0, Math.min(a, b));
+            u1 = Math.min(u1, Math.max(a, b));
+        }
+        return u1 > u0 ? [sc + u0, sc + u1] : null;
     }
 
-    // A few stones picked out on a wall face, in twos and threes like a brick pattern
+    // The same, as the middle of the tower when the line misses it
+    function chord(e, tw, v) {
+        const dx = tw.x - e.a[0], dy = tw.y - e.a[1], sc = dx * e.d[0] + dy * e.d[1];
+        return across(e, tw, v) || [sc, sc];
+    }
+
+    // The crease up a wall face where a tower comes through it, from [v, height]
+    // pairs up the face. `far` picks the tower's far side along the wall. The
+    // scene only draws each solid's own edges, so without these the wall and
+    // the tower run together and the tower's foot and string course stop in
+    // mid air.
+    function crease(T, e, tw, far, prof) {
+        const pts = [];
+        for (const [v, c] of prof) {
+            // the battered foot is wider
+            const hit = across(e, tw, v, tw.z0 < LAND - 0.5 ? 0.75 * geo.clamp(1 - (c - tw.z0) / (LAND - 0.05 - tw.z0), 0, 1) : 0);
+            if (!hit) return;
+            pts.push(e.F.P(hit[far ? 1 : 0], v, c));
+        }
+        T.S.line(pts);
+    }
+
+    // A battered foot's face as [v, height] pairs, out from v at its top
+    const batter = (v, z0, out, h) => [0, 0.25, 0.5, 0.75, 1].map(f => [v - out * (1 - f), z0 + h * f]);
+
+    // A few stones picked out on a wall face, in twos and threes like a brick
+    // pattern. Too small on paper to show their faces, they're drawn as their
+    // bed joints alone.
     function masonry(T, at, s0, s1, c0, c1, rng) {
-        const S = T.S, bw = 1.3, bh = 0.6;
-        const stone = (u, c) => S.loop([at(u, c), at(u + bw, c), at(u + bw, c + bh), at(u, c + bh)]);
+        const S = T.S, { pu, pz } = wallScale(T, at);
+        const open = 0.6 * pz >= 1.5 * FINE, bw = open ? 1.3 : Math.max(1.3, (2.4 * FINE) / pu), bh = open ? 0.6 : Math.max(0.6, FINE / pz);
+        const stone = (u, c) => (open ? S.loop([at(u, c), at(u + bw, c), at(u + bw, c + bh), at(u, c + bh)])
+            : S.line([at(u + bw * 0.2, c), at(u + bw * 0.8, c)]));
         for (let i = Math.floor((s1 - s0) / 9); i > 0; i--) {
-            if (s1 - s0 < 3 || c1 - c0 < 1.5) return;
-            const u = rng.range(s0 + 0.3, s1 - 2.8), c = rng.range(c0, c1 - 1.3);
+            if (s1 - s0 < 2 * bw + 0.6 || c1 - c0 < 2 * bh + 0.3) return;
+            const u = rng.range(s0 + 0.3, s1 - 2 * bw - 0.2), c = rng.range(c0, c1 - 2 * bh - 0.1);
             stone(u, c);
             if (rng.chance(0.65)) stone(u + bw / 2, c + bh);
             if (rng.chance(0.45)) stone(u + bw, c);
@@ -444,23 +584,36 @@
             w.t0 ? Math.max(chord(e, w.t0, v0)[1], chord(e, w.t0, v1)[1]) + 0.05 : w.s0,
             w.t1 ? Math.min(chord(e, w.t1, v0)[0], chord(e, w.t1, v1)[0]) - 0.05 : w.s1,
         ];
-        const vo = -t / 2, vi = vo + 0.55, mw = T.merlon, top = H + 1.05;
+        const vo = -t / 2, vi = vo + 0.55, top = H + 1.05;
         const [sA, sB] = span(vo, vi), seen = T.sees(F.V(0, -1, 0));
-        const edgeOn = Math.abs(e.n[0] * T.cam.fx + e.n[1] * T.cam.fy) < 0.2;
-        if (sB - sA > mw) {
+        const { pu, pz } = wallScale(T, (s, c) => P(s, 0, c));
+        if (sB - sA > T.merlon) {
             along(S, F, [[vo, H], [vi, H], [vi, top], [vo, top]], sA, sB, k0, k1);
-            // seen edge on, the merlons would stack up into a ladder
-            const gap = mw * 0.8, n = edgeOn ? 0 : Math.max(1, Math.floor((sB - sA + gap) / (mw + gap)));
+            // Merlons are stretched along a wall that runs away from us, so
+            // they stay FINE across on paper. Seen nearly end on they'd stack
+            // up into a ladder whatever their size, and the wall gets none.
+            const mw = Math.max(T.merlon, FINE / pu), gap = mw, mh = T.merlon * 0.85;
+            const n = mw > 2.5 * T.merlon ? 0 : Math.max(1, Math.floor((sB - sA + gap) / (mw + gap)));
             const lead = (sB - sA - n * mw - (n - 1) * gap) / 2;
             for (let i = 0; i < n; i++) {
                 const s = sA + lead + i * (mw + gap);
-                S.box(F, s, vo, top, s + mw, vi, top + mw * 0.85);
-                if (seen && T.detail && i % 2 === 0) S.line([P(s + mw / 2, vo - 0.01, top + 0.15), P(s + mw / 2, vo - 0.01, top + mw * 0.65)]);
+                S.box(F, s, vo, top, s + mw, vi, top + mh);
+                if (seen && T.detail && i % 2 === 0 && mw * pu >= 2 * FINE) S.line([P(s + mw / 2, vo - 0.01, top + 0.15), P(s + mw / 2, vo - 0.01, top + mh * 0.75)]);
             }
             if (seen && T.detail) masonry(T, (u, c) => P(u, vo - 0.01, c), sA, sB, w.z0 + 2.8, H - 0.3, rng);
         }
-        const [sC, sD] = span(t / 2 - 0.35, t / 2);
-        if (sD - sC > 1) along(S, F, [[t / 2 - 0.35, H], [t / 2, H], [t / 2, H + 0.75], [t / 2 - 0.35, H + 0.75]], sC, sD, k0, k1);
+        // Tall enough that its top and the edge of the walk are two lines, up to
+        // the height of the parapet. Along a wall seen too nearly end on for
+        // that it's left out, where it would only thicken the edge of the walk.
+        const [sC, sD] = span(t / 2 - 0.35, t / 2), bk = H + geo.clamp(FINE / pz, 0.75, 1.05);
+        if (sD - sC > 1 && (bk - H) * pz >= 0.75 * FINE) along(S, F, [[t / 2 - 0.35, H], [t / 2, H], [t / 2, bk], [t / 2 - 0.35, bk]], sC, sD, k0, k1);
+        // where the wall runs into its towers
+        const foot = w.z0 < LAND - 0.5;
+        [w.t0, w.t1].forEach((tw, i) => {
+            if (!tw) return;
+            crease(T, e, tw, !i, (foot ? batter(vo, w.z0, 0.8, 2.4) : [[vo, w.z0]]).concat([[vo, H]]));
+            crease(T, e, tw, !i, [[t / 2, w.zi], [t / 2, H]]);
+        });
     }
 
     // Lines down a cone roof, from the eaves most of the way to the top: red
@@ -509,14 +662,16 @@
         if (T.tones) inKind(S, RED, () => S.hatch(pts, [0, 0, 1], T.hLit * 0.5));
     }
 
-    // Arrow loops up the side of a tower we see, each a slit with a cross arm
-    function loops(T, tw, z0) {
+    // Arrow loops up the side of a tower we see, each a slit with a cross arm.
+    // None go across the string course, between heights b0 and b1.
+    function loops(T, tw, z0, b0, b1) {
         if (!T.detail) return;
         const S = T.S, { x, y, r } = tw, face = Math.atan2(-T.cam.fy, -T.cam.fx), R = r + 0.02;
         const at = (a, u, c) => { const b = a + u / R; return [x + R * Math.cos(b), y + R * Math.sin(b), c]; };
-        const levels = Math.max(1, Math.floor((tw.h - z0 - 2.5) / 3.4));
+        const levels = Math.max(1, Math.floor((tw.h - z0 - 2.5) / 3.4)), clear = FINE / (T.k * T.cam.ce);
         for (let i = 0; i < levels; i++) {
             const c = z0 + 1.8 + i * 3.4;
+            if (c < b1 + clear && c + 1.3 > b0 - clear) continue;
             for (const da of i % 2 ? [-0.62, 0.5] : [-0.05]) {
                 const a = face + da + (i % 3) * 0.1;
                 S.line([at(a, 0, c), at(a, 0, c + 1.3)]);
@@ -529,7 +684,8 @@
     function crenels(T, x, y, r, z, n, rng) {
         const S = T.S, R = r + 0.5, mw = T.merlon;
         const m = Math.max(6, Math.round((TAU * R) / (mw * 1.9))), a0 = rng.range(0, TAU);
-        for (let i = 0; i < m; i++) S.box(turned(x, y, 0, a0 + (TAU * (i + 0.5)) / m), r - 0.3, -0.15, z - 0.7, R - 0.03, 0.15, z);
+        // corbels narrower than the pen only show as a row of dots
+        if (0.3 * T.k >= 0.5) for (let i = 0; i < m; i++) S.box(turned(x, y, 0, a0 + (TAU * (i + 0.5)) / m), r - 0.3, -0.15, z - 0.7, R - 0.03, 0.15, z);
         S.frustum(x, y, z, z + 1.1, R, R, n);
         S.loop(ring(n, (c, s) => [x + (R - 0.5) * c, y + (R - 0.5) * s, z + 1.1]));
         for (let i = 0; i < m; i++) S.box(turned(x, y, 0, a0 + (TAU * i) / m), R - 0.5, -mw / 2, z + 1.1, R, mw / 2, z + 1.1 + mw * 0.85);
@@ -537,16 +693,19 @@
 
     // Timber fighting gallery round the top of a tower, under its roof
     function hoarding(T, x, y, r, z, n) {
-        const S = T.S, R = r + 0.6, face = Math.atan2(-T.cam.fy, -T.cam.fx);
+        const S = T.S, cam = T.cam, R = r + 0.6, face = Math.atan2(-cam.fy, -cam.fx);
         S.kind = WOOD;
         S.frustum(x, y, z, z + 1.7, R, R, n);
         if (T.detail) {
-            const m = Math.max(8, Math.round((Math.PI * R) / 0.7));
+            // boards the same distance apart on paper all the way across, so
+            // they don't close up where the gallery turns away at the sides
+            const q = R * 1.015 + 0.01, step = Math.max(0.7, (1.2 * FINE) / T.k), m = Math.max(2, Math.round((2 * q) / step));
             for (let i = 1; i < m; i++) {
-                const a = face - Math.PI / 2 + (Math.PI * i) / m, c = Math.cos(a), s = Math.sin(a), q = R * 1.015 + 0.01;
-                S.line([[x + q * c, y + q * s, z + 0.15], [x + q * c, y + q * s, z + 1.55]]);
+                const u = -q + (2 * q * i) / m, d = Math.sqrt(q * q - u * u), px = x + cam.rx * u - cam.fx * d, py = y + cam.ry * u - cam.fy * d;
+                S.line([[px, py, z + 0.15], [px, py, z + 1.55]]);
             }
-            for (let i = 0; i < 7; i++) {
+            // the braces under it are only ticks at a small scale
+            for (let i = 0; T.k >= 1.8 && i < 7; i++) {
                 const a = face - 1.2 + (2.4 * i) / 6, c = Math.cos(a), s = Math.sin(a);
                 S.line([[x + r * c, y + r * s, z - 1], [x + R * c, y + R * s, z]]);
             }
@@ -554,9 +713,10 @@
         S.kind = INK;
     }
 
-    // Round tower: a battered foot where it stands in the moat, a string course,
+    // Round tower (square ones go to squareTower): a battered foot where it stands in the moat, a string course,
     // arrow loops, and a cone roof, a timber gallery under a cone, or battlements
     function tower(T, tw, rng) {
+        if (tw.hw) return squareTower(T, tw, rng);
         const S = T.S, { x, y, r } = tw, n = Math.max(28, T.segs(r + 0.8));
         S.kind = INK;
         let z = tw.z0;
@@ -566,12 +726,13 @@
             S.frustum(x, y, z, LAND - 0.05, r + 0.75, r, n);
             z = LAND - 0.05;
         }
-        const zs = geo.lerp(z, tw.h, 0.6);
+        // the string course is deep enough for its two edges to show apart
+        const zs = geo.lerp(z, tw.h, 0.6), band = Math.max(0.3, FINE / (T.k * T.cam.ce));
         drum(S, x, y, r, z, zs, n);
-        S.frustum(x, y, zs, zs + 0.3, r + 0.14, r + 0.14, n);
-        drum(S, x, y, r, zs + 0.3, tw.h, n);
+        S.frustum(x, y, zs, zs + band, r + 0.14, r + 0.14, n);
+        drum(S, x, y, r, zs + band, tw.h, n);
         shadeRound(T, x, y, z, tw.h, r, r);
-        loops(T, tw, Math.max(z, LAND));
+        loops(T, tw, Math.max(z, LAND), zs, zs + band);
         if (tw.roof === 'crenel') {
             crenels(T, x, y, r, tw.h, n, rng);
             if (T.p.banners && rng.chance(0.4)) flag(T, x, y, tw.h + 1.1, 3.2);
@@ -583,11 +744,140 @@
             R = r + 1;
             zr += 1.7;
         }
-        const hc = R * 2.25;
+        const hc = R * tw.spire;
         S.kind = INK;
         cone(T, x, y, R, zr, hc, n);
         if (T.p.banners) flag(T, x, y, zr + hc - 0.1, 2.6);
         else S.line([[x, y, zr + hc], [x, y, zr + hc + 1]]);
+    }
+
+    // Square tower, set square to the page whatever way its wall runs. It has
+    // the same foot, string course, arrow loops and tops as a round one, with
+    // the side away from the sun hatched.
+    function squareTower(T, tw, rng) {
+        const S = T.S, { x, y, hw } = tw, F = frame(x, y, 0, 0), P = F.P, fp = [-hw, -hw, hw, hw];
+        S.kind = INK;
+        let z = tw.z0;
+        if (z < LAND - 0.5) {
+            const g = hw + 0.75, top = LAND - 0.05;
+            S.solid([P(-g, -g, z), P(g, -g, z), P(g, g, z), P(-g, g, z), P(-hw, -hw, top), P(hw, -hw, top), P(hw, hw, top), P(-hw, hw, top)], BOX);
+            z = top;
+        }
+        const zs = geo.lerp(z, tw.h, 0.6), band = Math.max(0.3, FINE / (T.k * T.cam.ce));
+        S.box(F, -hw, -hw, z, hw, hw, tw.h);
+        S.box(F, -hw - 0.14, -hw - 0.14, zs, hw + 0.14, hw + 0.14, zs + band);
+        // lines up or down a face we see, FINE or more apart, between heights c0 and c1
+        const lines = (W, gap, c0, c1) => {
+            const n = Math.max(1, Math.floor(W.len / Math.max(gap, FINE) * wallScale(T, W.at).pu));
+            for (let i = 1; i < n; i++) S.line([W.at((W.len * i) / n, c0), W.at((W.len * i) / n, c1)]);
+        };
+        // the face towards -y is the one out of the sun, as on the houses
+        const dark = wall(F, 0, fp), lit = wall(F, 3, fp);
+        if (T.tones && T.sees(dark.n)) lines(dark, T.hLit, z, tw.h);
+        if (T.detail && T.sees(lit.n)) {
+            const z0 = Math.max(z, LAND), clear = FINE / (T.k * T.cam.ce);
+            for (let i = 0, levels = Math.max(1, Math.floor((tw.h - z0 - 2.5) / 3.4)); i < levels; i++) {
+                const c = z0 + 1.8 + i * 3.4;
+                if (c < zs + band + clear && c + 1.3 > zs - clear) continue;
+                for (const u of i % 2 ? [0.28, 0.72] : [0.5]) {
+                    S.line([lit.at(2 * hw * u, c), lit.at(2 * hw * u, c + 1.3)]);
+                    S.line([lit.at(2 * hw * u - 0.25, c + 0.75), lit.at(2 * hw * u + 0.25, c + 0.75)]);
+                }
+            }
+        }
+        if (tw.roof === 'crenel') {
+            // A parapet standing out a little, with a block on each corner and
+            // merlons between them where there's room. The keep's battlements
+            // have a wall walk inside them, which at a tower's size is only
+            // more lines next to these.
+            const g = hw + 0.45, top = tw.h + 1.05, mw = Math.min(T.merlon, (2 * g) / 3), mh = T.merlon * 0.85;
+            S.box(F, -g, -g, tw.h - 0.4, g, g, top);
+            for (const u of [-g, g - mw]) for (const v of [-g, g - mw]) S.box(F, u, v, top, u + mw, v + mw, top + mh);
+            const n = Math.floor((2 * g - mw) / (2 * mw)) - 1, th = 0.55;
+            for (let i = 1; i <= n; i++) {
+                const u = -g + ((2 * g - mw) * i) / (n + 1);
+                S.box(F, u, -g, top, u + mw, -g + th, top + mh);
+                S.box(F, u, g - th, top, u + mw, g, top + mh);
+                S.box(F, -g, u, top, -g + th, u + mw, top + mh);
+                S.box(F, g - th, u, top, g, u + mw, top + mh);
+            }
+            if (T.p.banners && rng.chance(0.4)) flag(T, x, y, top, 3.2);
+            return;
+        }
+        let e = hw, zr = tw.h;
+        if (tw.roof === 'hoard') {
+            e = hw + 0.6;
+            S.kind = WOOD;
+            S.box(F, -e, -e, zr, e, e, zr + 1.7);
+            if (T.detail) {
+                for (const side of [0, 3]) {
+                    const W = wall(F, side, [-e, -e, e, e]);
+                    if (T.sees(W.n)) lines(W, 1.2 * FINE, zr + 0.15, zr + 1.55);
+                }
+            }
+            S.kind = INK;
+            zr += 1.7;
+        }
+        const g = e + 0.4, zb = zr - 0.25, apex = [x, y, zb + g * tw.spire];
+        const rim = [P(-g, -g, zb), P(g, -g, zb), P(g, g, zb), P(-g, g, zb)];
+        S.solid(rim.concat([apex]), [[0, 3, 2, 1], [0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4]]);
+        for (let i = 0; i < 4; i++) {
+            const tri = [rim[i], rim[(i + 1) % 4], apex], n = outward(tri, [x, y, zb + 1]);
+            // The side towards -x is red however steep the roof. A spire is too
+            // steep to count as lit, and would come out black all round.
+            shade(T, tri, n, n[0] < -Math.abs(n[1]) ? 'lit' : 'roof');
+        }
+        if (T.p.banners) flag(T, x, y, apex[2] - 0.1, 2.6);
+        else S.line([apex, [x, y, apex[2] + 1]]);
+    }
+
+    // The foot of a tower where it stands on the ground inside the walls: the
+    // part of its outline that isn't in a wall. The tower itself leaves its
+    // bottom rim out, since most of that is under the ground or in the wall.
+    function footing(T, tw, town) {
+        // a square tower standing on the ground has its own bottom edges
+        if (tw.hw && tw.z0 > LAND - 0.5) return;
+        const S = T.S, R = (tw.hw || tw.r) * 1.015 + 0.003, n = 96, step = TAU / n, half = WALL / 2 - 0.01;
+        const at = a => {
+            const c = Math.cos(a), s = Math.sin(a), q = tw.hw ? R / Math.max(Math.abs(c), Math.abs(s)) : R;
+            return [tw.x + q * c, tw.y + q * s, LAND];
+        };
+        const open = a => {
+            const [x, y] = at(a);
+            if (depth(town.wallIn, x, y) <= 0) return false;
+            return !town.walls.some(w => {
+                if (!w.castle) return false;
+                const e = w.e, dx = x - e.a[0], dy = y - e.a[1], s = dx * e.d[0] + dy * e.d[1];
+                return s > w.s0 && s < w.s1 && Math.abs(dx * e.n[0] + dy * e.n[1]) < half;
+            });
+        };
+        // where the ground stops between a, which is on it, and b
+        const edge = (a, b) => {
+            for (let i = 0; i < 14; i++) {
+                const m = (a + b) / 2;
+                if (open(m)) a = m;
+                else b = m;
+            }
+            return a;
+        };
+        const on = Array.from({ length: n }, (_, i) => open(i * step)), i0 = on.indexOf(false);
+        S.kind = INK;
+        if (i0 < 0) {
+            S.loop(on.map((_, i) => at(i * step)));
+            return;
+        }
+        let run = null;
+        for (let j = 1; j <= n; j++) {
+            const a = (i0 + j) * step;
+            if (on[(i0 + j) % n]) {
+                if (!run) run = [at(edge(a, a - step))];
+                run.push(at(a));
+            } else if (run) {
+                run.push(at(edge(a - step, a)));
+                S.line(run);
+                run = null;
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -607,32 +897,30 @@
     }
 
     // Gate passage: a pointed arch with the portcullis partway down and the
-    // passage dark behind it, a recess for the drawbridge and a coat of arms
+    // passage dark behind it, and a coat of arms over a gate with a drawbridge
     function gateArch(T, at, s, c, hw, drop) {
-        const S = T.S, k = T.k;
+        const S = T.S, { pu, pz } = wallScale(T, at);
         const A = pointed(at, s, c, hw, c + (drop ? 3 : 2.6));
         S.line(A.pts);
         if (T.detail) {
-            const pb = c + 2.1;
-            for (let u = s - hw + 0.32; u < s + hw - 0.15; u += 0.42) {
-                S.line([at(u, A.under(u) - 0.03), at(u, pb - 0.25)]);
-            }
-            for (let z = pb + 0.15; z < A.apex - 0.3; z += 0.55) {
+            // bars FINE apart on paper, so the portcullis shows as a grille
+            // and not a black hole
+            const pb = c + 2.1, du = Math.max(0.42, FINE / pu), dz = Math.max(0.55, FINE / pz);
+            const nb = Math.max(1, Math.floor((2 * hw - 0.3) / du)), bar = i => s + (i - (nb - 1) / 2) * du;
+            for (let i = 0; i < nb; i++) S.line([at(bar(i), A.under(bar(i)) - 0.03), at(bar(i), pb - 0.25)]);
+            for (let z = pb + 0.15; z < A.apex - 0.3; z += dz) {
                 // as wide as the arch is at this height
                 let u0 = s - hw;
                 while (A.under(u0) < z && u0 < s) u0 += 0.05;
                 S.line([at(u0, z), at(2 * s - u0, z)]);
             }
-            // the passage behind it
-            const gap = T.hDark / k;
-            for (let u = s - hw + gap / 2; u < s + hw; u += gap) S.line([at(u, c + 0.02), at(u, pb - 0.3)]);
+            // the passage behind it, hatched between the bars
+            for (let i = 0; i <= nb; i++) {
+                const u = bar(i) - du / 2;
+                if (hw - Math.abs(u - s) >= du * 0.6) S.line([at(u, c + 0.02), at(u, pb - 0.3)]);
+            }
         }
-        if (drop) {
-            // recess the raised drawbridge fits into
-            const top = c + drop + 0.2;
-            S.line([at(s - hw - 0.3, c), at(s - hw - 0.3, top), at(s + hw + 0.3, top), at(s + hw + 0.3, c)]);
-            arms(T, at, s, top + 0.5);
-        }
+        if (drop) arms(T, at, s, c + drop + 0.7);
     }
 
     // Shield in gold with a red chevron
@@ -654,27 +942,34 @@
         const z0 = castleGate ? LAND : 0, H = castleGate ? town.castle.H : town.H;
         const hw = castleGate ? 1.4 : 1.6, bw = hw + 1.6, vf = -t / 2 - (castleGate ? 0.6 : 1.5), top = H + 3.2;
         S.kind = INK;
+        const foot = z0 < LAND - 0.5;
         S.box(F, s - bw, vf, z0, s + bw, t / 2 + 0.4, top);
-        if (z0 < LAND - 0.5) S.prism([P(s - bw, vf, z0), P(s - bw, vf - 0.7, z0), P(s - bw, vf, z0 + 2.2)], F.V(2 * bw, 0, 0));
-        // corbels under a parapet standing out from the front
+        if (foot) S.prism([P(s - bw, vf, z0), P(s - bw, vf - 0.7, z0), P(s - bw, vf, z0 + 2.2)], F.V(2 * bw, 0, 0));
+        // corbels under a parapet standing out from the front, when they're
+        // wide enough on paper to be more than a row of dots
         const pv = vf - 0.55, n = Math.max(3, Math.round((2 * bw) / 0.85));
-        for (let i = 0; i < n; i++) {
+        for (let i = 0; 0.26 * T.k >= 0.5 && i < n; i++) {
             const u = s - bw + (2 * bw * (i + 0.5)) / n;
             S.box(F, u - 0.13, pv + 0.03, top - 1.6, u + 0.13, vf, top - 0.95);
         }
         S.box(F, s - bw, pv, top - 0.95, s + bw, vf + 0.3, top + 0.15);
-        const mw = T.merlon, m = Math.max(2, Math.floor((2 * bw + 0.8 * mw) / (1.8 * mw)));
+        // merlons in the part of the parapet that's clear of the towers
+        const mw = T.merlon, m = Math.max(1, Math.floor((2 * bw - 0.6 + mw) / (2 * mw)));
         for (let i = 0; i < m; i++) {
-            const u = s - bw + ((2 * bw - mw) * i) / (m - 1);
+            const u = s - (m - 0.5) * mw + 2 * mw * i;
             S.box(F, u, pv, top + 0.15, u + mw, pv + 0.5, top + 0.15 + mw * 0.85);
         }
+        // where the block and its parapet run into the gate's towers
+        g.towers.forEach((tw, i) => {
+            crease(T, e, tw, !i, (foot ? batter(vf, z0, 0.7, 2.2) : [[vf, z0]]).concat([[vf, top - 0.95]]));
+            crease(T, e, tw, !i, [[pv, top - 0.95], [pv, top + 0.15]]);
+        });
         const R = gableRoof(T, F, [s - bw + 0.45, vf + 0.5, s + bw - 0.45, t / 2 + 0.3], top, true, geo.rad(50), rng, { attic: false });
         shadeGable(T, F, R);
         if (T.sees(F.V(0, -1, 0))) {
             const at = (u, c) => P(u, vf - 0.01, c);
             gateArch(T, at, s, LAND, hw, castleGate ? 0 : 4.6);
             if (castleGate) arms(T, at, s, LAND + 5.6);
-            else if (T.detail) for (const u of [s - hw - 0.75, s + hw + 0.75]) S.line([at(u, LAND + 5.3), at(u, LAND + 5.8)]);
         }
     }
 
@@ -697,11 +992,22 @@
         if (aArch - aBank > 2.5) {
             S.box(F, aArch, -0.25, 0, aPier, wB + 0.25, LAND - 0.05);
             kit.bridge(T, F, aBank, aArch, wB, LAND, 0, true);
-        } else aPier = aBank;
+        } else {
+            // a moat too narrow for the bridge, and the drawbridge comes down on the bank
+            aPier = aBank;
+            ramp = 0;
+        }
         g.road = { F, aBank, ramp, wB, r, across, b0 };
         S.kind = WOOD;
         S.box(F, aPier, 0.55, LAND - 0.22, aGate, wB - 0.55, LAND + 0.04);
-        if (T.detail) for (let a = aPier + 0.45; a < aGate - 0.2; a += 0.45) S.line([F.P(a, 0.55, LAND + 0.04), F.P(a, wB - 0.55, LAND + 0.04)]);
+        if (T.detail) {
+            // planks, no closer on paper than the pen can keep apart
+            const n = Math.max(1, Math.floor((aGate - aPier) / Math.max(0.45, (1.2 * FINE) / Math.max(apart(T, F.V(0, 1, 0), F.V(1, 0, 0)), 1e-6))));
+            for (let i = 1; i < n; i++) {
+                const a = aPier + ((aGate - aPier) * i) / n;
+                S.line([F.P(a, 0.55, LAND + 0.04), F.P(a, wB - 0.55, LAND + 0.04)]);
+            }
+        }
         S.kind = INK;
         for (const b of [0.75, wB - 0.75]) S.line([F.P(aGate, b, LAND + Ldb + 0.55), F.P(aPier + 0.25, b, LAND + 0.06)]);
         g.keepOut = [Math.min(aBank, aPier) - 1, aGate];
@@ -745,7 +1051,7 @@
             const inMoat = depth(moat, x, y);
             if (inMoat < 0 || depth(foot, x, y) > 0) return -1;
             let d = Math.min(inMoat, distOut(foot, x, y));
-            for (const t of inTowers) d = Math.min(d, Math.hypot(x - t.x, y - t.y) - t.r - 0.75);
+            for (const t of inTowers) d = Math.min(d, (t.hw ? Math.max(Math.abs(x - t.x), Math.abs(y - t.y)) - t.hw : Math.hypot(x - t.x, y - t.y) - t.r) - 0.75);
             for (const b of blocks) d = Math.min(d, Math.hypot(Math.max(b[0] - x, 0, x - b[2]), Math.max(b[1] - y, 0, y - b[3])));
             return d;
         };
@@ -819,8 +1125,14 @@
         for (let i = 0; i < pads; i++) {
             const at = spot(1.6);
             if (!at) continue;
-            const n = rng.int(3, 7);
-            for (let j = 0; j < n; j++) lily(T, at[0] + rng.range(-2.2, 2.2), at[1] + rng.range(-2.2, 2.2), rng.range(0.45, 0.8), rng);
+            // each pad clear of the others and of the bank, and big enough on paper to show its notch
+            const n = rng.int(3, 7), own = [], clear = 0.5 / T.k;
+            for (let j = 0; j < n; j++) {
+                const x = at[0] + rng.range(-2.2, 2.2), y = at[1] + rng.range(-2.2, 2.2), r = Math.max(rng.range(0.45, 0.8), 0.55 / T.k);
+                if (dist(x, y) < r + clear || own.some(([u, v, q]) => Math.hypot(u - x, v - y) < q + r + clear)) continue;
+                lily(T, x, y, r, rng);
+                own.push([x, y, r]);
+            }
             out.push([at[0], at[1], 3.4]);
         }
         if (rng.chance(p.moatLife)) {
@@ -864,13 +1176,15 @@
         S.kind = INK;
     }
 
-    // Round leaf with a notch cut in it
+    // Round leaf with a notch cut in it. It covers the water under it, so the
+    // shadow hatching doesn't run through the leaf.
     function lily(T, x, y, r, rng) {
         const S = T.S, a0 = rng.range(0, TAU), pts = [[x, y, 0.01]];
         for (let i = 0; i <= 12; i++) {
             const a = a0 + 0.45 + ((TAU - 0.9) * i) / 12;
             pts.push([x + r * Math.cos(a), y + r * Math.sin(a), 0.01]);
         }
+        S.face(pts.slice(1), false);
         inKind(S, GREEN, () => S.loop(pts));
     }
 
@@ -878,27 +1192,45 @@
     // Houses
     // ------------------------------------------------------------------
 
+    // isokit's windows, kept FINE wide and FINE apart on paper. A wall that's
+    // small on the page or turned away from us gets fewer, wider ones, and
+    // none once they'd be twice their real width.
+    function panes(T, W, o) {
+        const { pu, pz } = wallScale(T, W.at), m = FINE / pu;
+        if (m > 2 * o.winW) return false;
+        return windows(T, W, { ...o, winW: Math.max(o.winW, m), gap: Math.max(o.gap, m), winH: geo.clamp(FINE / pz, o.winH, Math.max(o.winH, FLOOR - 1.2)) });
+    }
+
     // Half-timbering over one story of a wall: posts, a rail under the windows
-    // and one over them, windows in the middle bays and braces in the ones at
-    // the ends, leaning in towards the middle
+    // and one over them, and braces in the bays at the ends, leaning in towards
+    // the middle. The windows are the middle bays between the two rails, with
+    // the posts for their sides. Posts and rails keep FINE apart on paper: a
+    // small or foreshortened wall gets fewer bays, and one rail if there isn't
+    // the height for two, which leaves it no windows.
     function timbered(T, W, c0, c1) {
         if (!T.sees(W.n)) return;
-        const S = T.S, L = W.len, at = W.at;
-        const n = Math.max(2, Math.round(L / Math.max(1.15, 1.5 / T.k))), bw = L / n;
-        const sill = c0 + 0.8, head = c1 - 0.5;
-        const win = i => n < 3 || (i > 0 && i < n - 1 && !(n >= 5 && i === (n - 1) / 2));
-        for (let i = 0; i < n; i++) if (win(i)) pane(T, at, i * bw + 0.16, sill + 0.08, bw - 0.32, head - sill - 0.16, bw > 1.1 ? 'cross' : null);
+        const S = T.S, L = W.len, at = W.at, { pu, pz } = wallScale(T, at);
+        const n = Math.max(2, Math.round(L / Math.max(1.15, (2 * FINE) / pu))), bw = L / n;
+        const tall = (c1 - c0) * pz, two = tall >= 3.5 * FINE;
+        const sill = two ? c0 + Math.max(0.8, FINE / pz) : c0 + (c1 - c0) * 0.42, head = two ? c1 - Math.max(0.5, FINE / pz) : c1;
+        const win = i => two && (n < 3 || (i > 0 && i < n - 1 && !(n >= 5 && i === (n - 1) / 2)));
+        // a mullion down each window that's wide enough for one
+        if (T.detail && bw * pu >= 2.4 * FINE) {
+            for (let i = 0; i < n; i++) if (win(i)) S.line([at((i + 0.5) * bw, sill), at((i + 0.5) * bw, head)]);
+        }
         S.kind = WOOD;
         for (let i = 1; i < n; i++) S.line([at(i * bw, c0), at(i * bw, c1)]);
-        S.line([at(0, sill), at(L, sill)]);
-        S.line([at(0, head), at(L, head)]);
+        if (tall >= 2 * FINE) S.line([at(0, sill), at(L, sill)]);
+        if (two) S.line([at(0, head), at(L, head)]);
         if (T.detail) {
             for (let i = 0; i < n; i++) {
                 const s0 = i * bw, s1 = s0 + bw;
                 if (!win(i)) {
+                    // with one rail the middle bays stay plain
+                    if (!two && i > 0 && i < n - 1) continue;
                     if ((i + 0.5) * bw < L / 2) S.line([at(s0, c0), at(s1, head)]);
                     else S.line([at(s1, c0), at(s0, head)]);
-                } else {
+                } else if ((sill - c0) * pz >= 2 * FINE) {
                     // a cross under each window
                     S.line([at(s0, c0), at(s1, sill)]);
                     S.line([at(s1, c0), at(s0, sill)]);
@@ -931,8 +1263,8 @@
         const R = gableRoof(T, F, rf, z + 0.25, !o.gable, pitch, rng, { attic: o.gable && !o.timber && !step && rng.chance(0.6) });
         shadeGable(T, F, R);
         if (step) gableWall(T, F, a0, front, th, stepGable(w, z, R.rise, w > 5.6 ? 3 : 2));
-        if (o.gable && o.timber && T.sees(F.V(0, -1, 0)) && T.detail) {
-            // king post, collar and braces in the gable
+        // king post, collar and braces in the gable, when it's wide enough on paper to keep them apart
+        if (o.gable && o.timber && T.sees(F.V(0, -1, 0)) && T.detail && R.hw * wallScale(T, (u, c) => P(u, front, c)).pu >= 2.5 * FINE) {
             const bg = front - R.oh - 0.01, am = (a0 + a1) / 2, zb = R.zb, hw = R.hw;
             const G = (u, c) => P(am + u, bg, c), cz = zb + R.rise * 0.42, cw = hw * 0.58 - 0.25;
             inKind(S, WOOD, () => {
@@ -958,12 +1290,12 @@
         for (let f = 1; f < stories.length; f++) {
             const [c0, c1, bf] = stories[f], Wf = wall(F, 0, [a0, bf, a1, b1]);
             if (o.timber) timbered(T, Wf, c0, c1);
-            else windows(T, Wf, { base: c0 - 0.1, floors: 1, style: 'frame', winW: 0.9, winH: 1.4, gap: 0.65 });
+            else panes(T, Wf, { base: c0 - 0.1, floors: 1, style: 'frame', winW: 0.9, winH: 1.4, gap: 0.65 });
         }
-        windows(T, wall(F, 2, fp), { base: 0, floors: o.floors, style: 'frame', winW: 0.85, winH: 1.3, gap: 0.9 });
+        panes(T, wall(F, 2, fp), { base: 0, floors: o.floors, style: 'frame', winW: 0.85, winH: 1.3, gap: 0.9 });
         for (const side of [3, 1]) {
             if (!o.ends[side === 3 ? 0 : 1]) continue;
-            for (const [c0, , bf] of stories) windows(T, wall(F, side, [a0, bf, a1, b1]), { base: c0 - 0.1, floors: 1, style: 'frame', winW: 0.85, winH: 1.3, gap: 1.3 });
+            for (const [c0, , bf] of stories) panes(T, wall(F, side, [a0, bf, a1, b1]), { base: c0 - 0.1, floors: 1, style: 'frame', winW: 0.85, winH: 1.3, gap: 1.3 });
         }
         return R;
     }
@@ -1050,7 +1382,9 @@
             if (!free(x + bw / 2, y + bd / 2, Math.max(bw, bd) / 2)) continue;
             inKind(S, GREEN, () => {
                 S.loop(at3(rectPoly([x, y, x + bw, y + bd]), LAND));
-                for (let u = x + 0.5; u < x + bw - 0.2; u += 0.55) S.line([[u, y + 0.2, LAND], [u, y + bd - 0.2, LAND]]);
+                // rows FINE apart on paper, evenly across the bed
+                const rows = Math.max(1, Math.floor(bw / Math.max(0.55, FINE / Math.max(apart(T, [0, 1, 0], [1, 0, 0]), 1e-6))));
+                for (let i = 1; i < rows; i++) S.line([[x + (bw * i) / rows, y + 0.2, LAND], [x + (bw * i) / rows, y + bd - 0.2, LAND]]);
             });
             taken.push([x + bw / 2, y + bd / 2, Math.max(bw, bd) / 2]);
         }
@@ -1104,7 +1438,7 @@
         return 1.6;
     }
 
-    function marketSquare(T, cell, rng) {
+    function marketSquare(T, cell, town, rng) {
         const S = T.S, p = T.p, [x0, y0, x1, y1] = cell.rect, w = x1 - x0, d = y1 - y0;
         S.kind = INK;
         S.loop(at3(rectPoly(cell.rect), LAND));
@@ -1113,10 +1447,18 @@
         // how far back the fountain or cross can go and stay clear of the hall
         let room = d - 1;
         if (p.market && w >= 15 && d >= 15) {
-            const L = Math.min(w - 4.5, rng.range(12, 16)), D = rng.range(6.5, 7.5), a = (w - L) / 2, b = d - D - 1.6;
-            marketHall(T, F, [a, b, a + L, b + D], rng);
-            occ.add(a - 0.6, b - 1, a + L + 0.6, b + D + 0.6);
-            room = b - 1;
+            if (town.look.belfry) {
+                // a belfry where the hall would stand, isokit's clock tower a third bigger
+                const m = 1.35, g = 1.9 * m, b = d - g - 1.6;
+                kit.clockTower(T, scaled(frame(...F.P(w / 2, b, 0), 0), m), 0, 0, rng);
+                occ.add(w / 2 - g - 0.6, b - g - 1, w / 2 + g + 0.6, b + g + 0.6);
+                room = b - g - 1;
+            } else {
+                const L = Math.min(w - 4.5, rng.range(12, 16)), D = rng.range(6.5, 7.5), a = (w - L) / 2, b = d - D - 1.6;
+                marketHall(T, F, [a, b, a + L, b + D], rng);
+                occ.add(a - 0.6, b - 1, a + L + 0.6, b + D + 0.6);
+                room = b - 1;
+            }
         }
         // a fountain is up to 2.85 m across the basin, the cross 1.6 m
         const big = rng.chance(0.55) && room >= 7.4;
@@ -1165,7 +1507,8 @@
         // gravestones in rows either side of the nave
         for (const [u0, u1] of [[m + t + 0.8, a - 0.9], [a + cw + 0.9, U - m - t - 0.8]]) {
             for (let u = u0; u < u1 - 0.5; u += 1.6) {
-                for (let v = b + 3; v < Math.min(V - 2, b + cd); v += 2.2) {
+                // stopping short of the yews in the back corners
+                for (let v = b + 3; v < Math.min(V - 4.2, b + cd); v += 2.2) {
                     if (!rng.chance(0.6)) continue;
                     const uu = u + rng.range(-0.2, 0.2);
                     if (rng.chance(0.3)) {
@@ -1182,6 +1525,28 @@
                 fir(T, x, y, LAND, rng.range(4.5, 6.5), rng);
             }
         }
+    }
+
+    // Orchard behind a low wall with a gap in the side we see: fruit trees in
+    // rows round a well
+    function orchardBlock(T, cell, rng) {
+        const S = T.S, [x0, y0, x1, y1] = cell.rect, w = x1 - x0, d = y1 - y0, F = frame(x0, y0, LAND, 0);
+        S.kind = INK;
+        S.loop(at3(rectPoly(cell.rect), LAND));
+        const m = 0.6, t = 0.4;
+        for (const [u0, v0, u1, v1] of [[m, m, w / 2 - 1.4, m + t], [w / 2 + 1.4, m, w - m, m + t], [m, d - m - t, w - m, d - m], [m, m + t, m + t, d - m - t], [w - m - t, m + t, w - m, d - m - t]]) {
+            S.box(F, u0, v0, 0, u1, v1, 1);
+        }
+        const wx = (x0 + x1) / 2, wy = (y0 + y1) / 2;
+        well(T, wx, wy, rng);
+        const nx = Math.max(1, Math.round((w - 5) / 5)), ny = Math.max(1, Math.round((d - 5) / 5));
+        for (let i = 0; i <= nx; i++) {
+            for (let j = 0; j <= ny; j++) {
+                const x = x0 + 2.5 + ((w - 5) * i) / nx, y = y0 + 2.5 + ((d - 5) * j) / ny;
+                if (Math.hypot(x - wx, y - wy) > 3.4) fruitTree(T, x + rng.range(-0.3, 0.3), y + rng.range(-0.3, 0.3), rng);
+            }
+        }
+        S.kind = INK;
     }
 
     // ------------------------------------------------------------------
@@ -1232,12 +1597,12 @@
         if (K.type === 'round') {
             const r = w / 2;
             S.frustum(x, y, LAND, LAND + 1.8, r + 0.9, r, n);
-            const zs = geo.lerp(LAND + 1.8, K.h, 0.55);
+            const zs = geo.lerp(LAND + 1.8, K.h, 0.55), band = Math.max(0.35, FINE / (T.k * T.cam.ce));
             drum(S, x, y, r, LAND + 1.8, zs, n);
-            S.frustum(x, y, zs, zs + 0.35, r + 0.18, r + 0.18, n);
-            drum(S, x, y, r, zs + 0.35, K.h, n);
+            S.frustum(x, y, zs, zs + band, r + 0.18, r + 0.18, n);
+            drum(S, x, y, r, zs + band, K.h, n);
             shadeRound(T, x, y, LAND + 1.8, K.h, r, r);
-            loops(T, { x, y, r, h: K.h }, LAND + 2);
+            loops(T, { x, y, r, h: K.h }, LAND + 2, zs, zs + band);
             crenels(T, x, y, r, K.h, n, rng);
             const R = r - 0.2, hc = R * 1.9;
             cone(T, x, y, R, K.h + 1.1, hc, n);
@@ -1341,25 +1706,38 @@
     // Inside the castle ward: a great hall, a well, and people and horses
     // about the yard. The keep is drawn with the walls.
     function ward(T, town, rng) {
-        const S = T.S, p = T.p, C = town.castle, [wx0, wy0, wx1, wy1] = C.ward, K = C.keep;
+        // laid out as the castle was planned, and placed through C.to in case the plan was turned
+        const S = T.S, p = T.p, C = town.castle, K = C.keep, { kx, ky } = C.local, [wx0, wy0, wx1, wy1] = C.local.ward;
         S.kind = INK;
-        // the great hall down the right-hand wall, in front of the keep
-        const hallD = 8.5, hy1 = K.y - K.w / 2 - 2.5, taken = [[K.x, K.y, K.w * 0.75]];
-        if (hy1 - wy0 > 12) {
-            hall(T, frame(wx1 - hallD - 0.6, hy1, LAND, 3), [0, 0, hy1 - wy0 - 1.2, hallD], rng);
-            taken.push([wx1 - hallD / 2, (wy0 + hy1) / 2, Math.max(hallD, hy1 - wy0) / 2 + 1]);
+        // The great hall down the right-hand wall, in front of the keep. In a
+        // turned castle that would have its back to us, and it goes along the
+        // wall behind instead, beside the keep.
+        const hallD = 8.5, taken = [[kx, ky, K.w * 0.75]];
+        if (C.turn) {
+            const hx1 = kx - K.w / 2 - 2.5;
+            if (hx1 - wx0 > 12) {
+                hall(T, frame(...C.to(wx0 + 1.2, wy1 - hallD - 0.6), LAND, C.turn), [0, 0, hx1 - wx0 - 1.2, hallD], rng);
+                taken.push([(wx0 + hx1) / 2, wy1 - hallD / 2, Math.max(hallD, hx1 - wx0) / 2 + 1]);
+            }
+        } else {
+            const hy1 = ky - K.w / 2 - 2.5;
+            if (hy1 - wy0 > 12) {
+                hall(T, frame(wx1 - hallD - 0.6, hy1, LAND, 3), [0, 0, hy1 - wy0 - 1.2, hallD], rng);
+                taken.push([wx1 - hallD / 2, (wy0 + hy1) / 2, Math.max(hallD, hy1 - wy0) / 2 + 1]);
+            }
         }
-        const ok = (x, y, r) => inRect(C.ward, x, y, -r) && !taken.some(([u, v, q]) => Math.hypot(u - x, v - y) < q + r);
+        const ok = (x, y, r) => inRect(C.local.ward, x, y, -r) && !taken.some(([u, v, q]) => Math.hypot(u - x, v - y) < q + r);
         const wellAt = [geo.lerp(wx0, wx1, 0.28), geo.lerp(wy0, wy1, 0.4)];
         if (ok(...wellAt, 1.5)) {
-            well(T, wellAt[0], wellAt[1], rng);
+            well(T, ...C.to(...wellAt), rng);
             taken.push([...wellAt, 1.5]);
         }
         for (let i = Math.round(rng.range(3, 6) * (0.4 + p.people)); i > 0; i--) {
             const x = rng.range(wx0 + 1, wx1 - 1), y = rng.range(wy0 + 1, wy0 + (wy1 - wy0) * 0.6);
             if (!ok(x, y, 1.2)) continue;
-            if (rng.chance(0.4)) horse(T, x, y, LAND, rng.sign(), rng, rng.chance(0.6));
-            else person(T, x, y, LAND, rng);
+            const at = C.to(x, y);
+            if (rng.chance(0.4)) horse(T, at[0], at[1], LAND, rng.sign(), rng, rng.chance(0.6));
+            else person(T, at[0], at[1], LAND, rng);
             taken.push([x, y, 1.4]);
         }
     }
@@ -1609,7 +1987,7 @@
             pane(T, W.at, w * 0.55, 0.9, 0.9, 0.85, 'cross');
             if (w > 6) pane(T, W.at, w * 0.78, 0.9, 0.9, 0.85, 'cross');
         }
-        for (const side of [1, 2, 3]) windows(T, wall(F, side, fp), { base: -0.1, floors: 1, style: 'cross', winW: 0.85, winH: 0.85, gap: 2 });
+        for (const side of [1, 2, 3]) panes(T, wall(F, side, fp), { base: -0.1, floors: 1, style: 'cross', winW: 0.85, winH: 0.85, gap: 2 });
     }
 
     // A few cottages facing the road, picket fences in front and vegetable
@@ -1633,15 +2011,17 @@
                 inKind(S, GREEN, () => {
                     const v0 = b + d + 1.2, v1 = Math.min(D - 1, v0 + 3.5);
                     S.loop([F.P(a, v0, 0), F.P(a + w, v0, 0), F.P(a + w, v1, 0), F.P(a, v1, 0)]);
-                    for (let u = a + 0.6; u < a + w - 0.3; u += 0.6) S.line([F.P(u, v0 + 0.2, 0), F.P(u, v1 - 0.2, 0)]);
+                    const rows = Math.max(1, Math.floor(w / Math.max(0.6, FINE / Math.max(apart(T, F.V(0, 1, 0), F.V(1, 0, 0)), 1e-6))));
+                    for (let i = 1; i < rows; i++) S.line([F.P(a + (w * i) / rows, v0 + 0.2, 0), F.P(a + (w * i) / rows, v1 - 0.2, 0)]);
                 });
             }
-            // a tree gets a gap of its own between this cottage and the next
+            // a tree gets a gap of its own between this cottage and the next,
+            // if that's still inside the field
             let gap = rng.range(3.5, 6);
             if (rng.chance(0.6)) {
                 gap = rng.range(8, 9.5);
                 const [tx, ty] = F.P(a + w + gap / 2, b + d * 0.7, 0);
-                tree(T, tx, ty, LAND, rng);
+                if (a + w + gap / 2 < L - 2) tree(T, tx, ty, LAND, rng);
             }
             a += w + gap;
         }
@@ -1685,6 +2065,28 @@
         } else if (kind === 'hay') {
             S.hatch(rect3(r), along, gap * 2.2);
             for (let i = rng.int(2, 5); i > 0; i--) haystack(T, rng.range(x0 + 2, x1 - 2), rng.range(y0 + 2, y1 - 2));
+        } else if (kind === 'vineyard') {
+            // rows of vines as dashes, every other row starting half a dash further along
+            const lw = w >= d, L = lw ? w : d, D = lw ? d : w, per = Math.max(apart(T, along, [along[1], along[0], 0]), 1e-6);
+            const rows = Math.max(2, Math.floor(D / Math.max(2.4, (1.6 * gap) / per))), on = Math.max(1.8, 1.7 / T.k), off = on * 0.6;
+            const at = (u, v) => (lw ? [x0 + u, y0 + v, LAND] : [x0 + v, y0 + u, LAND]);
+            for (let i = 0; i < rows; i++) {
+                const v = (D * (i + 0.5)) / rows;
+                for (let u = 0.8 + ((i % 2) * (on + off)) / 2; u + on < L - 0.8; u += on + off) S.line([at(u, v), at(u + on, v)]);
+            }
+        } else if (kind === 'pond') {
+            // an uneven round of water with a ripple in it and reeds on the bank
+            const cx = (x0 + x1) / 2 + rng.range(-0.08, 0.08) * w, cy = (y0 + y1) / 2 + rng.range(-0.08, 0.08) * d;
+            const R = Math.min(w, d) * rng.range(0.24, 0.31), f1 = rng.range(0, TAU), f2 = rng.range(0, TAU);
+            const rim = (a, m) => {
+                const q = R * m * (1 + 0.13 * Math.sin(2 * a + f1) + 0.08 * Math.sin(3 * a + f2));
+                return [cx + q * Math.cos(a), cy + q * Math.sin(a), LAND];
+            };
+            S.kind = WATER;
+            S.loop(Array.from({ length: 36 }, (_, i) => rim((TAU * i) / 36, 1)));
+            if (R * T.k > 3) S.line(Array.from({ length: 13 }, (_, i) => rim(f1 + (TAU * 0.55 * i) / 12, 0.58)));
+            S.kind = GREEN;
+            for (let i = rng.int(4, 7); i > 0; i--) tuft(T, ...rim(rng.range(0, TAU), 1.2).slice(0, 2));
         } else if (kind === 'wood') {
             const spots = [];
             for (let i = Math.round((w * d) / 32); i > 0; i--) {
@@ -1721,10 +2123,10 @@
             roads.push({ g, a0, a1, hw, P, bc, rect: bounds([P(a0, -hw), P(a1, hw)]) });
         }
         for (const rd of roads) {
-            const { a0, a1, hw, P } = rd;
+            const { a0, a1, hw, P } = rd, half = rd.g.road.wB / 2;
             S.kind = INK;
-            S.line([P(a0, -hw), P(a1, -hw)]);
-            S.line([P(a0, hw), P(a1, hw)]);
+            // the road is wider than the bridge, and narrows to meet the ends of its parapets
+            for (const b of [-1, 1]) S.line([P(a0, b * hw), P(a1 - 3, b * hw), P(a1, b * half)]);
             if (T.detail) {
                 S.kind = WOOD;
                 for (const b of [-0.8, 0.8]) for (let a = a1 - 1; a > a0; a -= 3.2) S.line([P(a, b), P(a - 1.8, b)], true);
@@ -1767,23 +2169,33 @@
             const c = take(c => below(c) && c.near && Math.max(c.r[2] - c.r[0], c.r[3] - c.r[1]) > 20 && Math.min(c.r[2] - c.r[0], c.r[3] - c.r[1]) > 18);
             if (c) c.kind = 'fair';
         }
+        // is a field next to one of this kind?
+        const beside = (c, kind) => cells.some(o => o.kind === kind && overlap(rectPoly([c.r[0] - 9, c.r[1] - 9, c.r[2] + 9, c.r[3] + 9]), rectPoly(o.r)));
         if (p.mill) {
-            const c = take(c => below(c) && c.r[2] - c.r[0] > 15 && c.r[3] - c.r[1] > 15);
+            // The sails reach 8 m out from the middle of the field. It takes a
+            // field that holds them when there is one, and never one next to
+            // the tournament, where they'd turn through the stand.
+            const room = m => c => below(c) && c.r[2] - c.r[0] > m && c.r[3] - c.r[1] > m && !beside(c, 'fair');
+            const c = take(room(18)) || take(room(15));
             if (c) c.kind = 'mill';
         }
         // cottages along the roads just out of the gates
         for (let i = Math.round(p.cottages * 3); i > 0; i--) {
-            const options = cells.filter(c => !c.kind && c.road && c.far < 45 && c.r[2] - c.r[0] > 12 && c.r[3] - c.r[1] > 12);
+            const options = cells.filter(c => !c.kind && c.road && c.far < 45 && c.r[2] - c.r[0] > 12 && c.r[3] - c.r[1] > 12 && !beside(c, 'mill'));
             if (!options.length) break;
             options.sort((a, b) => a.far - b.far);
             options[rng.int(0, Math.min(1, options.length - 1))].kind = 'hamlet';
         }
-        // the farther from town, the more of it is woodland
-        const kinds = c => [[3 * p.fields, 'furrows'], [2 * p.fields, 'strips'], [1.4, 'meadow'], [0.9, 'pasture'], [0.8, 'orchard'], [0.8 * p.fields, 'hay'],
-            [1.6 * p.trees * (0.25 + c.far / 45), 'wood']];
+        // Every town has its own country: more plowland round one, more woods
+        // or pasture round another. The farther from town, the more of it is
+        // woodland.
+        const lean = () => rng.range(0.5, 1.7), plow = lean(), grass = lean(), woods = lean(), vines = rng.chance(0.5) ? lean() : 0;
+        const kinds = c => [[3 * p.fields * plow, 'furrows'], [2 * p.fields * plow, 'strips'], [1.4 * grass, 'meadow'], [0.9 * grass, 'pasture'], [0.8, 'orchard'],
+            [0.8 * p.fields, 'hay'], [1.2 * p.fields * vines, 'vineyard'], [0.3, 'pond'], [1.6 * p.trees * woods * (0.25 + c.far / 45), 'wood']];
         // far fields first, so nearer trees and haystacks stack over them in order
         cells.sort((a, b) => a.q[1] - b.q[1]);
         const outside = S.shadow;
+        let ponds = 0;
         for (const c of cells) {
             S.shadow = outside;
             if (c.kind === 'fair') tournament(T, c.r, rng);
@@ -1791,8 +2203,14 @@
                 field(T, c.r, 'meadow', rng);
                 postMill(T, (c.r[0] + c.r[2]) / 2, (c.r[1] + c.r[3]) / 2, rng);
             } else if (c.kind === 'hamlet') hamlet(T, c, rng);
-            else field(T, c.r, rng.weighted(kinds(c)), rng);
+            else {
+                let kind = rng.weighted(kinds(c));
+                if (kind === 'pond' && ++ponds > 2) kind = 'meadow';
+                field(T, c.r, kind, rng);
+            }
         }
+        // fields with something built on them, which loose trees keep off
+        const builtOn = (x, y) => cells.some(c => (c.kind === 'hamlet' || c.kind === 'fair' || c.kind === 'mill') && inRect(c.r, x, y, 3));
         // trees along the roads, people and wagons on them
         for (const rd of roads) {
             const { a0, a1, P } = rd;
@@ -1801,12 +2219,13 @@
                 side = -side;
                 if (!rng.chance(0.4 + 0.5 * p.trees)) continue;
                 const [x, y] = P(a, side * 4.6);
-                // the cottages have their own trees, and these would stand on their fences
-                if (cells.some(c => c.kind === 'hamlet' && inRect(c.r, x, y, 3))) continue;
+                // the cottages have their own trees, and these would stand on their fences or in the lists
+                if (builtOn(x, y)) continue;
                 tree(T, x, y, LAND, rng);
             }
             const sx = rd.g.road.r, dirOut = -(sx[0] * cam.rx + sx[1] * cam.ry) >= 0 ? 1 : -1;
-            for (let a = a1 - 4; a > a0; a -= rng.range(14, 26)) {
+            // starting back from where the road narrows to the bridge
+            for (let a = a1 - 7; a > a0; a -= rng.range(14, 26)) {
                 const [x, y] = P(a, rng.range(-1.6, 1.6));
                 if (depth(view, x, y) < 0) continue;
                 const roll = rng.random() / Math.max(0.05, p.people);
@@ -1819,7 +2238,7 @@
         for (let i = Math.round(14 * p.trees); i > 0; i--) {
             const x = rng.range(vx0, vx1), y = rng.range(vy0, vy1);
             const g = depth(glacis, x, y);
-            if (g > 0 || g < -8 || depth(view, x, y) < 0 || roads.some(rd => inRect(rd.rect, x, y, 2.5))) continue;
+            if (g > 0 || g < -8 || depth(view, x, y) < 0 || roads.some(rd => inRect(rd.rect, x, y, 2.5)) || builtOn(x, y)) continue;
             tree(T, x, y, LAND, rng);
         }
     }
@@ -1866,7 +2285,7 @@
     // People about the streets and guards on the walls
     function townsfolk(T, town, rng) {
         const { S, p } = T, [x0, y0, x1, y1] = bounds(town.inner);
-        const busy = (x, y) => town.cells.some(c => inRect(c.rect, x, y, 0.4)) || (town.castle && x > town.castle.xc - 3 && y > town.castle.yc - 3);
+        const busy = (x, y) => town.cells.some(c => inRect(c.rect, x, y, 0.4)) || (town.castle && inRect(town.castle.zone, x, y, 3));
         for (let i = Math.round((((x1 - x0) * (y1 - y0)) / 220) * p.people); i > 0; i--) {
             const x = rng.range(x0, x1), y = rng.range(y0, y1);
             if (depth(town.inner, x, y) < 0.6 || busy(x, y)) continue;
@@ -1899,7 +2318,7 @@
             }
             return g;
         };
-        const corner = C ? rectPoly([C.xc - C.tc / 2, C.yc - C.tc / 2, town.A + 60, town.B + 60]) : null;
+        const corner = C ? rectPoly(C.zone) : null;
         const lane = group(town.wallIn, [town.inner].concat(corner ? [corner] : []));
         const outside = group(null, [town.moat]);
         for (const c of town.cells) if (!c.castle) c.group = group(c.poly);
@@ -1910,7 +2329,10 @@
         banks(T, town);
         castAll(S, everywhere, () => {
             for (const w of town.walls) curtain(T, w, rng);
-            for (const t of town.towers) tower(T, t, rng);
+            for (const t of town.towers) {
+                tower(T, t, rng);
+                footing(T, t, town);
+            }
             for (const g of town.gates) gatehouse(T, g, town, rng);
             if (C) {
                 gatehouse(T, C.gate, town, rng);
@@ -1922,9 +2344,10 @@
         for (const c of town.cells) {
             if (c.castle) continue;
             S.shadow = c.group;
-            if (c.kind === 'square') marketSquare(T, c, rng);
+            if (c.kind === 'square') marketSquare(T, c, town, rng);
             else if (c.kind === 'church') churchBlock(T, c, rng);
             else if (c.kind === 'houses') block(T, c, town, rng);
+            else if (c.kind === 'orchard') orchardBlock(T, c, rng);
             else {
                 S.kind = INK;
                 S.loop(at3(c.poly, LAND));
@@ -2009,7 +2432,7 @@
         id: 'castle',
         name: 'Castle Town',
         category: 'Scenes',
-        description: 'A walled town in its moat with round towers, gatehouses, a castle keep, a market square and the fields round it, in isometric ink.',
+        description: 'A walled town in its moat with round or square towers, gatehouses, a castle keep, a market square and the fields round it, in isometric ink. Every seed builds a different one.',
         fit: false,
         params: [
             { type: 'section', label: 'View' },
@@ -2021,14 +2444,20 @@
             { type: 'section', label: 'Walls' },
             { id: 'size', label: 'Town size (m)', type: 'range', min: 70, max: 150, step: 1, value: 104, random: [90, 120],
                 hint: 'Across the walls. The camera zooms out to fit a bigger town' },
-            { id: 'corners', label: 'Cut corners', type: 'range', min: 0, max: 1, step: 0.01, value: 0.55, random: [0.2, 1] },
+            { id: 'shape', label: 'Plan', type: 'select', value: 'any', random: false, hint: 'Any picks one from the seed',
+                options: [['any', 'Any'], ['ragged', 'Uneven corners'], ['octagon', 'Octagon'], ['square', 'Square'], ['long', 'Long']] },
+            { id: 'corners', label: 'Cut corners', type: 'range', min: 0, max: 1, step: 0.01, value: 0.55, random: [0.2, 1], show: p => p.shape !== 'square' },
             { id: 'wallHeight', label: 'Wall height (m)', type: 'range', min: 5, max: 10, step: 0.1, value: 7, random: [6, 8] },
             { id: 'towerGap', label: 'Tower spacing (m)', type: 'range', min: 14, max: 50, step: 1, value: 24, random: [18, 32] },
+            { id: 'towers', label: 'Towers', type: 'select', value: 'any', random: false, hint: 'Any picks one from the seed',
+                options: [['any', 'Any'], ['round', 'Round'], ['square', 'Square'], ['mixed', 'Square between round']] },
             { id: 'towerRoofs', label: 'Tower tops', type: 'select', value: 'mixed', random: ['mixed', 'mixed', 'cones', 'crenels'],
-                options: [['mixed', 'Mixed'], ['cones', 'Cone roofs'], ['crenels', 'Battlements']] },
+                options: [['mixed', 'Mixed'], ['cones', 'Pointed roofs'], ['crenels', 'Battlements']] },
             { id: 'moat', label: 'Moat width (m)', type: 'range', min: 9, max: 24, step: 0.5, value: 13, random: [11, 16] },
-            { id: 'gate2', label: 'Second gate', type: 'checkbox', value: true, random: 0.6, hint: 'A gate in the left-hand wall as well as the front' },
+            { id: 'gate2', label: 'Second gate', type: 'checkbox', value: true, random: 0.6, hint: 'A gate in the other wall that faces us as well' },
             { id: 'castle', label: 'Castle', type: 'checkbox', value: true, random: 0.9 },
+            { id: 'castleAt', label: 'Castle stands', type: 'select', value: 'any', random: false, show: p => p.castle, hint: 'Either picks one from the seed',
+                options: [['any', 'Either'], ['back', 'At the back'], ['right', 'On the right']] },
             { id: 'keep', label: 'Keep', type: 'select', value: 'any', random: false, show: p => p.castle,
                 options: [['any', 'Any'], ['turrets', 'Corner turrets'], ['square', 'Square keep'], ['round', 'Round donjon']] },
             { id: 'banners', label: 'Flags & banners', type: 'checkbox', value: true },
@@ -2039,7 +2468,7 @@
             { id: 'floors', label: 'Max stories', type: 'range', min: 2, max: 5, step: 1, value: 4, random: [3, 5] },
             { id: 'timber', label: 'Half-timbered houses', type: 'range', min: 0, max: 1, step: 0.01, value: 0.55, random: [0.2, 0.9] },
             { id: 'church', label: 'Church', type: 'checkbox', value: true, random: 0.85 },
-            { id: 'market', label: 'Market hall', type: 'checkbox', value: true, random: 0.7 },
+            { id: 'market', label: 'Market hall', type: 'checkbox', value: true, random: 0.7, hint: 'Some towns have a belfry in its place' },
             { id: 'gardens', label: 'Gardens', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.3, 0.9] },
             { id: 'people', label: 'People', type: 'range', min: 0, max: 1, step: 0.01, value: 0.5, random: [0.2, 0.8] },
             { type: 'section', label: 'Country' },
@@ -2069,7 +2498,7 @@
 
         generate(p, ctx) {
             const { width: W, height: H } = ctx, seed = ctx.seed | 0;
-            const town = plan(p, new PG.RNG(hash(seed, 1)));
+            const town = plan(p, new PG.RNG(hash(seed, 1)), character(p, new PG.RNG(hash(seed, 5))));
             const view = fitCamera(p, town, W, H), k = view.k;
             const cam = makeCamera(p.yaw, p.elev, k, W, H, view.cx, view.cy);
             const S = new Scene(cam, W, H);
@@ -2089,8 +2518,8 @@
                 hDark: p.roofGap * 0.6,
                 // lit if the face gets at least 3/4 of the light a flat roof does
                 lit: n => (n[0] * toSun[0] + n[1] * toSun[1] + n[2] * toSun[2]) / Math.hypot(n[0], n[1], n[2]) >= 0.75 * toSun[2],
-                // battlements a little oversized, so they still read when the town is small on the page
-                merlon: Math.max(0.9, 1.15 / k),
+                // battlements oversized, 1.6 mm across on paper, so they still read when the town is small on the page
+                merlon: Math.max(0.9, 1.6 / k),
             };
             build(T, town, seed);
             dedupe(S);

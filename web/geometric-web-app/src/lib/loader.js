@@ -11,13 +11,13 @@
         'spirograph', 'mystery', 'harmonograph', 'maurer', 'superformula', 'guilloche',
         'timestable', 'flower', 'phyllotaxis', 'attractor', 'ribbons',
         // Fields
-        'flowfield', 'ridgelines', 'topo', 'chladni', 'fieldlines', 'moire', 'warp',
+        'flowfield', 'ridgelines', 'topo', 'wireframe', 'chladni', 'fieldlines', 'moire', 'warp',
         // Tiles
         'truchet', 'islamic', 'penrose', 'hyperbolic', 'celtic', 'whirl', 'maze', 'lsystem',
         // Packing
         'circlepack', 'apollonian', 'subdivide', 'voronoi',
         // Scenes
-        'town', 'harbour', 'castle', 'fairground', 'trainyard', 'moonbase', 'alpine', 'skyline', 'stairwell', 'cosmic', 'tidal',
+        'town', 'harbour', 'castle', 'fairground', 'trainyard', 'moonbase', 'alpine', 'skyline', 'stadium', 'megastructure', 'stairwell', 'cosmic', 'tidal',
         // Image
         'image',
     ];

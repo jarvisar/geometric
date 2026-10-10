@@ -22,6 +22,7 @@ preview, clipping and export. Custom pen colors still belong to the user.
 | Flow Field | Flow direction, position or coherent noise |
 | Ridgelines | Near-to-far depth bands |
 | Topographic | Elevation bands, with index contours in the darkest ink |
+| Wireframe | Elevation bands from the coldest ink to the hottest, near-to-far bands, or one color per line direction |
 | Chladni | Distance from the nodal lines and vibration polarity |
 | Field Lines | Source fans and potential levels |
 | Moiré | Line families, subdivided into broad bands |
@@ -35,6 +36,9 @@ preview, clipping and export. Custom pen colors still belong to the user.
 | Circle Packing, Apollonian | Circle size or recursive generation |
 | Subdivision, Voronoi | Quilt tones or coherent patches of neighboring cells |
 | Town, Harbor, Castle Town, Fairground, Trainyard, Moon Base, Alpine, Skyline District | Scene materials and objects |
+| Moon Base on Mars | Same as the Moon, with the ground on the red pen until an eighth pen takes it over in brown |
+| Stadium | Scene materials and objects, with the seats in the club's colors. The running track, clay courts and infield stay on the red pen until an eighth pen takes them over in brown, along with the streets |
+| Megastructure | Tiers in ink, then fins and grilles, slab stacks, studs and teeth, ducts and frames, loose blocks, the plinth and every other tier. Hatching takes the second pen when it's on |
 | Infinite Stairwell | Steps and walls, the handrail and shading, then the floor or skylight, balusters, string, walls and every other turn |
 | Tidal Atlas | Water and land, then the cut block, elevation bands, survey marks and the sea surface |
 | Cosmic Comics | Dark outlines, a warm sun and cool skies, then sand, distant ranges, plants, crystals and rock |

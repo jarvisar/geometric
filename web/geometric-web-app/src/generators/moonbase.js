@@ -1,7 +1,10 @@
 /*
- * Moon Base: a lunar garden colony in the illustrated isometric scene family.
- * The site is planned before drawing: pressure tunnels connect a spanning tree
- * of occupied lots, and craters, boulders and tracks respect those reservations.
+ * Moon Base: a garden colony on the Moon or Mars in the illustrated isometric
+ * scene family. The site is planned before drawing: pressure tunnels connect a
+ * spanning tree of occupied lots, and craters, dunes, boulders and tracks
+ * respect those reservations.
+ * The seed picks the shape of the plan, where each facility goes and a house
+ * style for the domes and habitats, so two colonies don't share a skeleton.
  * Biospheres have opaque rear glazing and a clear viewing belt at the front;
  * the same depth-tested faces hide terrain behind the glass and reveal gardens.
  * All geometry stays in world coordinates, including dishes, rover wheels,
@@ -11,12 +14,14 @@
     'use strict';
     const { geo, TAU } = PG;
     const { makeCamera, Scene, ring, hash, segments } = PG.iso;
-    const { turned, unit, inKind } = PG.isokit;
+    const { turned, unit, inKind, outward } = PG.isokit;
     const INK = 0, RED = 1, BLUE = 2, GOLD = 3, GREEN = 4, FIGURE = 5, GLASS = 6, DUST = 7;
     const Z = [0, 0, 1];
     const add = (a, b) => a.map((v, i) => v + b[i]);
     const mul = (a, s) => a.map(v => v * s);
     const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+    const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
     const circle = (S, x, y, r, z, n = 40, rot = 0) => S.loop(Array.from({ length: n }, (_, i) => {
         const a = TAU * i / n + rot; return [x + r * Math.cos(a), y + r * Math.sin(a), z];
     }));
@@ -130,19 +135,34 @@
             for (const side of lot.dock) {
                 const q = axis ? F.P(0, side * at, 0) : F.P(side * at, 0, 0);
                 // The port tunnel leaves from the building's own wall: the
-                // cross tunnel between the hab hulls, a greenhouse end wall or
-                // a workshop side wall.
-                const [s, e] = { hab: [1.5, 0], greenhouse: [8.85, 8.5], workshop: [5.55, 4.8] }[lot.type];
+                // cross tunnel between the hab hulls (or the end of the heap
+                // over them), a greenhouse end wall or a workshop side wall.
+                const [s, e] = { hab: lot.style === 'bermed' ? [5.02, 4.3] : [1.5, 0], greenhouse: [8.85, 8.5], workshop: [5.55, 4.8] }[lot.type];
                 tunnel(T, lot, { x: q[0], y: q[1] }, s, e, POD, 1);
                 pod(T, q[0], q[1]);
             }
         }
     }
 
-    function garden(T, x, y, r, rng) {
-        const { S } = T, F = turned(x, y, 1.05, 0);
-        // Four growing beds leave a central cross-shaped promenade.
-        for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+    function garden(T, lot, rng) {
+        const { S } = T, { x, y, r } = lot, F = turned(x, y, 1.05, 0);
+        let top = 1.05;
+        if (lot.garden === 'terrace') {
+            // Stepped planting rings, like a wedding cake, in place of the beds
+            for (const f of [0.6, 0.42, 0.24]) {
+                S.lathe(x, y, [[r * f, top], [r * f, top + 0.5]], 32);
+                top += 0.5;
+                const rr = r * (f - 0.09), n = Math.round(rr * 2.4);
+                inKind(S, GREEN, () => {
+                    circle(S, x, y, rr, top + 0.02, 32);
+                    if (T.p.detail) for (let i = 0; i < n; i++) {
+                        const a = TAU * i / n, q = [x + rr * Math.cos(a), y + rr * Math.sin(a), top + 0.03], h = rng.range(0.35, 0.65);
+                        S.line([add(q, [-0.23, 0, h]), q, add(q, [0.23, 0, h])]);
+                    }
+                });
+            }
+        } else for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+            // Four growing beds leave a central cross-shaped promenade.
             const bx = sx * r * 0.28, by = sy * r * 0.28, w = r * 0.19;
             S.box(F, bx - w, by - w, 0, bx + w, by + w, 0.42);
             inKind(S, GREEN, () => {
@@ -155,59 +175,114 @@
                 }
             });
         }
-        // The big dome gets one tree where the paths cross, the others a pond.
+        // The big dome gets one tree in the middle, the others a pond.
         // Several trees piled up over the beds and each other.
-        if (r > 11) inKind(S, GREEN, () => PG.isokit.roundTree(T, x, y, 1.05, rng));
+        if (r > 11) inKind(S, GREEN, () => PG.isokit.roundTree(T, x, y, top, rng));
         else inKind(S, GLASS, () => {
-            S.lathe(x, y, [[0.9, 1.1], [0.9, 1.5]], 16);
-            circle(S, x, y, 0.65, 1.52, 16);
+            S.lathe(x, y, [[0.9, top + 0.05], [0.9, top + 0.45]], 16);
+            circle(S, x, y, 0.65, top + 0.47, 16);
         });
     }
 
-    function biosphere(T, lot, rng) {
-        const { S, cam } = T, { x, y, r } = lot, z = 1.2, h = r * 0.84;
-        S.lathe(x, y, [[r + 0.6, 0], [r + 0.6, 0.45], [r, 0.7], [r, z]], 48);
-        inKind(S, RED, () => circle(S, x, y, r + 0.04, 0.88, 48));
-        if (T.p.gardens) garden(T, x, y, r, rng);
-
-        // One indexed triangular shell supplies glazing, ribs AND silhouette.
-        // Independent circular ribs cut across flat panels and produce loose
-        // ends; shared mesh edges meet exactly, even with the clear front belt.
-        const tris = [], frequency = T.p.detail ? (r > 11 ? 6 : 4) : 3;
+    // Triangles of a geodesic hemisphere on the unit dome
+    function geodesic(frequency) {
+        const panels = [];
         for (let i = 0; i < 4; i++) {
             const a = i * Math.PI / 2, b = (i + 1) * Math.PI / 2;
             const A = [Math.cos(a), Math.sin(a), 0], B = [Math.cos(b), Math.sin(b), 0];
             const vertex = (u, v) => unit(add(add(mul(A, frequency - u - v), mul(B, u)), mul(Z, v)));
             for (let u = 0; u < frequency; u++) for (let v = 0; v < frequency - u; v++) {
-                tris.push([vertex(u, v), vertex(u + 1, v), vertex(u, v + 1)]);
-                if (u + v < frequency - 1) tris.push([vertex(u + 1, v), vertex(u + 1, v + 1), vertex(u, v + 1)]);
+                panels.push({ q: [vertex(u, v), vertex(u + 1, v), vertex(u, v + 1)], glass: true });
+                if (u + v < frequency - 1) panels.push({ q: [vertex(u + 1, v), vertex(u + 1, v + 1), vertex(u, v + 1)], glass: true });
             }
         }
-        const at = q => [x + r * q[0], y + r * q[1], z + h * q[2]], edges = new Map();
+        return panels;
+    }
+
+    // Panels of a dome of revolution with m meridians. `profile` is [radius,
+    // height] on the unit dome from the base up, closed by a flat cap. Every
+    // panel has two level edges, so the quads stay flat. glass(i, k) says
+    // whether panel i of band k is glazed, and k past the last band is the cap.
+    function latLong(profile, m, glass = () => true) {
+        const panels = [], last = profile.length - 1;
+        const at = (i, k) => { const a = TAU * (i % m) / m; return [profile[k][0] * Math.cos(a), profile[k][0] * Math.sin(a), profile[k][1]]; };
+        for (let k = 0; k < last; k++) for (let i = 0; i < m; i++) {
+            panels.push({ q: [at(i, k), at(i + 1, k), at(i + 1, k + 1), at(i, k + 1)], glass: glass(i, k) });
+        }
+        panels.push({ q: Array.from({ length: m }, (_, i) => at(i, last)), glass: glass(0, last) });
+        return panels;
+    }
+
+    // One set of panels supplies glazing, ribs AND silhouette.
+    // Independent circular ribs cut across flat panels and produce loose
+    // ends; shared panel edges meet exactly, even with the clear front belt.
+    // edgeKind(a, b, sides) picks the pen for an edge off the outline, or null.
+    function shell(T, lot, z, h, panels, edgeKind) {
+        const { S, cam } = T, { x, y, r } = lot, edges = new Map();
+        const at = q => [x + r * q[0], y + r * q[1], z + h * q[2]];
         const pointKey = q => q.map(v => Math.round(v * 1e6)).join(',');
-        for (let i = 0; i < tris.length; i++) {
-            const tri = tris[i], mid = mul(add(add(tri[0], tri[1]), tri[2]), 1 / 3);
-            const normal = [mid[0] / r, mid[1] / r, mid[2] / h];
-            const front = cam.facing(...normal), view = -(mid[0] * cam.fx + mid[1] * cam.fy);
-            const clear = T.p.gardens && front && view > 0.12 && mid[2] < 0.93;
-            const pts = tri.map(at);
+        panels.forEach((panel, i) => {
+            const pts = panel.q.map(at), mid = mul(panel.q.reduce(add), 1 / panel.q.length);
+            const front = cam.facing(...outward(pts, [x, y, z])), view = -(mid[0] * cam.fx + mid[1] * cam.fy);
+            const clear = panel.glass && T.p.gardens && front && view > 0.12 && mid[2] < 0.93;
             if (!clear) S.face(pts);
-            for (let j = 0; j < 3; j++) {
-                const a = tri[j], b = tri[(j + 1) % 3], ka = pointKey(a), kb = pointKey(b), key = ka < kb ? ka + '/' + kb : kb + '/' + ka;
-                if (!edges.has(key)) edges.set(key, { a, b, fronts: [] });
-                edges.get(key).fronts.push(front);
-            }
-            if (front) {
-                if (!clear && T.p.hatching && i % 5 === 0) inKind(S, GLASS, () => S.hatch(pts, [1, -0.2, 1], T.p.hatchGap * 1.4));
-            }
+            panel.q.forEach((a, j) => {
+                const b = panel.q[(j + 1) % panel.q.length], ka = pointKey(a), kb = pointKey(b), key = ka < kb ? ka + '/' + kb : kb + '/' + ka;
+                if (!edges.has(key)) edges.set(key, { a, b, sides: [] });
+                edges.get(key).sides.push({ front, glass: panel.glass });
+            });
+            if (front && !clear && panel.glass && T.p.hatching && i % 5 === 0) inKind(S, GLASS, () => S.hatch(pts, [1, -0.2, 1], T.p.hatchGap * 1.4));
+        });
+        for (const { a, b, sides } of edges.values()) {
+            if (!sides.some(s => s.front)) continue;
+            const kind = sides.length === 1 || sides.some(s => !s.front) ? INK : edgeKind(a, b, sides);
+            if (kind !== null) inKind(S, kind, () => S.line([at(a), at(b)]));
         }
-        for (const { a, b, fronts } of edges.values()) {
-            if (!fronts.some(Boolean)) continue;
-            const silhouette = fronts.length === 1 || fronts.some(f => !f);
-            const rib = [0, 1].some(i => Math.abs(a[i]) < 1e-6 && Math.abs(b[i]) < 1e-6);
-            inKind(S, silhouette || rib ? INK : GLASS, () => S.line([at(a), at(b)]));
+    }
+
+    function biosphere(T, lot, rng) {
+        const { S, cam } = T, { x, y, r } = lot, z = 1.2, level = (a, b) => Math.abs(a[2] - b[2]) < 1e-6;
+        S.lathe(x, y, [[r + 0.6, 0], [r + 0.6, 0.45], [r, 0.7], [r, z]], 48);
+        inKind(S, RED, () => circle(S, x, y, r + 0.04, 0.88, 48));
+        if (T.p.gardens) garden(T, lot, rng);
+        let h = r * 0.84;
+        if (lot.style === 'ribbed') {
+            // Conservatory: a glazed drum under a shallow dome, with eight
+            // of the meridians as structural ribs
+            const m = T.p.detail ? (r > 11 ? 24 : 16) : 12, step = m === 16 ? 2 : 3;
+            const profile = [[1, 0], [1, 0.27], [0.95, 0.48], [0.83, 0.67], [0.64, 0.83], [0.4, 0.94], [0.15, 1]];
+            h = r * 0.9;
+            shell(T, lot, z, h, latLong(profile, m), (a, b) => {
+                if (level(a, b)) return Math.abs(a[2] - 0.27) < 1e-6 ? INK : GLASS;
+                return Math.round(Math.atan2(a[1], a[0]) / TAU * m + m) % step ? GLASS : INK;
+            });
+            S.lathe(x, y, [[r * 0.15, z + h - 0.05], [r * 0.15, z + h + 0.55], [r * 0.07, z + h + 1.05]], 12);
+            inKind(S, RED, () => circle(S, x, y, r * 0.15 + 0.03, z + h + 0.3, 12));
+        } else if (lot.style === 'shell') {
+            // Printed regolith: a pointed beehive laid down in courses, opaque
+            // apart from an oculus and a glazed bay turned to the viewer
+            const m = 24, bands = T.p.detail ? 14 : 8, toward = Math.atan2(-cam.fy, -cam.fx) + 0.2;
+            const profile = Array.from({ length: bands + 1 }, (_, k) => {
+                const t = 1.2025 * k / bands; return [1.25 * Math.cos(t) - 0.25, 1.029 * Math.sin(t)];
+            });
+            const bay = (i, k) => k === bands || k > 0 && k < bands * 0.62 && Math.abs(wrap(TAU * (i + 0.5) / m - toward)) < 0.72;
+            h = r * 1.02;
+            shell(T, lot, z, h, latLong(profile, m, bay), (a, b, sides) =>
+                sides.every(s => s.glass) ? GLASS : sides.some(s => s.glass) ? INK : level(a, b) ? DUST : null);
+            S.lathe(x, y, [[r * 0.2 + 0.2, z + h * 0.96 - 0.25], [r * 0.2 + 0.2, z + h * 0.96 + 0.3]], 24);
+            inKind(S, GLASS, () => {
+                circle(S, x, y, r * 0.2 - 0.15, z + h * 0.96 + 0.32, 24);
+                for (const a of [0, Math.PI / 2]) {
+                    const c = (r * 0.2 - 0.15) * Math.cos(a), s = (r * 0.2 - 0.15) * Math.sin(a);
+                    S.line([[x - c, y - s, z + h * 0.96 + 0.32], [x + c, y + s, z + h * 0.96 + 0.32]]);
+                }
+            });
+        } else {
+            const frequency = T.p.detail ? (r > 11 ? 6 : 4) : 3;
+            shell(T, lot, z, h, geodesic(frequency), (a, b) =>
+                [0, 1].some(i => Math.abs(a[i]) < 1e-6 && Math.abs(b[i]) < 1e-6) ? INK : GLASS);
+            S.lathe(x, y, [[0.72, z + h - 0.05], [0.72, z + h + 0.4], [0.35, z + h + 0.65]], 12);
         }
-        S.lathe(x, y, [[0.72, z + h - 0.05], [0.72, z + h + 0.4], [0.35, z + h + 0.65]], 12);
         // Buttresses, radial anchors and observation windows around the ring.
         for (let i = 0; i < 12; i++) {
             const a = TAU * i / 12, F = turned(x, y, 0, a);
@@ -252,16 +327,113 @@
         S.line([F.P(3.75, 0, 7.4), F.P(5.25, 0, 7.4)]);
     }
 
+    // Text on a wall has to run left to right on the page, whichever way the wall faces
+    const reads = (T, v) => v[0] * T.cam.rx + v[1] * T.cam.ry < 0 ? -1 : 1;
+
+    // Upright habitat on a ring footing: a squat two-deck can, or a tall tower
+    // printed in courses. `outer` is the angle of its side away from the corridor.
+    function upright(T, lot, index, outer) {
+        const { S, cam } = T, { x, y } = lot, tall = lot.style === 'tower';
+        const prof = tall ? [[2.75, 0.5], [3.1, 2.6], [3.15, 5.5], [2.85, 8.4], [2.2, 10.9], [1.25, 12.7], [0.55, 13.4]]
+            : [[3.05, 0.5], [3.05, 5.9], [2.6, 6.7], [1, 7.1]];
+        const rad = z => {
+            let k = 0;
+            while (k < prof.length - 2 && z > prof[k + 1][1]) k++;
+            return geo.lerp(prof[k][0], prof[k + 1][0], (z - prof[k][1]) / (prof[k + 1][1] - prof[k][1]));
+        };
+        // A hair outside the wall, otherwise the facets hide what is drawn on it
+        const on = (a, z) => [x + (rad(z) + 0.04) * Math.cos(a), y + (rad(z) + 0.04) * Math.sin(a), z];
+        const toward = Math.atan2(-cam.fy, -cam.fx), top = prof[prof.length - 1][1];
+        S.lathe(x, y, [[3.35, 0], [3.35, 0.5]], 24);
+        S.lathe(x, y, prof, 24);
+        inKind(S, RED, () => { for (const z of tall ? [1.4, 8.4] : [1.3, 5.6]) circle(S, x, y, rad(z) + 0.03, z, 24); });
+        if (tall) {
+            inKind(S, DUST, () => {
+                for (let z = 2.5; z < 13; z += 1.1) if (Math.abs(z - 8.4) > 0.3) circle(S, x, y, rad(z) + 0.03, z, 24);
+            });
+            // A slot window on each of three decks
+            inKind(S, GLASS, () => {
+                for (const z of [3, 5.8, 8.8]) for (const da of [-0.75, 0, 0.75]) {
+                    const side = s => Array.from({ length: 4 }, (_, i) => on(toward + da + s * 0.1, z + i * 0.55));
+                    S.loop([...side(-1), ...side(1).reverse()]);
+                }
+                circle(S, x, y, 0.35, top + 0.02, 12);
+            });
+            S.line([[x, y, top], [x, y, top + 2.2]]);
+        } else {
+            inKind(S, GLASS, () => {
+                for (const z of [2.4, 4.4]) for (const da of [-0.95, -0.32, 0.32, 0.95]) {
+                    S.loop(ring(12, (c, s) => on(toward + da + 0.17 * c, z + 0.52 * s)));
+                }
+            });
+            S.lathe(x, y, [[1, 7.1], [1, 7.45], [0.6, 7.7]], 12);
+            S.line([[x + 1.9, y, 6.85], [x + 1.9, y, 9.4]]);
+            S.line([[x + 1.15, y, 8.8], [x + 2.65, y, 8.8]]);
+        }
+        // The door goes on whichever free side faces the viewer most
+        const door = [lot.angle, lot.angle + Math.PI, outer].sort((a, b) => Math.cos(b - toward) - Math.cos(a - toward))[0];
+        S.line([on(door - 0.3, 0.9), on(door - 0.3, 2.3), on(door - 0.2, 2.75), on(door + 0.2, 2.75), on(door + 0.3, 2.3), on(door + 0.3, 0.9)]);
+        S.box(turned(x, y, 0, door), 3, -1, 0, 4, 1, 0.85);
+        const way = reads(T, [-Math.sin(door), Math.cos(door)]);
+        inKind(S, RED, () => number(S, String(index + 1).padStart(2, '0'), (u, v) => on(door + way * (u - 0.62) / 3.1, 3.3 + v), 0.6));
+    }
+
+    // Twin hulls under one heap of regolith. Only the hull ends, a few vents
+    // and the skylights show. The cross tunnel is somewhere inside.
+    function bermed(T, lot) {
+        const { S, cam } = T, F = turned(lot.x, lot.y, 0, lot.angle), L = 5, W = 7.9, H = 5.3, r = 2.3, zc = 2.9;
+        const arch = u => Array.from({ length: 17 }, (_, i) => {
+            const t = Math.PI * (1 - i / 16);
+            return F.P(u, W * Math.cos(t), H * Math.pow(Math.max(0, Math.sin(t)), 0.7));
+        });
+        S.prism(arch(-L), F.V(2 * L, 0, 0), true);
+        inKind(S, DUST, () => {
+            // Courses of sandbags, with the joints staggered like brickwork
+            for (let i = 2; i < 16; i += 2) S.line([arch(-L)[i], arch(L)[i]]);
+            if (T.p.detail) for (let i = 0; i < 16; i += 2) for (let u = -L + (i % 4 ? 0.9 : 1.8); u < L - 0.3; u += 1.8) S.line(arch(u).slice(i, i + 3));
+        });
+        const way = reads(T, F.V(0, 1, 0));
+        for (const v of [-4.4, 4.4]) for (const end of [-1, 1]) {
+            const hoop = (u, rr) => ring(20, (c, s) => F.P(u, v + rr * c, zc + rr * s));
+            S.prism(hoop(end * (L - 0.5), r), F.V(end * 2, 0, 0), true);
+            S.loop(hoop(end * (L + 0.01), r + 0.05));
+            if (!cam.facing(...F.V(end, 0, 0))) continue;
+            inKind(S, RED, () => S.loop(hoop(end * (L + 0.4), r + 0.03)));
+            const u = end * (L + 1.53);
+            S.line([F.P(u, v - 0.85, 1.6), F.P(u, v - 0.85, 3.1), ...Array.from({ length: 9 }, (_, i) => {
+                const a = Math.PI - Math.PI * i / 8; return F.P(u, v + 0.85 * Math.cos(a), 3.1 + 0.85 * Math.sin(a));
+            }), F.P(u, v + 0.85, 1.6), F.P(u, v - 0.85, 1.6)]);
+            for (let i = 0; i < 3; i++) {
+                const a = L + 1.5 + i * 0.5, b = a + 0.5;
+                S.box(F, end > 0 ? a : -b, v - 0.95, 0, end > 0 ? b : -a, v + 0.95, 1.5 - i * 0.5);
+            }
+            const index = lot.index * 2 + (v > 0 ? 1 : 0);
+            inKind(S, RED, () => number(S, String(index + 1).padStart(2, '0'), (a, b) => F.P(u, v + way * (a - 0.5), 4.15 + b), 0.5));
+        }
+        for (const u of [-2.6, 0.4, 3.1]) {
+            const q = F.P(u, 0, 0);
+            S.lathe(q[0], q[1], [[0.4, H - 0.2], [0.4, H + 0.8], [0.65, H + 0.8], [0.65, H + 1.05]], 10);
+        }
+        inKind(S, GLASS, () => {
+            for (const u of [-2, 2]) for (const v of [-4.4, 4.4]) {
+                const q = F.P(u, v, 0), z = H * Math.pow(1 - (v / W) ** 2, 0.35) - 0.25;
+                S.lathe(q[0], q[1], [[0.85, z], [0.75, z + 0.45], [0.4, z + 0.75], [0, z + 0.82]], 12);
+            }
+        });
+    }
+
     function habitatBlock(T, lot) {
-        const F = turned(lot.x, lot.y, 0, lot.angle);
+        if (lot.style === 'bermed') return bermed(T, lot);
+        const F = turned(lot.x, lot.y, 0, lot.angle), stands = lot.style === 'can' || lot.style === 'tower';
         for (const v of [-4.5, 4.5]) {
-            const q = F.P(0, v, 0);
-            habitat(T, { ...lot, x: q[0], y: q[1] }, lot.index * 2 + (v > 0 ? 1 : 0));
+            const q = F.P(0, v, 0), module = { ...lot, x: q[0], y: q[1] }, index = lot.index * 2 + (v > 0 ? 1 : 0);
+            if (stands) upright(T, module, index, lot.angle + Math.sign(v) * Math.PI / 2);
+            else habitat(T, module, index);
         }
         // The cross tunnel runs into each hull as far as its axis, which keeps
         // the joint hidden even under the curve of the hull
-        const a = F.P(0, -4.5, 0), b = F.P(0, 4.5, 0);
-        tunnel(T, { x: a[0], y: a[1] }, { x: b[0], y: b[1] }, 2.66, 0, 2.66, 0);
+        const a = F.P(0, -4.5, 0), b = F.P(0, 4.5, 0), wall = stands ? 3.07 : 2.66;
+        tunnel(T, { x: a[0], y: a[1] }, { x: b[0], y: b[1] }, wall, 0, wall, 0);
         // Battery box in the corridor between the hulls, unless a port tunnel needs it
         const { S } = T;
         for (const side of [-1, 1]) {
@@ -300,6 +472,21 @@
         inKind(S, GOLD, () => {
             for (const v of [-3.1, 3.1]) S.line([F.P(u, v, 0.6), F.P(u, v, 4.6)]);
         });
+        if (lot.roof === 'sawtooth') {
+            // North lights: the upright side of each tooth is glazed
+            const lit = T.cam.facing(...F.V(-1, 0, 0));
+            for (let a = -6; a < 5; a += 2.9) {
+                S.prism([F.P(a, -4.4, 7.15), F.P(a + 2.6, -4.4, 7.15), F.P(a, -4.4, 9)], F.V(0, 8.8, 0));
+                if (lit) inKind(S, GLASS, () => {
+                    S.loop([F.P(a - 0.02, -4, 7.45), F.P(a - 0.02, 4, 7.45), F.P(a - 0.02, 4, 8.7), F.P(a - 0.02, -4, 8.7)]);
+                    for (let v = -2; v < 3; v += 2) S.line([F.P(a - 0.02, v, 7.45), F.P(a - 0.02, v, 8.7)]);
+                });
+                else inKind(S, BLUE, () => {
+                    for (const t of [0.35, 0.65]) S.line([F.P(a + 2.6 * t, -4.4, 9 - 1.85 * t + 0.02), F.P(a + 2.6 * t, 4.4, 9 - 1.85 * t + 0.02)]);
+                });
+            }
+            return;
+        }
         S.box(F, -5, -2, 7.15, 2, 2, 8);
         inKind(S, BLUE, () => {
             for (let a = -4.6; a < 2; a += 0.75) S.line([F.P(a, -2, 8.03), F.P(a, 2, 8.03)]);
@@ -313,15 +500,19 @@
     function greenhouse(T, lot) {
         const { S } = T, F = turned(lot.x, lot.y, 0, lot.angle), r = 4.2;
         S.box(F, -8.8, -r - 0.35, 0, 8.8, r + 0.35, 0.8);
-        const arch = u => Array.from({ length: 17 }, (_, i) => {
-            const a = Math.PI - Math.PI * i / 16;
-            return F.P(u, r * Math.cos(a), 1.2 + r * Math.sin(a));
+        // Seventeen points across the roof, either a barrel vault or a pitched
+        // roof on low walls. Everything below works off the same points.
+        const peak = lot.style === 'peak', section = Array.from({ length: 17 }, (_, i) => {
+            const a = Math.PI - Math.PI * i / 16, k = Math.min(i, 16 - i), side = i < 8 ? -1 : 1;
+            if (!peak) return [r * Math.cos(a), 1.2 + r * Math.sin(a)];
+            return k < 3 ? [side * r, 1.2 + k * 0.7] : [side * r * (8 - k) / 6, 2.6 + (k - 2) * 2.8 / 6];
         });
+        const arch = u => section.map(([v, z]) => F.P(u, v, z));
         // Opaque rear half screens the landscape; open front glazing shows
-        // simple, broad crop rows inside the long barrel-vault greenhouse.
+        // simple, broad crop rows inside the long greenhouse.
         for (let j = 0; j < 16; j++) {
             const a = arch(-8.5)[j], b = arch(-8.5)[j + 1], c = arch(8.5)[j + 1], d = arch(8.5)[j];
-            const normal = F.V(0, -Math.cos(Math.PI * (j + 0.5) / 16), Math.sin(Math.PI * (j + 0.5) / 16));
+            const normal = F.V(0, section[j][1] - section[j + 1][1], section[j + 1][0] - section[j][0]);
             if (!T.cam.facing(...normal) || j > 5 && j < 10) S.face([a, b, c, d]);
         }
         for (const v of [-r, r]) {
@@ -335,7 +526,7 @@
             // and fanlight that leave no diagonals running through the beds.
             for (const i of [4, 6, 10, 12]) {
                 const q = arch(u)[i];
-                S.line([F.P(u, -r * Math.cos(Math.PI * i / 16), 0.8), q]);
+                S.line([F.P(u, section[i][0], 0.8), q]);
             }
             S.line([F.P(u, -r, 1.2), F.P(u, r, 1.2)]);
             const side = Math.sign(u), v = side * (8.5 + 0.035);
@@ -349,7 +540,7 @@
         }
         inKind(S, GLASS, () => {
             for (let u = -6.8; u < 8; u += 1.7) S.line(arch(u));
-            for (const i of [3, 6, 8, 10, 13]) S.line([arch(-8.5)[i], arch(8.5)[i]]);
+            for (const i of peak ? [2, 5, 8, 11, 14] : [3, 6, 8, 10, 13]) S.line([arch(-8.5)[i], arch(8.5)[i]]);
         });
         for (const v of [-2.4, 2.4]) {
             S.box(F, -7.5, v - 0.7, 0.82, 7.5, v + 0.7, 1.35);
@@ -365,15 +556,22 @@
         });
     }
 
+    // Profile of a ball for S.lathe, from polar angle a0 up to the top
+    const ball = (z, r, a0 = -Math.PI / 2, n = 12) => Array.from({ length: n + 1 }, (_, j) => {
+        const t = a0 + (Math.PI / 2 - a0) * j / n, flat = j === n || j === 0 && a0 <= -Math.PI / 2;
+        return [flat ? 0 : r * Math.cos(t), z + r * Math.sin(t)];
+    });
+
     function hub(T, lot) {
-        const { S } = T, { x, y } = lot;
-        S.lathe(x, y, [[5.8, 0], [5.8, 0.6], [4.6, 1], [4.6, 7], [5.7, 7.4], [5.7, 13.3], [6.1, 13.6], [6.1, 14.2], [4.7, 16], [0, 16]], 8, false, Math.PI / 8);
-        for (const z of [7.5, 10.4, 13.5]) {
-            inKind(S, RED, () => circle(S, x, y, z === 13.5 ? 6 : 5.72, z, 8, Math.PI / 8));
-            if (z === 13.5) continue;
+        const { S, cam } = T, { x, y } = lot, tiers = lot.tiers || 2, top = 7.4 + tiers * 2.95, roof = top + 2.7;
+        S.lathe(x, y, [[5.8, 0], [5.8, 0.6], [4.6, 1], [4.6, 7], [5.7, 7.4], [5.7, top], [6.1, top + 0.3], [6.1, top + 0.9], [4.7, roof], [0, roof]], 8, false, Math.PI / 8);
+        inKind(S, RED, () => circle(S, x, y, 6, top + 0.2, 8, Math.PI / 8));
+        for (let tier = 0; tier < tiers; tier++) {
+            const z = 7.5 + tier * 2.9;
+            inKind(S, RED, () => circle(S, x, y, 5.72, z, 8, Math.PI / 8));
             for (let i = 0; i < 8; i++) {
                 const a = (i + 0.5) * TAU / 8 + Math.PI / 8, F = turned(x, y, 0, a);
-                if (!T.cam.facing(...F.V(1, 0, 0))) continue;
+                if (!cam.facing(...F.V(1, 0, 0))) continue;
                 inKind(S, GLASS, () => {
                     const pts = [F.P(5.3, -1.75, z + 0.6), F.P(5.3, 1.75, z + 0.6), F.P(5.3, 1.75, z + 2), F.P(5.3, -1.75, z + 2)];
                     S.loop(pts); S.line([F.P(5.3, 0, z + 0.6), F.P(5.3, 0, z + 2)]);
@@ -381,17 +579,23 @@
                 });
             }
         }
-        S.lathe(x, y, [[1.3, 16], [1.3, 16.5], [0.7, 17.3]], 12);
-        S.line([[x, y, 17.3], [x, y, 22]]);
-        for (const z of [19.2, 20.8]) S.line([[x - 1.8, y, z], [x + 1.8, y, z]]);
-        inKind(S, RED, () => circle(S, x, y, 0.3, 22, 8));
+        if (lot.cap === 'radome') {
+            S.lathe(x, y, [[1.5, roof], [1.5, roof + 0.4]], 12);
+            S.lathe(x, y, ball(roof + 2.3, 2.3, -1, 10), 20);
+            inKind(S, RED, () => circle(S, x, y, 2.33, roof + 2.3, 20));
+        } else if (lot.cap === 'dish') {
+            dish(T, x, y, 3.2, Math.atan2(-cam.fx, cam.fy) + 0.9, roof);
+        } else {
+            S.lathe(x, y, [[1.3, roof], [1.3, roof + 0.5], [0.7, roof + 1.3]], 12);
+            S.line([[x, y, roof + 1.3], [x, y, roof + 6]]);
+            for (const z of [3.2, 4.8]) S.line([[x - 1.8, y, roof + z], [x + 1.8, y, roof + z]]);
+            inKind(S, RED, () => circle(S, x, y, 0.3, roof + 6, 8));
+        }
     }
 
-    function launchSite(T, lot) {
-        const { S } = T, { x, y } = lot, F = turned(x, y, 0, 0);
-        S.lathe(x, y, [[12, 0], [12, 0.55]], 8, false, Math.PI / 8);
-        inKind(S, GOLD, () => circle(S, x, y, 10.5, 0.58, 8, Math.PI / 8));
-        // A broad two-stage shuttle, with side boosters and swept landing fins.
+    // A broad two-stage shuttle, with side boosters and swept landing fins.
+    function shuttle(T, x, y, F) {
+        const { S } = T;
         const nose = Array.from({ length: 13 }, (_, i) => [i === 12 ? 0 : 3.1 * Math.cos(i * Math.PI / 24), 20 + 8.5 * Math.sin(i * Math.PI / 24)]);
         S.lathe(x, y, [[2, 1], [1.3, 3], [3.1, 3.5], ...nose], 32);
         for (const z of [6, 17.6, 19]) inKind(S, RED, () => circle(S, x, y, 3.13, z));
@@ -412,15 +616,54 @@
         panel(T, windscreen, BLUE, 0.8);
         S.line([F.P(0, -3.15, 20.2), F.P(0, -3.1, 21.9)]);
         inKind(S, RED, () => number(S, '01', (u, v) => F.P(u - 0.75, -3.15, 12.4 + v), 1.1));
-        // Service tower and access bridges are deliberately broad, with only
-        // one diagonal in each bay so the lattice remains readable on paper.
-        for (const u of [6.4, 9.4]) for (const v of [3.5, 6.5]) S.box(F, u - 0.2, v - 0.2, 0.55, u + 0.2, v + 0.2, 25);
-        for (let z = 1; z < 24; z += 4) {
+    }
+
+    // One slim stage that lands on its tail, steered by two pairs of flaps
+    function ship(T, x, y, F) {
+        const { S } = T, R = 2.7;
+        const nose = Array.from({ length: 13 }, (_, i) => [i === 12 ? 0 : R * Math.cos(i * Math.PI / 24), 20 + 8.5 * Math.sin(i * Math.PI / 24)]);
+        S.lathe(x, y, [[3.5, 0.55], [3.5, 1.1]], 8, false, Math.PI / 8);
+        S.lathe(x, y, [[2.1, 1.1], [R, 2.4], ...nose], 32);
+        for (const z of [8, 14, 19.5]) inKind(S, RED, () => circle(S, x, y, R + 0.03, z));
+        // Flaps on the same axes as the shuttle's side fins, for the same reason
+        for (const a of [Math.PI / 2, -Math.PI / 2]) {
+            const A = turned(x, y, 0, a);
+            S.prism([A.P(R - 0.3, -0.14, 9), A.P(R + 2.5, -0.14, 5.5), A.P(R + 2.5, -0.14, 2.4), A.P(R - 0.3, -0.14, 2.4)], A.V(0, 0.28, 0));
+            S.prism([A.P(R - 0.9, -0.12, 24), A.P(R + 1.5, -0.12, 21.5), A.P(R + 1.5, -0.12, 19.6), A.P(R - 0.3, -0.12, 19.6)], A.V(0, 0.24, 0));
+            inKind(S, RED, () => S.line([A.P(R + 0.1, -0.17, 8.2), A.P(R + 2.1, -0.17, 5.7)]));
+        }
+        for (const u of [-0.75, 0.75]) panel(T, [F.P(u - 0.5, -2.72, 21), F.P(u + 0.5, -2.72, 21), F.P(u + 0.42, -2.64, 22.3), F.P(u - 0.42, -2.64, 22.3)], BLUE, 0.8);
+        inKind(S, RED, () => number(S, '02', (u, v) => F.P(u - 0.75, -R - 0.05, 15.2 + v), 1.1));
+    }
+
+    // Squat ascent vehicle: a cone on four legs that goes back up to orbit
+    function ascent(T, x, y, F) {
+        const { S } = T;
+        S.lathe(x, y, [[1.9, 0.9], [1.2, 2.3]], 16);
+        S.lathe(x, y, [[3.3, 2.2], [4.3, 3], [4.3, 3.8], [2.3, 10.6], [1.5, 12.2], [0, 12.9]], 32);
+        inKind(S, RED, () => { circle(S, x, y, 4.33, 3.82); circle(S, x, y, 2.33, 10.6); });
+        for (let i = 0; i < 4; i++) {
+            const A = turned(x, y, 0, Math.PI / 4 + i * Math.PI / 2), foot = A.P(7.4, 0, 0.9);
+            tube(T, A.P(3.9, 0, 3.6), foot, 0.26);
+            S.line([A.P(3.4, -1.5, 2.4), foot, A.P(3.4, 1.5, 2.4)]);
+            S.lathe(foot[0], foot[1], [[1.2, 0.55], [1.2, 0.9]], 12);
+        }
+        const wall = z => 4.3 - 2 * (z - 3.8) / 6.8 + 0.04;
+        panel(T, [F.P(-0.8, -wall(8.6), 8.6), F.P(0.8, -wall(8.6), 8.6), F.P(0.65, -wall(9.9), 9.9), F.P(-0.65, -wall(9.9), 9.9)], BLUE, 0.8);
+        inKind(S, RED, () => number(S, '03', (u, v) => F.P(u - 0.6, -wall(5.6 + v), 5.6 + v), 0.9));
+    }
+
+    // Service tower and access bridges are deliberately broad, with only
+    // one diagonal in each bay so the lattice remains readable on paper.
+    function gantry(T, F, top, decks) {
+        const { S } = T;
+        for (const u of [6.4, 9.4]) for (const v of [3.5, 6.5]) S.box(F, u - 0.2, v - 0.2, 0.55, u + 0.2, v + 0.2, top);
+        for (let z = 1; z < top - 1; z += 4) {
             S.line([F.P(6.4, 3.5, z), F.P(9.4, 3.5, z + 4)]);
             S.line([F.P(9.4, 3.5, z), F.P(9.4, 6.5, z + 4)]);
             S.box(F, 6.2, 3.3, z + 3.8, 9.6, 6.7, z + 4.1);
         }
-        for (const z of [11, 20]) {
+        for (const z of decks) {
             S.box(F, 1.6, 2.5, z, 6.8, 4.1, z + 0.45);
             inKind(S, GOLD, () => {
                 S.line([F.P(1.6, 2.5, z + 1.6), F.P(6.8, 2.5, z + 1.6)]);
@@ -428,14 +671,25 @@
             });
         }
         // Ladder and complete guardrails make the launch tower usable.
-        for (const u of [7.3, 8.5]) S.line([F.P(u, 6.73, 0.6), F.P(u, 6.73, 25)]);
-        if (T.p.detail) for (let z = 1; z < 25; z += 0.65) S.line([F.P(7.3, 6.73, z), F.P(8.5, 6.73, z)]);
+        for (const u of [7.3, 8.5]) S.line([F.P(u, 6.73, 0.6), F.P(u, 6.73, top)]);
+        if (T.p.detail) for (let z = 1; z < top; z += 0.65) S.line([F.P(7.3, 6.73, z), F.P(8.5, 6.73, z)]);
         inKind(S, GOLD, () => {
             for (const v of [3.3, 6.7]) {
-                S.line([F.P(6.2, v, 26.1), F.P(9.6, v, 26.1)]);
-                for (const u of [6.2, 7.9, 9.6]) S.line([F.P(u, v, 25), F.P(u, v, 26.1)]);
+                S.line([F.P(6.2, v, top + 1.1), F.P(9.6, v, top + 1.1)]);
+                for (const u of [6.2, 7.9, 9.6]) S.line([F.P(u, v, top), F.P(u, v, top + 1.1)]);
             }
         });
+    }
+
+    function launchSite(T, lot) {
+        const { S } = T, { x, y } = lot, F = turned(x, y, 0, 0);
+        S.lathe(x, y, [[12, 0], [12, 0.55]], 8, false, Math.PI / 8);
+        inKind(S, GOLD, () => circle(S, x, y, 10.5, 0.58, 8, Math.PI / 8));
+        if (lot.craft === 'ship') ship(T, x, y, F);
+        else if (lot.craft === 'ascent') ascent(T, x, y, F);
+        else shuttle(T, x, y, F);
+        if (lot.craft === 'ascent') gantry(T, F, 13, [8]);
+        else gantry(T, F, 25, [11, 20]);
     }
 
     function solar(T, lot) {
@@ -545,6 +799,33 @@
         inKind(S, RED, () => S.line([F.P(-2, -1, 12.6), F.P(2, -1, 12.6)]));
     }
 
+    // Gumdrop capsule on four legs, with its heat shield still on
+    function capsule(T, x, y) {
+        const { S } = T, F = turned(x, y, 0, 0);
+        inKind(S, GOLD, () => S.lathe(x, y, [[1.6, 2.3], [3.9, 3.1], [4.1, 3.7]], 24));
+        S.lathe(x, y, [[4.1, 3.7], [1.6, 8.4], [1.15, 9.2], [0, 9.45]], 24);
+        inKind(S, RED, () => circle(S, x, y, 4.13, 3.72, 24));
+        for (let i = 0; i < 4; i++) {
+            const A = turned(x, y, 0, Math.PI / 4 + i * Math.PI / 2), foot = A.P(7.3, 0, 0.6);
+            tube(T, A.P(3.8, 0, 3.5), foot, 0.22);
+            S.line([A.P(2.9, -1.3, 2.8), foot, A.P(2.9, 1.3, 2.8)]);
+            S.lathe(foot[0], foot[1], [[1.2, 0.38], [1.2, 0.7]], 12);
+        }
+        // Points on the cone, a from the side facing the viewer. Level edges
+        // need a point in the middle or they cut inside the curve.
+        const on = (a, z) => { const r = 4.1 - 2.5 * (z - 3.7) / 4.7 + 0.05; return [x + r * Math.sin(a), y - r * Math.cos(a), z]; };
+        const pane = (a0, a1, z0, z1) => [on(a0, z0), on((a0 + a1) / 2, z0), on(a1, z0), on(a1, z1), on((a0 + a1) / 2, z1), on(a0, z1)];
+        S.loop(pane(-0.22, 0.22, 4.3, 6.1));
+        inKind(S, BLUE, () => { for (const s of [-1, 1]) S.loop(pane(s * 0.42, s * 0.8, 5.1, 6.2)); });
+        for (const u of [-0.6, 0.6]) S.line([F.P(u, -7, 0.4), F.P(u, -3.85, 4.3)]);
+        for (let i = 1; i < 9; i++) {
+            const t = i / 9;
+            S.line([F.P(-0.6, geo.lerp(-7, -3.85, t), geo.lerp(0.4, 4.3, t)), F.P(0.6, geo.lerp(-7, -3.85, t), geo.lerp(0.4, 4.3, t))]);
+        }
+        S.line([F.P(0.5, 0.5, 9.3), F.P(0.5, 0.5, 12.2)]);
+        inKind(S, RED, () => circle(S, x, y, 1.18, 9.2, 24));
+    }
+
     function landingPad(T, lot) {
         const { S } = T, { x, y, r } = lot;
         S.lathe(x, y, [[r, 0], [r, 0.35]], 8, false, Math.PI / 8);
@@ -564,11 +845,29 @@
             S.lathe(bx, by, [[0.17, 0.35], [0.17, 1.2]], 6);
             inKind(S, RED, () => circle(S, bx, by, 0.3, 1.2, 8));
         }
-        if (T.p.lander) lander(T, x, y);
+        if (T.p.lander) (lot.craft === 'capsule' ? capsule : lander)(T, x, y);
     }
 
     function utilities(T, lot) {
         const { S } = T, F = turned(lot.x, lot.y, 0, lot.angle);
+        if (lot.tanks === 'sphere') {
+            // Propellant plant: three balls on legs feed one low manifold
+            for (let i = 0; i < 3; i++) {
+                const u = (i - 1) * 4.7, q = F.P(u, 1, 0), r = 2.05;
+                for (let k = 0; k < 4; k++) {
+                    const A = turned(q[0], q[1], 0, Math.PI / 4 + k * Math.PI / 2);
+                    tube(T, A.P(1.75, 0, 0), A.P(1.75, 0, 2.6), 0.1, 6);
+                }
+                S.lathe(q[0], q[1], ball(3.5, r), 24);
+                inKind(S, RED, () => circle(S, q[0], q[1], r + 0.03, 3.5, 24));
+                S.lathe(q[0], q[1], [[0.38, 5.5], [0.38, 5.85]], 12);
+                inKind(S, GOLD, () => { tube(T, F.P(u, 1, 1.5), F.P(u, 1, 0.6), 0.16); tube(T, F.P(u, 1, 0.6), F.P(u, -3.7, 0.6), 0.16); });
+            }
+            inKind(S, GOLD, () => tube(T, F.P(-4.7, -3.7, 0.6), F.P(6, -3.7, 0.6), 0.16));
+            S.box(F, 5, -5, 0, 8, -2.3, 2.6);
+            for (let i = 0; i < 5; i++) S.line([F.P(5.3 + i * 0.45, -5.03, 0.6), F.P(5.3 + i * 0.45, -5.03, 2.2)]);
+            return;
+        }
         for (let i = 0; i < 3; i++) {
             const q = F.P((i - 1) * 4.2, 1, 0), r = 1.6;
             const cap = Array.from({ length: 9 }, (_, j) => [j === 8 ? 0 : r * Math.cos(j * Math.PI / 16), 6 + r * Math.sin(j * Math.PI / 16)]);
@@ -784,43 +1083,303 @@
         for (const u of [5.6, 7.8]) S.box(F, u - 0.8, -7.5, 0, u + 0.8, -5.9, 1.3);
     }
 
+    // Small fission units: a core buried under a heap of regolith, with an
+    // umbrella radiator on a mast over each one
+    function reactors(T, lot) {
+        const { S } = T, F = turned(lot.x, lot.y, 0, lot.angle);
+        for (const [u, v] of [[-6, -1.8], [-2, 2.4], [2, -1.8], [6, 2.4]]) {
+            const q = F.P(u, v, 0);
+            inKind(S, DUST, () => S.lathe(q[0], q[1], [[1.7, 0], [1.3, 0.9], [0.6, 1.2]], 7, false, u));
+            tube(T, [q[0], q[1], 1.1], [q[0], q[1], 6.5], 0.2);
+            S.lathe(q[0], q[1], [[2.6, 6.3], [0.3, 7.25], [0, 7.25]], 10, false);
+            inKind(S, RED, () => circle(S, q[0], q[1], 1.5, 6.79, 10));
+            inKind(S, GOLD, () => S.line([F.P(u, v - 1.75, 0.1), F.P(u, -5.2, 0.1)]));
+        }
+        inKind(S, GOLD, () => S.line([F.P(-6, -5.2, 0.1), F.P(5.5, -5.2, 0.1)]));
+        S.box(F, 5.5, -5.9, 0, 8.3, -3.4, 2.4);
+        if (T.p.detail) for (let u = 5.9; u < 8.1; u += 0.4) S.line([F.P(u, -5.93, 0.6), F.P(u, -5.93, 1.8)]);
+    }
+
+    // Three rotors in a row across the wind. T.wind is never square to the
+    // view, so a rotor is never seen edge-on as a single line.
+    function turbines(T, lot) {
+        const { S } = T, F = turned(lot.x, lot.y, 0, T.wind), top = 11;
+        for (const v of [-6.2, 0, 6.2]) {
+            const q = F.P(0, v, 0), hub = F.P(-1.15, v, top + 0.35);
+            S.lathe(q[0], q[1], [[1.3, 0], [1.3, 0.45]], 8, false, T.wind);
+            S.lathe(q[0], q[1], [[0.5, 0.45], [0.26, top]], 10);
+            S.box(F, -1, v - 0.45, top - 0.1, 1.2, v + 0.45, top + 0.8);
+            for (let i = 0; i < 3; i++) {
+                const a = lot.index + v + i * TAU / 3, d = F.V(0, Math.cos(a), Math.sin(a)), n = F.V(0, -Math.sin(a), Math.cos(a));
+                const at = (s, t) => add(hub, add(mul(d, s), mul(n, t)));
+                const blade = [at(0.3, -0.32), at(4.6, -0.08), at(4.6, 0.08), at(0.3, 0.32)];
+                S.face(blade); S.loop(blade);
+            }
+            inKind(S, RED, () => S.loop(ring(8, (c, s) => add(hub, F.V(-0.02, 0.42 * c, 0.42 * s)))));
+        }
+        inKind(S, GOLD, () => S.line([F.P(0.9, -6.2, 0.1), F.P(0.9, 6.2, 0.1), F.P(3.4, 6.2, 0.1)]));
+    }
+
+    // Radio telescope: a wire mesh reflector laid in a crater, with the
+    // receiver hung over the middle from three masts on the rim
+    function craterScope(T, lot, rng) {
+        const { S } = T, { x, y } = lot, R = lot.r * 0.74, n = 36, phase = rng.range(0, TAU);
+        const rings = [[1.2, 0], [1, R * 0.08], [0.86, -R * 0.05], [0.66, -R * 0.2], [0.42, -R * 0.31], [0.18, -R * 0.36]];
+        const at = (i, [s, z]) => { const a = i * TAU / n; return [x + R * s * Math.cos(a), y + R * s * Math.sin(a), z]; };
+        const hoop = j => Array.from({ length: n }, (_, i) => at(i, rings[j]));
+        const sun = [-0.42, 0.91];
+        // An open bowl like the craters, so the near lip hides the floor
+        for (let j = 0; j + 1 < rings.length; j++) for (let i = 0; i < n; i++) {
+            const quad = [at(i, rings[j]), at(i + 1, rings[j]), at(i + 1, rings[j + 1]), at(i, rings[j + 1])];
+            S.face(quad, false);
+            const angle = (i + 0.5) * TAU / n;
+            if (T.p.hatching && j > 0 && Math.cos(angle) * sun[0] + Math.sin(angle) * sun[1] > 0.35) inKind(S, BLUE, () => levelHatch(T, quad, T.p.shadowGap));
+        }
+        S.face(hoop(5), false);
+        inKind(S, DUST, () => S.loop(hoop(1)));
+        inKind(S, GOLD, () => {
+            for (let j = 2; j < 6; j++) S.loop(hoop(j));
+            for (let i = 0; i < n; i += 3) S.line(rings.slice(2).map(level => at(i, level)));
+        });
+        const deck = 6.6, corners = [];
+        for (let k = 0; k < 3; k++) {
+            const a = phase + k * TAU / 3, F = turned(x, y, 0, a), head = F.P(R * 1.1, 0, 9.5), corner = F.P(1.2, 0, deck + 0.4);
+            S.box(F, R * 1.1 - 0.7, -0.7, 0, R * 1.1 + 0.7, 0.7, 0.8);
+            tube(T, F.P(R * 1.1, 0, 0.8), head, 0.2);
+            S.line([head, corner]);
+            S.line([head, F.P(R * 1.5, 0, 0)]);
+            corners.push(F.P(1.2, 0, deck));
+        }
+        S.prism(corners, [0, 0, 0.4]);
+        S.lathe(x, y, [[0.45, deck - 1.5], [0.45, deck]], 10);
+        inKind(S, RED, () => S.lathe(x, y, [[0.75, deck - 2.1], [0.45, deck - 1.5]], 10));
+    }
+
+    // Layered butte. Each tier tapers to a smaller copy of its own outline,
+    // which keeps its sides flat. The next tier starts from that outline
+    // pulled in unevenly, so the ledges and corners don't line up.
+    function mesa(T, lot, rng) {
+        const { S, cam } = T, sun = [-0.42, 0.91];
+        let z = 0, c = [lot.x, lot.y], outline = PG.iso.hull(Array.from({ length: 10 }, (_, i) => {
+            const a = (i + rng.range(-0.35, 0.35)) * TAU / 10, r = lot.r * rng.range(0.6, 0.95);
+            return [lot.x + r * Math.cos(a), lot.y + r * Math.sin(a)];
+        }));
+        const toward = (q, f) => [c[0] + (q[0] - c[0]) * f, c[1] + (q[1] - c[1]) * f];
+        for (let tier = rng.int(2, 3); tier > 0 && outline.length > 2; tier--) {
+            const n = outline.length, h = rng.range(2.4, 4.4), taper = rng.range(0.8, 0.88);
+            c = mul(outline.reduce(add), 1 / n);
+            const low = outline.map(q => [...q, z]), high = outline.map(q => [...toward(q, taper), z + h]);
+            const sides = low.map((_, i) => [i, (i + 1) % n, n + (i + 1) % n, n + i]);
+            inKind(S, DUST, () => {
+                S.solid([...low, ...high], [low.map((_, i) => i), high.map((_, i) => n + i), ...sides]);
+                // Strata follow the sides, a little off level
+                for (const f of [0.3, 0.62]) S.loop(low.map((q, i) => mix(q, high[i], f + 0.06 * Math.sin(i * 2.3 + tier))));
+            });
+            if (T.p.hatching) inKind(S, BLUE, () => {
+                for (const side of sides) {
+                    const quad = side.map(i => i < n ? low[i] : high[i - n]), normal = outward(quad, [c[0], c[1], z + h / 2]);
+                    if (cam.facing(...normal) && normal[0] * sun[0] + normal[1] * sun[1] < -0.25 * Math.hypot(normal[0], normal[1])) levelHatch(T, quad, T.p.shadowGap);
+                }
+            });
+            outline = PG.iso.hull(high.map(q => toward(q, rng.range(0.5, 0.8))));
+            z += h;
+        }
+        // Survey beacon on the summit
+        S.line([[c[0], c[1], z], [c[0], c[1], z + 2.6]]);
+        inKind(S, RED, () => circle(S, c[0], c[1], 0.3, z + 2.6, 8));
+    }
+
+    // Barchan dune: a crescent with its horns pointing downwind. The crest
+    // stands a little way back from the slip face between the horns.
+    function dune(T, d) {
+        const { S } = T, F = turned(d.x, d.y, 0, T.wind), R = d.r, n = 24;
+        // k is 0 for the windward foot, 1 the crest, 2 the foot of the slip face
+        const at = (t, k) => {
+            const s = Math.sin(Math.PI * t), back = [1.75 * Math.pow(s, 0.8), 1.1 * s, 0.82 * s][k];
+            return F.P(R * (0.9 - back), R * 0.92 * Math.cos(Math.PI * t), k === 1 ? d.h * Math.pow(s, 0.7) : 0);
+        };
+        for (let i = 0; i < n; i++) for (const k of [0, 1]) {
+            const a = at(i / n, k), b = at((i + 1) / n, k), c = at((i + 1) / n, k + 1), e = at(i / n, k + 1);
+            S.face([a, b, c], false); S.face([a, c, e], false);
+        }
+        const line = (k, t0, t1) => Array.from({ length: Math.round((t1 - t0) * n) + 1 }, (_, i) => at(t0 + i / n, k));
+        inKind(S, DUST, () => {
+            for (const k of [0, 1, 2]) S.line(line(k, 0, 1));
+            // Strokes down the slip face, uneven so they don't read as a comb
+            for (let i = 2; i < n - 1; i += T.p.detail ? 1 : 2) S.line([at(i / n, 1), mix(at(i / n, 1), at(i / n, 2), [0.8, 0.4, 0.62, 0.3][i % 4])]);
+            // Ripples up the windward slope. Lifted a hair, the two triangles of each strip aren't quite one plane.
+            if (T.p.detail) for (const f of [0.4, 0.7]) {
+                S.line(Array.from({ length: n * 0.6 + 1 }, (_, i) => add(mix(at(0.2 + i / n, 0), at(0.2 + i / n, 1), f), [0, 0, 0.05])));
+            }
+        });
+    }
+
+    // A dust devil is only a spiral of dust, so it hides nothing behind it.
+    // Its track wanders off upwind, where the ground is clear.
+    function dustDevil(T, x, y, rng, empty) {
+        const { S } = T, turns = rng.range(5, 7), top = rng.range(11, 16), lean = rng.range(1.5, 3.5);
+        const c = Math.cos(T.wind), s = Math.sin(T.wind), phase = rng.range(0, TAU);
+        inKind(S, DUST, () => {
+            S.line(Array.from({ length: 240 }, (_, i) => {
+                const t = i / 239, a = phase + t * turns * TAU, r = 0.35 + 2.5 * Math.pow(t, 1.3), d = lean * t * t;
+                return [x + d * c + r * Math.cos(a), y + d * s + r * Math.sin(a), 0.1 + top * t];
+            }));
+            let pts = [];
+            for (let i = 2; i < 90; i++) {
+                const u = i * 0.45, v = 1.1 * Math.sin(u * 0.33 + phase) + 0.5 * Math.sin(u * 0.9), q = [x - u * c - v * s, y - u * s + v * c, 0.02];
+                if (!empty(q[0], q[1], 0.3)) { if (pts.length > 1) S.line(pts); pts = []; continue; }
+                pts.push(q);
+            }
+            if (pts.length > 1) S.line(pts);
+        });
+    }
+
+    // Scout helicopter with two rotors on one mast, the thin air needs both
+    function helicopter(T, x, y, angle) {
+        const { S } = T, F = turned(x, y, 6.5, angle);
+        S.box(F, -0.7, -0.6, 0, 0.7, 0.6, 0.9);
+        for (const u of [-1, 1]) for (const v of [-1, 1]) S.line([F.P(u * 0.6, v * 0.5, 0), F.P(u * 1.4, v * 1.2, -1)]);
+        S.line([F.P(0, 0, 0.9), F.P(0, 0, 2.1)]);
+        for (const [h, a] of [[1.5, 0.5], [1.95, 0.5 + Math.PI / 2]]) {
+            S.line([F.P(-2.7 * Math.cos(a), -2.7 * Math.sin(a), h), F.P(2.7 * Math.cos(a), 2.7 * Math.sin(a), h)]);
+        }
+        inKind(S, BLUE, () => S.loop([F.P(-0.45, -0.4, 2.12), F.P(0.45, -0.4, 2.12), F.P(0.45, 0.4, 2.12), F.P(-0.45, 0.4, 2.12)]));
+        inKind(S, DUST, () => S.loop(ring(24, (c, s) => F.P(2.7 * c, 2.7 * s, 1.95))));
+    }
+
     function distanceToSegment(x, y, a, b) {
         const dx = b.x - a.x, dy = b.y - a.y;
         const t = geo.clamp(((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy || 1), 0, 1);
         return Math.hypot(x - a.x - t * dx, y - a.y - t * dy);
     }
 
+    // Where the tunnelled core of the colony goes, for n buildings. Points are
+    // meters on the ground, a across the page and b into it, so a ring is a
+    // true circle and a spine a straight street at any camera angle. They come
+    // most important first: main dome, control tower, the other domes, then
+    // housing. `heart` is a spot the plan leaves open for a landmark.
+    const SPACING = 27;
+    const PLANS = {
+        // Loose constellation around the main dome
+        gardens(n, rng, A, B) {
+            const pts = [[rng.range(-8, 8), rng.range(-14, 14)]];
+            while (pts.length < n) {
+                let best = null, far = -1;
+                for (let i = 0; i < 14; i++) {
+                    const a = rng.range(0, TAU), s = Math.sqrt(rng.random()), q = [A * s * Math.cos(a), B * s * Math.sin(a)];
+                    const d = Math.min(...pts.map(o => Math.hypot(o[0] - q[0], o[1] - q[1])));
+                    if (d > far) { far = d; best = q; }
+                }
+                pts.push(best);
+            }
+            return { pts };
+        },
+        // An arc open to one side of the page, with the tower in its hollow
+        crescent(n, rng, A, B) {
+            const open = (rng.chance(0.5) ? 0 : Math.PI) + rng.range(-0.45, 0.45), R = Math.min(B * 0.85, (n - 2) * SPACING / 2.6);
+            const span = (n - 2) * SPACING / R, c = Math.cos(open), s = Math.sin(open);
+            // The arc is centered a little toward the opening, so its middle sits back from the page center
+            const arc = Array.from({ length: n - 1 }, (_, i) => {
+                const a = open + Math.PI + (i / (n - 2) - 0.5) * span;
+                return [R * (0.62 * c + Math.cos(a)), R * (0.62 * s + Math.sin(a))];
+            });
+            const off = q => Math.hypot(q[0] + 0.38 * R * c, q[1] + 0.38 * R * s);
+            arc.sort((p, q) => off(p) - off(q));
+            return { pts: [arc[0], [R * 0.08 * c, R * 0.08 * s], ...arc.slice(1)] };
+        },
+        // A street running into the page, with housing off either side
+        spine(n, rng) {
+            const tilt = rng.range(-0.4, 0.4), m = Math.ceil(n / 2) + (n > 7 ? 1 : 0), step = SPACING * 1.08, side = rng.sign();
+            const along = s => [s * Math.sin(tilt), s * Math.cos(tilt)];
+            const chain = Array.from({ length: m }, (_, i) => along((i - (m - 1) / 2) * step));
+            chain.sort((p, q) => Math.hypot(...p) - Math.hypot(...q));
+            const wings = Array.from({ length: n - m }, (_, i) => {
+                const q = along((Math.floor(i / 2) - (Math.ceil((n - m) / 2) - 1) / 2) * step), w = (i % 2 ? -side : side) * SPACING * 0.98;
+                return [q[0] + w * Math.cos(tilt), q[1] - w * Math.sin(tilt)];
+            });
+            return { pts: [...chain, ...wings] };
+        },
+        // Everything in a circle around a landmark
+        ring(n, rng) {
+            const R = Math.max(31, n * SPACING / TAU), turn = rng.range(0, TAU);
+            const pts = Array.from({ length: n }, (_, i) => {
+                const a = turn + (i + rng.range(-0.12, 0.12)) * TAU / n, r = R + rng.range(-2.5, 2.5);
+                return [r * Math.cos(a), r * Math.sin(a)];
+            });
+            return { pts: rng.shuffle(pts), heart: [0, 0], room: R - 15 };
+        },
+        // Two clusters at opposite corners, joined through the control tower
+        twin(n, rng, A, B) {
+            const s = rng.sign(), centres = [[-s * A * 0.3, -B * 0.66], [s * A * 0.3, B * 0.66]], around = [[], []];
+            for (let i = 0; i < n - 3; i++) around[i % 2].push(i);
+            const moons = around.map((list, k) => {
+                const turn = rng.range(0, TAU);
+                return list.map((_, i) => {
+                    const a = turn + i * TAU / list.length;
+                    return [centres[k][0] + SPACING * Math.cos(a), centres[k][1] + SPACING * Math.sin(a)];
+                });
+            });
+            return { pts: [centres[0], [rng.range(-4, 4), rng.range(-4, 4)], centres[1], ...moons[0], ...moons[1]] };
+        },
+    };
+
     function plan(T, seed) {
-        const { cam, W, H, p } = T, rng = new PG.RNG(hash(seed, 10)), lots = [], links = [];
-        const put = (type, sx, sy, r) => {
-            const [x, y] = cam.ground(W * sx, H * sy);
+        const { cam, W, H, p, mars } = T, rng = new PG.RNG(hash(seed, 10)), lots = [], links = [];
+        const put = (type, x, y, r) => {
             const lot = { type, x, y, r, angle: rng.pick([0, Math.PI / 2]), index: lots.length };
             lots.push(lot); return lot;
         };
-        // Positions describe districts on the page; every object itself still
-        // follows the same world axes. Small seeded offsets vary each colony.
-        const jitter = () => rng.range(-0.025, 0.025);
-        const layouts = {
-            gardens: [[0.48, 0.43], [0.52, 0.61], [0.22, 0.60], [0.76, 0.29], [0.22, 0.32], [0.73, 0.51], [0.68, 0.70], [0.40, 0.23]],
-            crescent: [[0.37, 0.44], [0.56, 0.61], [0.78, 0.53], [0.64, 0.26], [0.21, 0.27], [0.77, 0.38], [0.35, 0.68], [0.44, 0.20]],
-            spine: [[0.56, 0.38], [0.40, 0.56], [0.21, 0.44], [0.73, 0.65], [0.31, 0.23], [0.77, 0.27], [0.35, 0.71], [0.68, 0.52]],
-        };
-        const positions = layouts[p.layout] || layouts.gardens;
-        const specs = [['dome', 13], ['hub', 6], ['dome', 8.5], ['dome', 9.5], ['hab', 11], ['hab', 11], ['hab', 11], ['hab', 11]];
-        specs.forEach(([type, r], i) => put(type, positions[i][0] + jitter(), positions[i][1] + jitter(), r));
+        // A smaller page or a bigger scale leaves room for fewer buildings
+        const [ox, oy] = cam.ground(W * 0.5, H * 0.47), A = 0.36 * W / cam.k, B = 0.3 * H / (cam.k * cam.se);
+        const most = geo.clamp(Math.floor(Math.PI * A * B / 800), 5, 9);
+        const specs = [['dome', rng.pick([12, 13, 14])], ['hub', 6]];
+        for (let i = rng.int(1, 3); i > 0; i--) specs.push(['dome', rng.pick([8, 8.5, 9.5, 10.5])]);
+        for (let i = rng.int(3, 5); i > 0; i--) specs.push(['hab', 11]);
+        specs.length = Math.min(specs.length, most);
+        const core = (PLANS[p.layout] || PLANS.gardens)(specs.length, rng, A, B);
+        const world = ([a, b]) => [ox + a * cam.rx + b * cam.fx, oy + a * cam.ry + b * cam.fy];
+        specs.forEach(([type, r], i) => put(type, ...world(core.pts[i]), r));
         const nodes = lots.slice();
-        put('pad', 0.26, 0.85, 12.5);
-        put('solar', 0.49, 0.10, Math.max(13, p.solarRows * 3.6));
-        if (p.launchpad) put('launch', 0.16, 0.20, 14);
-        else put('dish', 0.12, 0.15, 7);
-        put('observatory', 0.78, 0.13, 9);
-        put('utilities', 0.90, 0.65, 9);
-        put('cargo', 0.49, 0.91, 9);
-        if (p.excavation) put('mine', 0.86, 0.91, 11);
-        if (p.density > 0.4) put('dish', 0.92, 0.44, 5);
+        // Each facility takes one of the roomiest spots left on the page, with
+        // enough noise that it lands somewhere new in every colony. `top` keeps
+        // tall things far enough down the page to fit.
+        const spots = [];
+        for (let i = 0; i < 7; i++) for (let j = 0; j < 9; j++) spots.push([0.07 + 0.86 * i / 6, 0.07 + 0.86 * j / 8]);
+        const place = (type, r, top = 0) => {
+            let best = null, score = -Infinity;
+            for (const [sx, sy] of spots) {
+                if (sy < top) continue;
+                const [x, y] = cam.ground(W * sx, H * sy);
+                const room = Math.min(...lots.map(l => Math.hypot(l.x - x, l.y - y) - l.r)) - r;
+                const s = Math.min(room, 12) + rng.range(0, 8);
+                if (s > score) { score = s; best = [x, y]; }
+            }
+            return put(type, best[0] + rng.range(-2, 2), best[1] + rng.range(-2, 2), r);
+        };
+        const landmarks = [['pad', 12.5]];
+        if (mars) landmarks.push(['mesa', 13], ['crater', 15]);
+        else landmarks.push(['crater', 16], ...(p.telescope ? [['scope', 14], ['scope', 14]] : []));
+        const heart = core.heart && rng.pick(landmarks.filter(([, r]) => r <= core.room + 1));
+        if (heart) put(heart[0], ...world(core.heart), Math.min(heart[1], core.room));
+        const has = type => lots.some(l => l.type === type);
+        if (!has('pad')) place('pad', 12.5);
+        if (p.launchpad) place('launch', 14, 0.26);
+        else place('dish', 7);
+        place('solar', Math.max(13, p.solarRows * 3.6));
+        if (p.reactors) place('reactor', 10);
+        place('observatory', 9);
+        place('utilities', 9);
+        place('cargo', 9);
+        if (p.excavation) place('mine', 11);
+        if (!mars && p.telescope && !has('scope')) place('scope', 13);
+        if (mars && p.turbines) place('turbines', 9.5);
+        if (p.density > 0.4) place('dish', 5);
+        if (mars) for (let i = has('mesa') ? 1 : 0; i < p.mesas; i++) place('mesa', rng.range(7.5, 12));
+        // Open ground for a few dunes. On a full page they wouldn't fit anywhere otherwise.
+        if (mars) for (let i = 0; i < p.dunes / 4; i++) place('dunes', rng.range(9, 12));
         if (p.craters > 0) {
-            put('crater', 0.12, 0.48, 10);
-            put('crater', 0.76, 0.82, 9);
+            if (!has('crater')) place('crater', 10);
+            place('crater', 9);
         }
         // Relax reserved footprints before routing. This is particularly useful
         // with a tall camera, large buildings, landscape paper or a different plan.
@@ -850,7 +1409,7 @@
         const parent = nodes.map((_, i) => i), root = i => parent[i] === i ? i : (parent[i] = root(parent[i]));
         for (const e of candidates) {
             const a = root(e.a.index), b = root(e.b.index);
-            if (a !== b) { parent[a] = b; links.push(e); }
+            if (a !== b && !links.some(l => segmentsCross(e.a, e.b, l.a, l.b))) { parent[a] = b; links.push(e); }
         }
         if (p.tunnelLoops) for (const e of candidates) {
             if (links.length >= nodes.length + 1) break;
@@ -872,15 +1431,22 @@
             grid.push({ x, y, q, order: rng.random() });
         }
         grid.sort((a, b) => a.order - b.order);
+        // Power sits toward one side of the page and freight toward the other.
+        // Which sides, and what the colony mostly does, change with the seed.
+        const lean = rng.range(0, TAU), bent = rng.pick(['farm', 'works', 'homes', 'mixed']);
+        const power = ['solar', 'solar', 'workshop', 'greenhouse', ...(mars && p.turbines ? ['turbines'] : [])];
+        const middle = ['hab', 'workshop', 'greenhouse', 'greenhouse', 'utilities',
+            ...({ farm: ['greenhouse', 'greenhouse', 'greenhouse'], works: ['workshop', 'workshop', 'utilities'], homes: ['hab', 'hab', 'hab'] }[bent] || [])];
+        const size = { hab: 11, greenhouse: 11, solar: 13 };
         let added = 0;
         const supplementalStart = lots.length;
         for (const cell of grid) {
             if (added >= 48) break;
             const { x, y, q } = cell;
             if (!clear(x, y, 9.5)) continue;
-            const district = q[1] / H;
-            const type = rng.pick(district < 0.24 ? ['solar', 'solar', 'workshop', 'greenhouse'] : district > 0.73 ? ['cargo', 'workshop', 'utilities', 'workshop'] : ['hab', 'workshop', 'greenhouse', 'greenhouse', 'utilities']);
-            const lot = { type, x, y, r: type === 'hab' || type === 'greenhouse' ? 11 : type === 'solar' ? 13 : 9.5, small: true, angle: rng.chance(0.75) ? 0 : Math.PI / 2, index: lots.length };
+            const district = 0.5 + 1.25 * ((q[0] / W - 0.5) * Math.cos(lean) + (q[1] / H - 0.5) * Math.sin(lean));
+            const type = rng.pick(district < 0.24 ? power : district > 0.73 ? ['cargo', 'workshop', 'utilities', 'workshop'] : middle);
+            const lot = { type, x, y, r: size[type] || 9.5, small: true, angle: rng.chance(0.75) ? 0 : Math.PI / 2, index: lots.length };
             if (!clear(x, y, lot.r)) continue;
             lots.push(lot); added++;
         }
@@ -897,6 +1463,28 @@
             const edge = choices.find(e => e.d < 48 && !lots.some(l => l !== e.a && l !== e.b && distanceToSegment(l.x, l.y, e.a, e.b) < l.r + 2) &&
                 !links.some(l => segmentsCross(e.a, e.b, l.a, l.b)));
             if (edge) { links.push(edge); connected.add(a); }
+        }
+        // The seed settles on a house style and most buildings follow it, with
+        // the odd one out. Its own random stream keeps the plan above the
+        // same when a style is forced.
+        const look = new PG.RNG(hash(seed, 11));
+        const house = (forced, table) => {
+            const usual = look.weighted(table);
+            return () => { const style = look.chance(0.78) ? usual : look.weighted(table); return forced && forced !== 'auto' ? forced : style; };
+        };
+        const domes = house(p.domes, mars ? [[2, 'shell'], [2, 'ribbed'], [1.2, 'geodesic']] : [[3, 'geodesic'], [2, 'ribbed'], [1.4, 'shell']]);
+        const habs = house(p.habitats, mars ? [[2, 'tower'], [2, 'bermed'], [2, 'can'], [1, 'cylinder']] : [[3, 'cylinder'], [2, 'can'], [2, 'bermed'], [1, 'tower']]);
+        const glass = house(null, [[1, 'vault'], [1, 'peak']]), roofs = house(null, [[1, 'radiator'], [1, 'sawtooth']]);
+        const tanks = house(null, mars ? [[1, 'silo'], [2, 'sphere']] : [[2, 'silo'], [1, 'sphere']]);
+        for (const lot of lots) {
+            if (lot.type === 'dome') { lot.style = domes(); lot.garden = look.pick(['beds', 'beds', 'terrace']); }
+            else if (lot.type === 'hab') lot.style = habs();
+            else if (lot.type === 'greenhouse') lot.style = glass();
+            else if (lot.type === 'workshop') lot.roof = roofs();
+            else if (lot.type === 'utilities') lot.tanks = tanks();
+            else if (lot.type === 'hub') { lot.tiers = look.int(1, 3); lot.cap = look.pick(['mast', 'mast', 'radome', 'dish']); }
+            else if (lot.type === 'launch') lot.craft = look.weighted(mars ? [[3, 'ship'], [2, 'ascent'], [1, 'shuttle']] : [[3, 'shuttle'], [1.5, 'ship'], [1.5, 'ascent']]);
+            else if (lot.type === 'pad') lot.craft = look.weighted(mars ? [[3, 'capsule'], [1, 'lander']] : [[3, 'lander'], [1.5, 'capsule']]);
         }
         // Turn each rectangular building so its ports face its tunnels as
         // squarely as they can, then dock every tunnel at the nearer port.
@@ -926,7 +1514,7 @@
             const next = l.a === lot ? l.path[1] : l.path[l.path.length - 2];
             return Math.cos(toward(lot, next) - toward(lot, other)) > Math.cos(0.5);
         });
-        const roads = [], traffic = new Map(), roadNodes = lots.filter(l => l.type !== 'crater');
+        const roads = [], traffic = new Map(), roadNodes = lots.filter(l => !['crater', 'mesa', 'dunes'].includes(l.type));
         const roadCandidates = [];
         for (let i = 0; i < roadNodes.length; i++) for (let j = i + 1; j < roadNodes.length; j++) {
             const a = roadNodes[i], b = roadNodes[j], d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -974,7 +1562,7 @@
         inKind(S, DUST, () => {
             // Lots with an apron hide their own road ends. The rest stop the road
             // at their base, so it doesn't run across a crater bowl or a dish mount.
-            const reach = { dome: l => l.r + 0.6, hub: () => 5.8, pad: l => l.r, launch: () => 12, mine: () => 9.6, dish: () => 2.2 };
+            const reach = { dome: l => l.r + 0.6, hub: () => 5.8, pad: l => l.r, launch: () => 12, mine: () => 9.6, dish: () => 2.2, scope: l => l.r * 0.9, turbines: () => 1.6 };
             for (const road of site.roads) {
                 const { a, b, d } = road, F = turned(a.x, a.y, 0, Math.atan2(b.y - a.y, b.x - a.x));
                 const start = reach[a.type] ? reach[a.type](a) : 0, end = d - (reach[b.type] ? reach[b.type](b) : 0);
@@ -982,7 +1570,7 @@
                 for (let u = start + 1; u < end - 1; u += 3.3) S.line([F.P(u, 0, 0.025), F.P(Math.min(end - 0.5, u + 1.5), 0, 0.025)]);
             }
             for (const lot of site.lots) {
-                if (['dome', 'pad', 'launch', 'crater', 'mine', 'hub', 'dish'].includes(lot.type)) continue;
+                if (['dome', 'pad', 'launch', 'crater', 'mine', 'hub', 'dish', 'scope', 'mesa', 'dunes', 'turbines'].includes(lot.type)) continue;
                 const F = turned(lot.x, lot.y, 0, lot.angle), u = lot.type === 'solar' ? 12.7 : lot.type === 'hab' ? 8.5 : 10;
                 const v = lot.type === 'solar' ? (lot.small ? 8 : T.p.solarRows * 3.25 + 1.5) : lot.type === 'hab' ? 8.5 : 7;
                 const rim = [[-u + 1, -v], [u - 1, -v], [u, -v + 1], [u, v - 1], [u - 1, v], [-u + 1, v], [-u, v - 1], [-u, -v + 1]];
@@ -1005,39 +1593,88 @@
     }
 
     function surface(T, site, seed) {
-        const { S, W, H, cam, p } = T, rng = new PG.RNG(hash(seed, 20)), craters = [];
-        const empty = (x, y, r) => site.clear(x, y, r) && !craters.some(c => Math.hypot(x - c.x, y - c.y) < r + c.r * 1.4);
-        const addCrater = (sx, sy, r) => {
-            const [x, y] = cam.ground(sx * W, sy * H);
-            if (!empty(x, y, r * 1.4)) return;
+        const { S, W, H, cam, p, mars } = T, rng = new PG.RNG(hash(seed, 20)), taken = [], craters = [];
+        // Craters and dunes reserve a margin around themselves as they go down
+        const empty = (x, y, r) => site.clear(x, y, r) && !taken.some(c => Math.hypot(x - c.x, y - c.y) < r + c.r);
+        const take = (x, y, r) => taken.push({ x, y, r });
+        const addCrater = (x, y, r) => {
             const c = { x, y, r, phase: rng.range(0, TAU) };
-            craters.push(c); crater(T, c, rng);
+            take(x, y, r * 1.4); craters.push(c); crater(T, c, rng);
         };
-        for (const lot of site.lots.filter(l => l.type === 'crater')) {
-            const c = { x: lot.x, y: lot.y, r: lot.r / 1.3, phase: rng.range(0, TAU) };
-            craters.push(c); crater(T, c, rng);
+        for (const lot of site.lots.filter(l => l.type === 'crater')) addCrater(lot.x, lot.y, lot.r / 1.3);
+        // Mars keeps fewer craters, the wind has filled most of them in
+        for (let i = 0; i < p.craters * (mars ? 3 : 7); i++) {
+            const [x, y] = cam.ground(rng.range(-0.05, 1.05) * W, rng.range(-0.05, 1.05) * H), r = rng.range(3.2, 8);
+            if (empty(x, y, r * 1.4)) addCrater(x, y, r);
         }
-        for (let i = 0; i < p.craters * 7; i++) addCrater(rng.range(-0.05, 1.05), rng.range(-0.05, 1.05), rng.range(3.2, 8));
+        if (mars) {
+            // A big dune leads each field, with up to two small ones coming up behind it
+            let made = 0;
+            for (const lot of site.lots.filter(l => l.type === 'dunes')) {
+                const F = turned(lot.x, lot.y, 0, T.wind), behind = rng.shuffle([[-0.62, 0.42, 0.3], [-0.62, -0.42, 0.3]]).slice(0, rng.int(0, 2));
+                for (const [u, v, s] of [[0.3, 0, 0.6], ...behind]) {
+                    const q = F.P(u * lot.r, v * lot.r, 0);
+                    dune(T, { x: q[0], y: q[1], r: s * lot.r, h: s * lot.r * rng.range(0.26, 0.36) }); made++;
+                }
+            }
+            for (let i = 0; i < p.dunes * 8 && made < p.dunes; i++) {
+                const [x, y] = cam.ground(rng.range(0, 1) * W, rng.range(0, 1) * H), r = rng.range(3, 6.5);
+                if (!empty(x, y, r * 1.25)) continue;
+                take(x, y, r * 1.25); dune(T, { x, y, r, h: r * rng.range(0.26, 0.36) }); made++;
+            }
+            // Streaks of dust trail downwind from the crater rims
+            inKind(S, DUST, () => {
+                for (const c of craters) {
+                    const F = turned(c.x, c.y, 0.02, T.wind);
+                    for (const v of [-0.8, -0.4, 0, 0.4, 0.8]) {
+                        const to = rng.range(2.4, 3.8) * (1 - 0.35 * Math.abs(v));
+                        let pts = [];
+                        for (let u = 1.45; u < to; u += 0.2) {
+                            const q = F.P(c.r * u, c.r * v * (1 - 0.1 * (u - 1.45)), 0);
+                            if (!empty(q[0], q[1], 0.3) || rng.chance(0.12)) { if (pts.length > 1) S.line(pts); pts = []; continue; }
+                            pts.push(q);
+                        }
+                        if (pts.length > 1) S.line(pts);
+                    }
+                }
+            });
+        }
         // Broken, gently bowed regolith lines leave white breathing room and
         // make the craters part of a landscape rather than isolated ellipses.
+        // On Mars they are ripples, all lying across the wind.
         inKind(S, DUST, () => {
             for (let i = 0; i < (p.detail ? 240 : 100); i++) {
                 const [x, y] = cam.ground(rng.range(-5, W + 5), rng.range(-5, H + 5));
                 const length = rng.range(0.4, 3.1);
                 if (!empty(x, y, length)) continue;
+                if (mars) {
+                    const F = turned(x, y, 0.015, T.wind + Math.PI / 2);
+                    const ripple = (shift, n) => S.line(Array.from({ length: n }, (_, j) => F.P((j / (n - 1) - 0.5) * length * n / 4, shift + 0.13 * Math.sin(j * 1.1), 0)));
+                    ripple(0, 7);
+                    if (p.detail && rng.chance(0.5)) ripple(0.5, 4);
+                    continue;
+                }
                 S.line(Array.from({ length: 5 }, (_, j) => [x + (j / 4 - 0.5) * length, y + Math.sin(j * Math.PI / 4) * length * 0.12, 0.015]));
                 if (p.detail && rng.chance(0.28)) S.line([[x + 0.1, y + 0.48, 0.02], [x + 0.1 + length * 0.4, y + 0.51, 0.02]]);
             }
         });
-        for (let i = 0; i < p.boulders * 110; i++) {
-            const [x, y] = cam.ground(rng.range(0, W), rng.range(0, H)), r = rng.range(0.3, 1.4);
-            if (!empty(x, y, r + 0.3)) continue;
-            S.lathe(x, y, [[r, 0], [r * 0.85, r * 0.55], [r * 0.35, r * 1.1]], rng.int(4, 6), false, rng.range(0, TAU));
-        }
-        return empty;
+        // Mars is rockier, and its rocks are the color of the ground
+        inKind(S, mars ? DUST : INK, () => {
+            for (let i = 0; i < p.boulders * (mars ? 170 : 110); i++) {
+                const [x, y] = cam.ground(rng.range(0, W), rng.range(0, H)), r = rng.range(0.3, 1.4);
+                if (!empty(x, y, r + 0.3)) continue;
+                S.lathe(x, y, [[r, 0], [r * 0.85, r * 0.55], [r * 0.35, r * 1.1]], rng.int(4, 6), false, rng.range(0, TAU));
+                // A drift of sand in the lee of each rock
+                if (mars && p.detail) {
+                    const F = turned(x, y, 0.02, T.wind), tip = F.P(r * rng.range(2.6, 4), 0, 0);
+                    if (empty(tip[0], tip[1], 0.2)) S.line([F.P(r * 1.5, 0, 0), tip]);
+                }
+            }
+        });
+        return { empty, take };
     }
 
-    function activity(T, site, empty, seed) {
+    function activity(T, site, { empty, take }, seed) {
         const { S, W, H, cam, p } = T, rng = new PG.RNG(hash(seed, 30));
         // Tracks share a curving center line with the rover heading. Every
         // sample is checked against both facilities and crater footprints.
@@ -1066,7 +1703,21 @@
                     if (pts.length > 1) S.line(pts);
                 }
             });
+            take(x, y, 4);
             made++;
+        }
+        if (T.mars) {
+            for (let i = 0, devils = 0; i < 120 && devils < p.devils; i++) {
+                const [x, y] = cam.ground(rng.range(0.1, 0.9) * W, rng.range(0.25, 0.92) * H);
+                if (!empty(x, y, 3.5)) continue;
+                dustDevil(T, x, y, rng, empty); take(x, y, 3.5); devils++;
+            }
+            for (let i = 0; i < 120 && p.heli; i++) {
+                const [x, y] = cam.ground(rng.range(0.12, 0.88) * W, rng.range(0.2, 0.9) * H);
+                if (!empty(x, y, 3)) continue;
+                helicopter(T, x, y, rng.range(0, TAU)); take(x, y, 3);
+                break;
+            }
         }
         let people = 0;
         for (let i = 0; i < 150 && people < p.crew; i++) {
@@ -1084,27 +1735,40 @@
         }
     }
 
+    const onMars = p => p.world === 'mars';
     PG.register({
         id: 'moonbase', name: 'Moon Base', category: 'Scenes', fit: false,
-        description: 'A lunar garden colony with geodesic biospheres, ribbed pressure tunnels, a lander, solar fields and crater expeditions, drawn in isometric ink.',
+        description: 'A garden colony on the Moon or Mars with glass and printed biospheres, ribbed pressure tunnels, a lander, solar fields and reactors, drawn in isometric ink. Every seed plans a different settlement.',
+        // Mars draws its ground with the red pen, see pens.js
+        penScene: p => onMars(p) ? 'marsbase' : 'moonbase',
         params: [
             { type: 'section', label: 'View' },
-            { id: 'scale', label: 'Colony scale', type: 'range', min: 0.75, max: 1.4, step: 0.025, value: 1.1, random: [1, 1.2], hint: 'Size of the buildings within the lunar landscape' },
+            { id: 'scale', label: 'Colony scale', type: 'range', min: 0.75, max: 1.4, step: 0.025, value: 1.1, random: [1, 1.2], hint: 'Size of the buildings within the landscape' },
             { id: 'yaw', label: 'Camera turn (°)', type: 'range', min: 20, max: 70, step: 0.5, value: 45, random: false },
             { id: 'elev', label: 'Camera height (°)', type: 'range', min: 25, max: 60, step: 0.5, value: 38, random: false, hint: '35.3 is true isometric' },
             { type: 'section', label: 'Settlement' },
-            { id: 'layout', label: 'Colony plan', type: 'select', value: 'gardens', options: [['gardens', 'Garden constellation'], ['crescent', 'Crescent settlement'], ['spine', 'Research spine']], random: true },
+            { id: 'world', label: 'World', type: 'select', value: 'moon', options: [['moon', 'The Moon'], ['mars', 'Mars']], random: true, hint: 'Mars trades most craters for dunes, mesas and dust devils, favors printed and buried buildings, and draws its ground in red' },
+            { id: 'layout', label: 'Colony plan', type: 'select', value: 'gardens', options: [['gardens', 'Garden constellation'], ['crescent', 'Crescent settlement'], ['spine', 'Research spine'], ['ring', 'Ring around a landmark'], ['twin', 'Twin outposts']], random: true, hint: 'The seed still moves everything within a plan' },
+            { id: 'domes', label: 'Dome style', type: 'select', value: 'auto', options: [['auto', 'Varies with seed'], ['geodesic', 'Geodesic glass'], ['ribbed', 'Ribbed conservatory'], ['shell', 'Printed regolith shell']], random: false },
+            { id: 'habitats', label: 'Habitat style', type: 'select', value: 'auto', options: [['auto', 'Varies with seed'], ['cylinder', 'Pressure cylinders'], ['can', 'Upright cans'], ['tower', 'Printed towers'], ['bermed', 'Buried under regolith']], random: false },
             { id: 'gardens', label: 'Biosphere gardens', type: 'checkbox', value: true, hint: 'Clear front glazing reveals the growing beds, with a tree in the main dome' },
             { id: 'tunnelLoops', label: 'Extra tunnel links', type: 'checkbox', value: true, random: 0.65 },
             { id: 'density', label: 'Settlement density', type: 'range', min: 0, max: 1, step: 0.05, value: 1, random: [0.75, 1], hint: 'Habitation blocks, workshops, growing houses and cargo yards around the biospheres' },
             { id: 'solarRows', label: 'Solar array rows', type: 'range', min: 1, max: 4, step: 1, value: 3, random: [2, 4] },
-            { id: 'lander', label: 'Lunar lander', type: 'checkbox', value: true, random: 0.9 },
-            { id: 'launchpad', label: 'Shuttle & launch gantry', type: 'checkbox', value: true, random: 0.9 },
+            { id: 'reactors', label: 'Fission reactors', type: 'checkbox', value: true, random: 0.6 },
+            { id: 'turbines', label: 'Wind turbines', type: 'checkbox', value: true, random: 0.7, show: onMars },
+            { id: 'lander', label: 'Lander', type: 'checkbox', value: true, random: 0.9 },
+            { id: 'launchpad', label: 'Rocket & launch gantry', type: 'checkbox', value: true, random: 0.9 },
             { id: 'excavation', label: 'Crater drilling rig', type: 'checkbox', value: true, random: 0.8 },
-            { type: 'section', label: 'Lunar surface' },
+            { id: 'telescope', label: 'Crater radio telescope', type: 'checkbox', value: true, random: 0.7, show: p => !onMars(p) },
+            { type: 'section', label: 'Surface' },
             { id: 'craters', label: 'Impact craters', type: 'range', min: 0, max: 24, step: 1, value: 9, random: [6, 14] },
+            { id: 'dunes', label: 'Barchan dunes', type: 'range', min: 0, max: 16, step: 1, value: 7, random: [3, 12], show: onMars },
+            { id: 'mesas', label: 'Mesas', type: 'range', min: 0, max: 4, step: 1, value: 2, random: [0, 3], show: onMars },
+            { id: 'devils', label: 'Dust devils', type: 'range', min: 0, max: 3, step: 1, value: 1, random: [0, 2], show: onMars },
             { id: 'boulders', label: 'Boulders', type: 'range', min: 0, max: 1, step: 0.05, value: 0.25, random: [0.1, 0.4] },
             { id: 'rovers', label: 'Exploration rovers', type: 'range', min: 0, max: 8, step: 1, value: 4, random: [2, 6] },
+            { id: 'heli', label: 'Scout helicopter', type: 'checkbox', value: true, random: 0.7, show: onMars },
             { id: 'crew', label: 'Astronauts', type: 'range', min: 0, max: 24, step: 1, value: 8, random: [4, 12] },
             { id: 'detail', label: 'Fine details', type: 'checkbox', value: true, hint: 'Finer dome glazing, crop leaves, wheel spokes, footprints and tracks in the dust' },
             { type: 'section', label: 'Shading' },
@@ -1117,10 +1781,15 @@
         ],
         generate(p, ctx) {
             const { width: W, height: H } = ctx, k = 1.55 * p.scale * Math.min(W / 180, H / 250);
-            const cam = makeCamera(p.yaw, p.elev, k, W, H, 0, 0), S = new Scene(cam, W, H);
-            const T = { S, p, cam, W, H, k, detail: p.detail, tones: p.hatching, hDark: p.hatchGap,
+            const cam = makeCamera(p.yaw, p.elev, k, W, H, 0, 0), S = new Scene(cam, W, H), mars = onMars(p);
+            // The wind blows at a slant to the view, toward the viewer or away.
+            // Dunes, streaks and rotors all follow it. Square across the view a
+            // rotor would be edge-on, and straight along it a dune hides one of its slopes.
+            const gust = new PG.RNG(hash(ctx.seed, 50));
+            const T = { S, p, cam, W, H, k, mars, detail: p.detail, tones: p.hatching, hDark: p.hatchGap,
+                wind: Math.atan2(cam.fy, cam.fx) + (gust.chance(0.5) ? Math.PI : 0) + gust.sign() * gust.range(0.55, 1),
                 segs: r => segments(r, k), sees: n => cam.facing(...n) };
-            const site = plan(T, ctx.seed), empty = surface(T, site, ctx.seed);
+            const site = plan(T, ctx.seed), ground = surface(T, site, ctx.seed);
             infrastructure(T, site);
             if (p.shadows) {
                 const cot = 1 / Math.tan(geo.rad(p.sun));
@@ -1146,11 +1815,15 @@
                     case 'observatory': observatory(T, lot); break;
                     case 'cargo': cargoPort(T, lot); break;
                     case 'mine': mine(T, lot, rng); break;
+                    case 'reactor': reactors(T, lot); break;
+                    case 'turbines': turbines(T, lot); break;
+                    case 'scope': craterScope(T, lot, rng); break;
+                    case 'mesa': mesa(T, lot, rng); break;
                 }
             }
-            activity(T, site, empty, ctx.seed);
+            activity(T, site, ground, ctx.seed);
             if (p.shadows) { S.kind = BLUE; S.hatchShadows(p.shadowGap); }
-            return PG.pens.renderScene('moonbase', S, p);
+            return PG.pens.renderScene(mars ? 'marsbase' : 'moonbase', S, p);
         },
     });
 })();

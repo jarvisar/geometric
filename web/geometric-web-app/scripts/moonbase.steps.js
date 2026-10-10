@@ -37,6 +37,17 @@ await evaluate(`plotterApp.regenerate()`); await setup();
 assert(await evaluate('__moonHash()') === changed, 'Reload changed the saved colony');
 await evaluate(`plotterApp.resetParams(); plotterApp.regenerate()`);
 assert(await evaluate('__moonHash()') === initial, 'Reset did not restore the default colony');
+// Mars has controls of its own, and the pen legend follows the world
+const hidden = ids => evaluate(`${JSON.stringify(ids)}.map(id => document.querySelector('[data-param="' + id + '"]').hidden).join()`);
+const marsOnly = ['dunes', 'mesas', 'devils', 'turbines', 'heli'];
+assert(await hidden(marsOnly) === 'true,true,true,true,true' && await hidden(['telescope']) === 'false', 'Mars controls should stay hidden on the Moon');
+await evaluate(`__setMoon('world', 'mars'); plotterApp.regenerate()`);
+assert(await evaluate('__moonHash()') !== initial, 'World control did not change geometry');
+assert(await hidden(marsOnly) === 'false,false,false,false,false' && await hidden(['telescope']) === 'true', 'Mars controls did not appear');
+assert(await evaluate(`document.querySelector('#penList').textContent.includes('Dust, dunes & tracks')`), 'Pen legend did not follow the world');
+await shot('moonbase-mars-app.png');
+await evaluate(`plotterApp.resetParams(); plotterApp.regenerate()`);
+assert(await evaluate('__moonHash()') === initial, 'Reset did not return to the Moon');
 for (const pens of [1, 8]) {
     await evaluate(`__setMoon('pens', ${pens}); plotterApp.regenerate()`);
     assert(await evaluate(`plotterApp.result.layers.filter(l => l.paths.length).length`) === pens, 'Incorrect pen mapping');
@@ -54,12 +65,17 @@ const exported = await evaluate(`(async () => {
         recipe: doc.querySelector('desc').textContent.includes('"moonbase"') };
 })()`);
 assert(exported.valid && exported.layers === 8 && exported.recipe, 'SVG export lost layers or recipe');
-log('Moon Base: gallery, worker, controls, persistence, reset, 1/8 pens and SVG passed');
-for (const layout of ['gardens', 'crescent', 'spine']) {
+log('Moon Base: gallery, worker, controls, worlds, persistence, reset, 1/8 pens and SVG passed');
+for (const layout of ['gardens', 'crescent', 'spine', 'ring', 'twin']) {
     const query = new URLSearchParams({ gens: 'moonbase', variants: '0', size: '1050', set: JSON.stringify({ layout }) });
     await open('dev/sheet.html?' + query);
     await shot(`moonbase-${layout}.png`);
 }
+// The default next to three randomized colonies, to see that they don't repeat
+await open('dev/sheet.html?' + new URLSearchParams({ gens: 'moonbase', variants: '3', size: '560' }));
+await shot('moonbase-variants.png');
+await open('dev/sheet.html?' + new URLSearchParams({ gens: 'moonbase', variants: '0', size: '1050', set: JSON.stringify({ world: 'mars' }) }));
+await shot('moonbase-mars.png');
 await open('dev/sheet.html?' + new URLSearchParams({ gens: 'moonbase', variants: '0', size: '1050', set: JSON.stringify({ pens: 1, detail: false }) }));
 await shot('moonbase-one-pen.png');
 await open('dev/sheet.html?' + new URLSearchParams({ gens: 'moonbase', variants: '0', size: '1100', paper: '297x210', set: JSON.stringify({ yaw: 70, elev: 60, scale: 1.4, density: 1 }) }));
