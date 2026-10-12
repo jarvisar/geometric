@@ -22,7 +22,7 @@
     //   fit: true|false,          // true: pipeline scales output to fit; false: draws into ctx.width × ctx.height mm
     //   params: [ { id, label, type: 'range'|'select'|'checkbox'|'text'|'image'|'section',
     //               min, max, step, value, options: [[value, label]...], show: p => bool,
-    //               random: false | [min, max], hint } ],
+    //               random: false | [min, max], hint, was: { oldValue: newValue } } ],
     //   randomize(rng, params) -> partial params   (optional, curated randomization)
     //   generate(params, ctx) -> paths | { layers: [paths, paths, ...] }
     // })

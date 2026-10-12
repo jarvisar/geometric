@@ -177,16 +177,17 @@
 
     // What gives one town a different character from the next: its outline,
     // where the castle stands, the build of its towers and what it has in the
-    // middle. These come from a stream of their own and are all drawn whatever
-    // the settings, so choosing one from its menu leaves the others, and the
-    // streets and houses, as they were.
+    // middle. The first three come from their menus. The rest come from a
+    // stream of their own, so changing a menu leaves them, and the streets
+    // and houses, as they were.
     function character(p, rng) {
-        const any = (v, pick) => (v === 'any' ? pick : v);
-        const right = rng.chance(0.45), shape = rng.weighted([[3, 'ragged'], [3, 'long'], [2, 'octagon'], [0.7, 'square']]);
-        const towers = rng.weighted([[5, 'round'], [3, 'square'], [2, 'mixed']]);
+        // The seed used to pick the corner, the outline and the towers here.
+        // Randomize does that now, but the three draws are still made so a
+        // seed gives the same town it did before.
+        for (let i = 0; i < 3; i++) rng.random();
         return {
-            turn: !!p.castle && any(p.castleAt, right ? 'right' : 'back') === 'right',
-            shape: any(p.shape, shape), towers: any(p.towers, towers),
+            turn: !!p.castle && p.castleAt === 'right',
+            shape: p.shape, towers: p.towers,
             // how far the towers stand above the walls, and how steep their roofs are
             lofty: rng.range(0.8, 1.5), spire: rng.range(1.8, 2.7),
             stretch: rng.range(0, 1), sideways: rng.chance(0.5), belfry: rng.chance(0.35), orchard: rng.chance(0.45),
@@ -250,8 +251,9 @@
             const kw = rng.range(11, 13), [wx0, wy0, wx1, wy1] = ward;
             const kx = geo.clamp(wx0 + (wx1 - wx0) * rng.range(0.56, 0.66), wx0 + kw / 2 + 4, wx1 - kw / 2 - 3);
             const ky = geo.clamp(wy0 + (wy1 - wy0) * rng.range(0.56, 0.64), wy0 + kw / 2 + 7, wy1 - kw / 2 - 3);
-            const type = p.keep === 'any' ? rng.weighted([[3, 'turrets'], [2, 'square'], [2, 'round']]) : p.keep;
-            const h = LAND + rng.range(20, 24);
+            // where the seed used to pick the keep
+            rng.random();
+            const type = p.keep, h = LAND + rng.range(20, 24);
             castle.keep = { x: kx, y: ky, w: kw, h, type, top: h + (type === 'square' ? 5 : kw * 0.95) };
             castle.local = { ward, kx, ky };
         }
@@ -2444,22 +2446,25 @@
             { type: 'section', label: 'Walls' },
             { id: 'size', label: 'Town size (m)', type: 'range', min: 70, max: 150, step: 1, value: 104, random: [90, 120],
                 hint: 'Across the walls. The camera zooms out to fit a bigger town' },
-            { id: 'shape', label: 'Plan', type: 'select', value: 'any', random: false, hint: 'Any picks one from the seed',
-                options: [['any', 'Any'], ['ragged', 'Uneven corners'], ['octagon', 'Octagon'], ['square', 'Square'], ['long', 'Long']] },
+            { id: 'shape', label: 'Plan', type: 'select', value: 'long', was: { any: 'long' },
+                random: ['ragged', 'ragged', 'ragged', 'long', 'long', 'long', 'octagon', 'octagon', 'square'],
+                options: [['ragged', 'Uneven corners'], ['octagon', 'Octagon'], ['square', 'Square'], ['long', 'Long']] },
             { id: 'corners', label: 'Cut corners', type: 'range', min: 0, max: 1, step: 0.01, value: 0.55, random: [0.2, 1], show: p => p.shape !== 'square' },
             { id: 'wallHeight', label: 'Wall height (m)', type: 'range', min: 5, max: 10, step: 0.1, value: 7, random: [6, 8] },
             { id: 'towerGap', label: 'Tower spacing (m)', type: 'range', min: 14, max: 50, step: 1, value: 24, random: [18, 32] },
-            { id: 'towers', label: 'Towers', type: 'select', value: 'any', random: false, hint: 'Any picks one from the seed',
-                options: [['any', 'Any'], ['round', 'Round'], ['square', 'Square'], ['mixed', 'Square between round']] },
+            { id: 'towers', label: 'Towers', type: 'select', value: 'square', was: { any: 'square' },
+                random: ['round', 'round', 'round', 'square', 'square', 'mixed'],
+                options: [['round', 'Round'], ['square', 'Square'], ['mixed', 'Square between round']] },
             { id: 'towerRoofs', label: 'Tower tops', type: 'select', value: 'mixed', random: ['mixed', 'mixed', 'cones', 'crenels'],
                 options: [['mixed', 'Mixed'], ['cones', 'Pointed roofs'], ['crenels', 'Battlements']] },
             { id: 'moat', label: 'Moat width (m)', type: 'range', min: 9, max: 24, step: 0.5, value: 13, random: [11, 16] },
             { id: 'gate2', label: 'Second gate', type: 'checkbox', value: true, random: 0.6, hint: 'A gate in the other wall that faces us as well' },
             { id: 'castle', label: 'Castle', type: 'checkbox', value: true, random: 0.9 },
-            { id: 'castleAt', label: 'Castle stands', type: 'select', value: 'any', random: false, show: p => p.castle, hint: 'Either picks one from the seed',
-                options: [['any', 'Either'], ['back', 'At the back'], ['right', 'On the right']] },
-            { id: 'keep', label: 'Keep', type: 'select', value: 'any', random: false, show: p => p.castle,
-                options: [['any', 'Any'], ['turrets', 'Corner turrets'], ['square', 'Square keep'], ['round', 'Round donjon']] },
+            { id: 'castleAt', label: 'Castle stands', type: 'select', value: 'right', was: { any: 'right' }, random: true, show: p => p.castle,
+                options: [['back', 'At the back'], ['right', 'On the right']] },
+            { id: 'keep', label: 'Keep', type: 'select', value: 'turrets', was: { any: 'turrets' }, show: p => p.castle,
+                random: ['turrets', 'turrets', 'turrets', 'square', 'square', 'round', 'round'],
+                options: [['turrets', 'Corner turrets'], ['square', 'Square keep'], ['round', 'Round donjon']] },
             { id: 'banners', label: 'Flags & banners', type: 'checkbox', value: true },
             { type: 'section', label: 'Town' },
             { id: 'block', label: 'Block size (m)', type: 'range', min: 16, max: 36, step: 0.5, value: 24, random: [20, 28] },

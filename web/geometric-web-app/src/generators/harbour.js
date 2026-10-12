@@ -1626,7 +1626,10 @@
         const room = (y0, y1) => reach.reduce((m, r) => (y0 < r.y1 && y1 > r.y0 ? Math.min(m, xq - r.x) : m), Infinity);
         const W = { bw: null, island: null, wharves: [], slip: null, piers: [], dinghies: [], buoys: [], boats: [] };
         if (p.lighthouse) {
-            const type = p.breakwater === 'any' ? rng.weighted([[3, 'straight'], [2.2, 'bent'], [1.6, 'island']]) : p.breakwater;
+            // The seed used to pick this, and Randomize does now. The draw is still made so a seed
+            // gives the same harbor it did before.
+            rng.random();
+            const type = p.breakwater;
             if (type === 'island') {
                 for (let tries = 0; tries < 16 && !W.island; tries++) {
                     const x = xq - rng.range(26, 46), y = geo.lerp(ya, yb, rng.range(0.1, 0.6)), r = rng.range(5, 6.5);
@@ -1759,10 +1762,11 @@
             }
             return [Infinity, 0];
         };
+        // where the seed used to pick the kind of ship
+        if (p.ship) rng.random();
         // A schooner sails across the page so we see her sails side on, and
         // wants open water behind her mastheads so they don't end up in the town
-        const sailing = p.ship && (p.shipType === 'schooner' || (p.shipType === 'any' && rng.chance(0.5)));
-        if (sailing) {
+        if (p.ship && p.shipType === 'schooner') {
             const lee = rng.sign(), head = Math.atan2(cam.fx, -cam.fy) + rng.range(-0.45, 0.45) + (rng.chance(0.5) ? Math.PI : 0);
             const c = Math.cos(head), s = Math.sin(head);
             for (let tries = 0; tries < 100 && !W.ship; tries++) {
@@ -1776,7 +1780,7 @@
                 for (const t of [22, 36]) take(x - c * t, y - s * t, 9);
             }
         }
-        if (p.ship && !W.ship && p.shipType !== 'schooner') {
+        if (p.ship && !W.ship) {
             for (let tries = 0; tries < 80 && !W.ship; tries++) {
                 const [x, y] = spot(40, 150), ends = [-1, 1].map(e => [x + Math.cos(tide) * e * 14, y + Math.sin(tide) * e * 14]);
                 // the whole ship on the page, not just its middle
@@ -2293,13 +2297,14 @@
             { id: 'moorings', label: 'Moorings', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.2, 1],
                 hint: 'Boats on moorings out in the bay, and buoys marking a channel in' },
             { id: 'ship', label: 'Ship', type: 'checkbox', value: true, random: 0.7 },
-            { id: 'shipType', label: 'Kind of ship', type: 'select', value: 'any', random: false, show: p => p.ship,
-                options: [['any', 'Any'], ['cargo', 'Cargo ship at anchor'], ['schooner', 'Schooner under sail']],
+            { id: 'shipType', label: 'Kind of ship', type: 'select', value: 'cargo', was: { any: 'cargo' }, random: true, show: p => p.ship,
+                options: [['cargo', 'Cargo ship at anchor'], ['schooner', 'Schooner under sail']],
                 hint: 'The schooner needs open water behind her masts, so she sometimes gives way to the cargo ship' },
             { id: 'gulls', label: 'Gulls', type: 'range', min: 0, max: 1, step: 0.01, value: 0.5, random: [0.2, 0.9] },
             { id: 'lighthouse', label: 'Lighthouse', type: 'checkbox', value: true },
-            { id: 'breakwater', label: 'Lighthouse on', type: 'select', value: 'any', random: false, show: p => p.lighthouse,
-                options: [['any', 'Any'], ['straight', 'Straight breakwater'], ['bent', 'Bent breakwater'], ['island', 'Island']] },
+            { id: 'breakwater', label: 'Lighthouse on', type: 'select', value: 'island', was: { any: 'island' }, show: p => p.lighthouse,
+                random: ['straight', 'straight', 'straight', 'straight', 'bent', 'bent', 'bent', 'island', 'island'],
+                options: [['straight', 'Straight breakwater'], ['bent', 'Bent breakwater'], ['island', 'Island']] },
             { id: 'bands', label: 'Red bands', type: 'checkbox', value: true, random: 0.6, show: p => p.lighthouse && p.roofHatch },
             { id: 'wharves', label: 'Wharves & cranes', type: 'range', min: 0, max: 1, step: 0.01, value: 0.4, random: [0, 0.8] },
             { id: 'basin', label: 'Dock basin', type: 'range', min: 0, max: 1, step: 0.01, value: 0.3, random: [0, 0.7],

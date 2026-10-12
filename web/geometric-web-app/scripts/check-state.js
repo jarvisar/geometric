@@ -56,6 +56,13 @@ assert.throws(() => PG.settings.read({ ...recipe, ui: { open: null } }, true), /
 // A session saved with a fractional count before validation caught it opens with the default again
 assert.equal(PG.settings.read({ gen: 'tidal', params: { tidal: { studies: 2.5 } } }, true).params.tidal.studies,
     PG.defaultParams(PG.byId.tidal).studies);
+// A menu that used to have Any opens on what replaced it. A choice it never had still fails.
+const anyStadium = read({ gen: 'stadium', params: { stadium: { type: 'any', roof: 'any', seats: 'any' } } }).params.stadium;
+assert.deepEqual([anyStadium.type, anyStadium.roof, anyStadium.seats], [PG.defaultParams(PG.byId.stadium).type, 'mixed', 'mixed']);
+for (const [gen, id] of [['castle', 'keep'], ['castle', 'castleAt'], ['harbour', 'shipType'], ['harbour', 'breakwater']]) {
+    assert.equal(read({ gen, params: { [gen]: { [id]: 'any' } } }).params[gen][id], PG.defaultParams(PG.byId[gen])[id]);
+    assert.throws(() => read({ gen, params: { [gen]: { [id]: 'missing' } } }), /Invalid settings/);
+}
 
 for (const gen of ['harbour', 'fairground', 'alpine']) for (const [inks, pens] of [['one', 1], ['four', 4], ['eight', 8]]) {
     assert.equal(read({ gen, v: 1, params: { [gen]: { inks } } }).params[gen].pens, pens);

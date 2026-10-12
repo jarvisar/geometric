@@ -103,7 +103,10 @@ pass explicit `segs` or a smaller `tol` there.
   `random: [lo, hi]` narrows the random range. Keep resolution/quality knobs
   `random: false`.
 * `select`: `options: [[value, label], ...]`. Only randomized if `random` is set
-  (`true` or an array of allowed values).
+  (`true` or an array of allowed values). Don't add an "Any" option that leaves
+  the pick to the seed. Randomize should make the pick, so the menu shows what
+  was drawn and a lock holds it. When an option is renamed or dropped, map the
+  old value with `was: { old: 'new' }` so saved links still open.
 * `checkbox`: randomized only if `random` is set (a probability or `true`).
 * `section`: a heading, no value.
 * `show: p => bool` hides a control when irrelevant.

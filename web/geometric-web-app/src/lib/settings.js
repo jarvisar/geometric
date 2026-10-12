@@ -80,8 +80,10 @@
         const out = {};
         for (const q of def.params) {
             if (!q.id) continue;
-            const v = own(from, q.id) ? from[q.id] : q.value;
+            let v = own(from, q.id) ? from[q.id] : q.value;
             if (v === undefined && q.type === 'image') continue;
+            // A choice the design has since renamed or dropped, as { old: new }
+            if (q.was && typeof v === 'string' && own(q.was, v)) v = q.was[v];
             const name = `params.${id}.${q.id}`;
             // Whole-number steps are counts. The controls can't make a fraction, but an edited
             // link can, and some designs crash on one (e.g. 2.5 studies in Tidal Atlas)

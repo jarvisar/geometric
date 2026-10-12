@@ -43,8 +43,11 @@
         wireframe: profile(4, 'Colors run from the lowest ground to the peaks, from near to far, or follow the direction of the lines.', [BLUE, RED, PURPLE, GOLD, CYAN, BROWN, GREEN, INK]),
         chladni: profile(4, 'Nodal lines anchor the drawing. Colors distinguish vibration bands on either side.', [INK, BLUE, RED, CYAN, GOLD, PURPLE, GREEN, BROWN]),
         fieldlines: profile(4, 'Source fans and potential levels form color families.', [INK, BLUE, RED, CYAN, PURPLE, GOLD, GREEN, BROWN]),
+        // Black Hole sorts these into a spectrum itself, see SPECTRUM in blackhole.js
+        blackhole: profile(3, 'Colors follow the redshift, from the side of the disk coming towards you to the side going away. Each pen draws the same length of line.', [BLUE, RED, GOLD, CYAN, PURPLE, GREEN, BROWN, INK]),
         moire: profile(3, 'Each line family gets a palette, split into broad bands as more pens are added.', jewel, 'families'),
         warp: profile(4, 'Color bands follow the woven directions and warped stripes.', jewel, 'families'),
+        tracery: profile(4, 'Black stone, blue lights, red foils and gold spandrels. More pens split out every other light, the smaller foils, the moulding lines and the frame.', [INK, BLUE, RED, GOLD, GREEN, PURPLE, BROWN, CYAN]),
         truchet: profile(4, 'Connected curves keep one color. Triangle tiles form colored patches.', jewel),
         islamic: profile(4, 'Whole woven strands keep their color. Optional outlines and the second pattern share the selected pens.'),
         penrose: profile(4, 'Tile orientation and decoration family choose the color.', [INK, BLUE, RED, GOLD, GREEN, PURPLE, CYAN, BROWN]),
@@ -176,6 +179,16 @@
         [5, 0, 3, 6, 1, 0, 2, 2, 4],
         [5, 0, 3, 6, 1, 0, 2, 7, 4],
     ], ['Sea surface', 'Coast', 'Lowland', 'Hills', 'Peaks', 'Water in section', 'Block outline', 'Strata', 'Survey marks']);
+    P.scenes.tracery = inOrder('tracery', [
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 1, 1, 1, 1, 1],
+        [0, 0, 0, 1, 1, 2, 2, 1],
+        [0, 0, 0, 1, 1, 2, 2, 3],
+        [0, 0, 0, 1, 4, 2, 2, 3],
+        [0, 0, 0, 1, 4, 2, 5, 3],
+        [0, 6, 0, 1, 4, 2, 5, 3],
+        [0, 6, 7, 1, 4, 2, 5, 3],
+    ], ['Stone', 'Mouldings', 'Frame & sill', 'Lights', 'Every other light', 'Large foils', 'Small foils', 'Spandrels']);
     // Roles past the pen count fold back onto earlier accents, so the pen count never changes the geometry
     const FOLD = [0, 0, 1, 1, 2, 2, 2, 3];
     const fold = (role, n) => { while (role >= n) role = FOLD[role]; return role; };

@@ -11,9 +11,9 @@
         'spirograph', 'mystery', 'harmonograph', 'maurer', 'superformula', 'guilloche',
         'timestable', 'flower', 'phyllotaxis', 'attractor', 'ribbons',
         // Fields
-        'flowfield', 'ridgelines', 'topo', 'wireframe', 'chladni', 'fieldlines', 'moire', 'warp', 'tidal',
+        'flowfield', 'ridgelines', 'topo', 'wireframe', 'chladni', 'fieldlines', 'blackhole', 'moire', 'warp', 'tidal',
         // Tiles
-        'truchet', 'islamic', 'penrose', 'hyperbolic', 'celtic', 'whirl', 'maze', 'lsystem',
+        'truchet', 'tracery', 'islamic', 'penrose', 'hyperbolic', 'celtic', 'whirl', 'maze', 'lsystem',
         // Packing
         'circlepack', 'apollonian', 'subdivide', 'voronoi',
         // Scenes

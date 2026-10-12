@@ -74,20 +74,14 @@ for (const shape of menus.shape) for (const towers of menus.towers) for (const c
 assert.ok(heaviest < 1700, `A square town has ${heaviest} solid patches of black ink`);
 run({ shape: 'long', towers: 'square', castle: false, size: 70 });
 run({ shape: 'long', towers: 'mixed', castleAt: 'right', size: 150 });
-// A seed picks a plan, a build of tower and a corner for the castle. Choosing the same from the menus has
-// to give the same town, and the seeds shouldn't all pick alike.
+// Randomize picks a plan, a build of tower and a corner for the castle, not the seed. They shouldn't all
+// come out alike.
 const picked = { shape: new Set(), towers: new Set(), castleAt: new Set() };
-// not assert.deepEqual, which builds a diff of both drawings when they differ
-const drawn = res => JSON.stringify(res.layers);
 for (let seed = 1; seed <= 8; seed++) {
-    const any = drawn(run({}, { seed }));
-    for (const [id, options] of Object.entries(menus)) {
-        const same = options.filter(v => drawn(run({ [id]: v }, { seed })) === any);
-        assert.equal(same.length, 1, `Seed ${seed} matches ${same.length} choices of ${id}`);
-        picked[id].add(same[0]);
-    }
+    const p = PG.randomParams(def, defaults, new PG.RNG(seed * 7));
+    for (const id of Object.keys(picked)) picked[id].add(p[id]);
 }
-assert.ok(picked.shape.size >= 3 && picked.towers.size >= 2 && picked.castleAt.size === 2, 'Eight seeds gave towns too much alike');
+assert.ok(picked.shape.size >= 3 && picked.towers.size >= 2 && picked.castleAt.size === 2, 'Eight randomized towns were too much alike');
 
 for (const keep of ['turrets', 'square', 'round']) {
     for (const [yaw, elev] of [[20, 25], [20, 60], [70, 25], [70, 60]]) {

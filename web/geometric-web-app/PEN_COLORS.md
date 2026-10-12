@@ -25,10 +25,12 @@ preview, clipping and export. Custom pen colors still belong to the user.
 | Wireframe | Elevation bands from the coldest ink to the hottest, near-to-far bands, or one color per line direction |
 | Chladni | Distance from the nodal lines and vibration polarity |
 | Field Lines | Source fans and potential levels |
+| Black Hole | Redshift, from the side of the disk coming towards you to the side going away. Each pen draws the same length of line |
 | Moiré | Line families, subdivided into broad bands |
 | Warp | Woven directions and successive warped stripes |
 | Tidal Atlas | Water and land, then the cut block, elevation bands, survey marks and the sea surface |
 | Truchet, Celtic, Islamic | Connected strands, keeping each strand together |
+| Gothic Tracery | Stone in ink, then lights, foils and spandrels, every other light, the smaller foils, moulding lines and the frame |
 | Penrose | Tile orientation and decoration family |
 | Hyperbolic | Distance from the center of the disk |
 | Whirl | Pursuit depth, including the single-cell layout |
@@ -46,8 +48,8 @@ preview, clipping and export. Custom pen colors still belong to the user.
 
 ## Moving Parts Between Pens
 
-The scenes, Megastructure, Infinite Stairwell, Cosmic Comics and Tidal Atlas
-have named parts, like roofs, shadows or the moat. The pen list shows each part
+The scenes, Megastructure, Infinite Stairwell, Cosmic Comics, Tidal Atlas and
+Gothic Tracery have named parts, like roofs, shadows or the moat. The pen list shows each part
 under the pen that draws it. Select a part there to move it to another pen.
 
 A moved part keeps its pen when the pen count changes. Everything else still

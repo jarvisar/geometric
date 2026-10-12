@@ -1,16 +1,16 @@
 # Plotter Geometry
 
-Web app for generating geometric line art for pen plotters like the AxiDraw. Pick from 45 generative art designs, adjust them in the browser and export plot-ready SVG files. Built using JavaScript, HTML and CSS with no dependencies.
+Web app for generating geometric line art for pen plotters like the AxiDraw. Pick from 47 generative art designs, adjust them in the browser and export plot-ready SVG files. Built using JavaScript, HTML and CSS with no dependencies.
 
 Visit the [Plotter Geometry web app](https://geometric.jarvisar.com/) to access the latest deployment. It also works offline after the first visit.
 
 ## Designs
 
-Currently supports 45 designs:
+Currently supports 47 designs:
 
 - Curves: spirograph, mystery curves, harmonograph, Maurer rose, superformula, guilloché, times table, flower, phyllotaxis, strange attractors (Lorenz, Aizawa, Thomas and more) and ribbon sculptures of knots and linked bands
-- Fields: flow fields, ridgelines, topographic contour maps, wireframe terrain meshes with hidden lines removed, an island drowning as the sea rises, Chladni patterns, electric and magnetic field lines, moiré and op-art warp
-- Tiles: Truchet tiles, Islamic star patterns, Penrose tiling, hyperbolic tiling, Celtic knots, whirls, mazes and L-system fractals
+- Fields: flow fields, ridgelines, topographic contour maps, wireframe terrain meshes with hidden lines removed, an island drowning as the sea rises, Chladni patterns, electric and magnetic field lines, a black hole with its disk bent over the top by gravity, moiré and op-art warp
+- Tiles: Truchet tiles, Gothic window tracery and rose windows, Islamic star patterns, Penrose tiling, hyperbolic tiling, Celtic knots, whirls, mazes and L-system fractals
 - Packing: circle packing, Apollonian gaskets, recursive subdivision and Voronoi
 - Scenes: an isometric town of houses, apartments, A-frames, windmills, cars and trees, a harbor town with boats and a lighthouse, a walled castle town in its moat, a moon or Mars base with domes, greenhouses and rovers, a fairground of rides and tents, a railway yard with a roundhouse and steam engines, an alpine valley cut out like a topographic model, a cyberpunk skyline and a stadium that can be an old football ground, a bowl, a running track, a ballpark or a bullring, all with hidden lines removed
 - Studies: a megastructure tower packed with slab stacks, fins and grilles, a spiral stairwell in one-point perspective and comic pages of little alien landscapes

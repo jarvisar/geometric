@@ -11,7 +11,7 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 
 ## Designs
 
-45 designs, each with its own controls, seeded randomness and a curated **Randomize**.
+47 designs, each with its own controls, seeded randomness and a curated **Randomize**.
 
 **Curves** — centered figures, mostly single continuous strokes
 * **Spirograph**: hypotrochoids and epitrochoids with real tooth counts, so every curve closes exactly. Nested pen-hole rings.
@@ -33,12 +33,14 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 * **Wireframe**: a triangulated wire mesh draped over a landscape, like the terrain plots from early computer graphics. The ground can be city blocks, rolling hills, ridged peaks, an island, canyons, craters or ripples, and it can be cut into flat terraces with a cliff between each step. Hidden lines are removed exactly, by walking the sight line from each point back to the eye across the mesh. The mesh fills the page by default and can fray at the edge, where border cells drop out and leave loose threads sticking out. It can also be drawn as a whole tile, face on or isometric. Diagonals run one way, in zigzag rows, diamonds or crosses, follow the slope, or are left off for a plain grid. Pens color it by elevation, by distance or by line direction.
 * **Chladni**: nodal patterns of vibrating square plates and circular membranes (real Bessel modes), with "sand" bands.
 * **Field Lines**: electric field lines and equipotentials of charges (dipoles, quadrupoles, plates, random), or the magnetic field around wires, traced so line density follows field strength.
+* **Black Hole**: a thin disk of gas round a black hole seen from far off, after Luminet's 1979 picture. Light from the far side is bent up over the top of the hole, and the underside of the disk shows as a second image below it. The disk is drawn as rings, which thin out where it's dim and where they'd crowd closer than the pen. Pens follow the redshift, from the side coming towards you to the side going away. Curves of equal redshift can be added across it.
 * **Moiré**: overlaid circles, gratings, spirals or rays on separate pens.
 * **Op-Art Warp**: Vasarely-style bulges pushing hatched checkerboards out of the page.
 * **Tidal Atlas**: one landscape drawn again and again as the sea rises, so the valleys drown into fjords and the ridges break up into islands. The terrain comes from a quick erosion simulation, as an alpine massif, a fjord coast, an archipelago or a volcanic island. Land is drawn with fine ridge lines, contours, hachures or a wire mesh, and the sea with coastal ripple lines like an old atlas. Each study can be cut out as a block with the water standing in section and a tide staff beside it.
 
 **Tiles**
 * **Truchet**: arc, hex-arc, diagonal and hatched-triangle tiles, random or noise-structured.
+* **Gothic Tracery**: cathedral windows set out with compass and straightedge. Geometric windows split into pointed lights under circles, which hold foils, a wheel of lights or a ring of smaller circles. Intersecting windows carry every mullion on as two arcs, and rose windows have one or two rings of petals. Bars get thinner with each order and can show moulding lines. The glass gets diamond quarries, hatching or nested outlines, with a pen for each kind of pane. Lobes and panes too small to plot cleanly are left out.
 * **Islamic Stars**: Hankin's polygons-in-contact method over eight tilings, with optional woven strapwork.
 * **Penrose Tiling**: aperiodic rhombs (P3) or kites and darts (P2) by Robinson-triangle deflation, with matching arcs, hatching or nested fills.
 * **Hyperbolic Tiling**: regular {p, q} tilings of the Poincaré disk, like Escher's *Circle Limit*: edges, the triangle kaleidoscope, nested tiles or a hatched checkerboard.

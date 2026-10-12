@@ -10,7 +10,7 @@ load('generators/stadium.js');
 const def = PG.byId.stadium, defaults = PG.defaultParams(def);
 const settings = { seed: 1, paperW: 210, paperH: 297, margin: 15, scale: 100, rotate: 0, clip: 'rect',
     opt: { merge: true, mergeTol: 0.1, sort: true, simplify: true, simplifyTol: 0.02 } };
-const kinds = def.params.find(q => q.id === 'type').options.map(o => o[0]).filter(k => k !== 'any');
+const kinds = def.params.find(q => q.id === 'type').options.map(o => o[0]);
 let cases = 0, slowest = 0;
 function run(params = {}, options = {}) {
     const s = { ...settings, ...options }, res = PG.run(def, { ...defaults, ...params }, s);
@@ -66,18 +66,25 @@ for (const type of kinds) {
         for (const layer of res.layers) worstInk = Math.max(worstInk, blobs(res, layer.pen));
     }
 }
-// About 300 as it stands, nearly all of it people. It was 1800 when a full car park was rows of two-box cars.
+// About 400 as it stands. The worst is a bullring beside a car park, which is small enough for the camera to
+// come in close on the cars. It was 1800 when a full car park was rows of two-box cars.
 assert.ok(worstInk < 600, `A pen lays down ${worstInk} solid patches of ink`);
 
-// A seed picks the kind. Choosing the same kind from the menu has to give the same stadium, and
-// twenty seeds should turn up most of the kinds.
+// Randomize picks the kind and what goes with it, not the seed. Twenty of them should turn up most
+// of the kinds, and only an old ground has roofs to mix.
 const seen = new Set();
 for (let seed = 1; seed <= 20; seed++) {
-    const any = JSON.stringify(raw({}, seed).layers), kind = kinds.find(type => JSON.stringify(raw({ type }, seed).layers) === any);
-    assert.ok(kind, `Seed ${seed}: no kind in the menu gives the stadium the seed picked`);
-    seen.add(kind);
+    const p = PG.randomParams(def, defaults, new PG.RNG(seed * 7));
+    seen.add(p.type);
+    if (['bowl', 'oval', 'horseshoe', 'ballpark'].includes(p.type)) assert.notEqual(p.roof, 'mixed', `Randomize left the roof of a ${p.type} to the seed`);
+    if (p.type === 'bowl') assert.notEqual(p.seats, 'mixed', 'Randomize left the seats of a bowl to the seed');
 }
-assert.ok(seen.size >= 5, `Twenty seeds only gave ${[...seen].join(', ')}`);
+assert.ok(seen.size >= 5, `Twenty randomized stadiums were only ${[...seen].join(', ')}`);
+// a locked kind keeps its kind and still gets what suits it
+for (let seed = 1; seed <= 10; seed++) {
+    const p = PG.randomParams(def, { ...defaults, type: 'bullring' }, new PG.RNG(seed * 7), ['type']);
+    assert.ok(p.type === 'bullring' && p.colors === 'bluegold' && ['none', 'masts'].includes(p.lights), 'Randomize did not suit a locked bullring');
+}
 // the walls that run straight away from the camera are the ones with no width on paper
 for (const type of kinds) for (const [yaw, elev] of [[45, 45], [20, 30], [20, 60], [70, 30], [70, 60]]) raw({ type, yaw, elev }, 3);
 for (const type of kinds) {

@@ -1727,22 +1727,34 @@
         oval: [[3, 'park'], [3, 'campus'], [1, 'lots'], [1, 'town']], horseshoe: [[3, 'lots'], [3, 'campus'], [1, 'park']],
         cricket: [[3, 'park'], [3, 'town'], [1, 'campus']], bullring: [[5, 'town'], [1, 'park']], ballpark: [[3, 'town'], [3, 'lots'], [1, 'park']],
     };
+    // What Randomize gives each kind. A kind with no sport or roof here has no choice of one.
+    const USUAL = {
+        ground: { sport: [[6, 'football'], [1, 'rugby']], roof: [[5, 'mixed'], [1, 'pitched'], [1, 'cantilever']], lights: [[5, 'pylons'], [1, 'masts'], [0.6, 'none']] },
+        bowl: { sport: [[6, 'football'], [2.5, 'gridiron'], [1.5, 'rugby']], roof: [[3, 'cantilever'], [2, 'folded'], [2, 'tent'], [1.5, 'barrel'], [1, 'pitched'], [1, 'none']],
+            lights: [[4, 'rim'], [2, 'pylons'], [2, 'masts'], [0.5, 'none']] },
+        oval: { roof: [[3, 'cantilever'], [2, 'tent'], [1.5, 'folded'], [1, 'barrel'], [1, 'none']], lights: [[3, 'masts'], [3, 'pylons'], [2, 'rim']] },
+        horseshoe: { sport: [[4, 'gridiron'], [1, 'football']], roof: [[5, 'none'], [1, 'cantilever']], lights: [[4, 'masts'], [2, 'pylons'], [0.5, 'none']] },
+        ballpark: { roof: [[4, 'cantilever'], [1, 'barrel'], [1, 'pitched'], [1.5, 'none']], lights: [[5, 'pylons'], [2, 'masts']] },
+        cricket: { lights: [[5, 'masts'], [1, 'pylons'], [0.5, 'none']] },
+        bullring: { lights: [[3, 'none'], [1, 'masts']] },
+    };
 
     function design(p, rng) {
         const yaw = geo.rad(p.yaw), f = [Math.sin(yaw), Math.cos(yaw)];
-        // Every menu left on Any takes its pick from the seed. The pick is made either way, so choosing
-        // from a menu what the seed had picked gives the same stadium.
-        const any = (value, pairs) => {
+        // The seed used to pick for every menu left on Any. Randomize does that now, but the draws
+        // are still made here so a seed gives the same stadium it did before.
+        const chosen = value => (rng.random(), value);
+        // Mixed still takes the seed's pick, a new one for each stand
+        const mixed = (value, pairs) => {
             const pick = rng.weighted(pairs);
-            return value === 'any' ? pick : value;
+            return value === 'mixed' ? pick : value;
         };
-        const type = any(p.type, [[3.5, 'ground'], [3.5, 'bowl'], [2.2, 'oval'], [1.6, 'horseshoe'], [1.5, 'ballpark'], [1.2, 'cricket'], [1, 'bullring']]);
+        const type = chosen(p.type);
         const D = { type, edges: [], corners: [], sweep: 0, landmark: 'none', lights: 'none', lightH: 40, press: false, cauldron: false };
         // Nothing here can depend on how many pens there are: the same lines have to come out
-        // whatever they're drawn with. Green seats are left to be asked for, they get lost against the grass.
-        const hue = rng.pick(Object.keys(COLORS).filter(c => c !== 'green'));
-        D.colors = COLORS[p.colors === 'any' ? hue : p.colors];
-        const pat = () => any(p.seats, [[3, 'plain'], [2, 'tiers'], [2, 'hoops'], [2, 'stripes'], [1, 'pairs'], [1.5, 'checker'], [1.5, 'chevron'], [1.5, 'blocks'], [1, 'fade'], [2, 'letters']]);
+        // whatever they're drawn with.
+        D.colors = COLORS[chosen(p.colors)];
+        const pat = () => mixed(p.seats, [[3, 'plain'], [2, 'tiers'], [2, 'hoops'], [2, 'stripes'], [1, 'pairs'], [1.5, 'checker'], [1.5, 'chevron'], [1.5, 'blocks'], [1, 'fade'], [2, 'letters']]);
         const seat = () => ({ pat: pat(), band: rng.int(3, 5), seed: rng.int(1, 1e6), swap: rng.chance(0.25), word: rng.pick(WORDS), lay: new Map() });
         const kinds = D.colors.filter(k => k > 0);
         const roofOf = name => {
@@ -1757,7 +1769,7 @@
         const modern = () => rng.weighted([[2, 'fins'], [2, 'lattice'], [2, 'bands'], [1.5, 'arcade'], [1, 'brick']]);
 
         const turn = rng.chance(0.5) ? 1 : 0;   // the field runs along y, not x
-        const field = D.field = { turn, colors: D.colors, mow: any(p.mow, [[4, 'stripes'], [2, 'checker'], [1.5, 'diagonal'], [0.6, 'plain']]), bands: rng.pick([14, 18, 18, 22]) };
+        const field = D.field = { turn, colors: D.colors, mow: chosen(p.mow), bands: rng.pick([14, 18, 18, 22]) };
         const rect = (hl, hw) => {
             const hx = turn ? hw : hl, hy = turn ? hl : hw;
             D.half = [hx, hy];
@@ -1769,10 +1781,10 @@
         D.axis = turn ? [0, 1] : [1, 0];
         D.cross = turn ? [1, 0] : [0, 1];
         D.side = D.cross;
-        const sportOf = pairs => (field.sport = any(p.sport, pairs));
+        const sportOf = () => (field.sport = chosen(p.sport));
 
         if (type === 'ground') {
-            rect(...SPORTS[sportOf([[6, 'football'], [1, 'rugby']])]);
+            rect(...SPORTS[sportOf()]);
             D.radii = [4, 4, 4, 4];
             D.bay = 7.2;
             const face = rng.weighted([[4, 'brick'], [1, 'bands'], [1, 'arcade']]);
@@ -1783,27 +1795,27 @@
                 else if (far(e)) { sort = rng.weighted([[3, 'kop'], [2, 'side'], [1, 'main']]); rname = rng.weighted([[3, 'pitched'], [2, 'cantilever'], [1.5, 'barrel'], [1, 'none']]); }
                 else if (isLong(e)) { sort = rng.weighted([[3, 'side'], [2, 'small'], [1.5, 'terrace']]); rname = sort === 'terrace' ? 'none' : rng.weighted([[2, 'pitched'], [2, 'cantilever'], [1, 'none']]); }
                 else { sort = rng.weighted([[2, 'terrace'], [2, 'small'], [1, 'side']]); rname = sort === 'terrace' ? 'none' : rng.weighted([[2, 'pitched'], [1, 'cantilever'], [2, 'none']]); }
-                D.edges.push(makeStand(rng, sort, roofOf(p.roof === 'any' || rname === 'none' ? rname : p.roof), seat(), face, p.size));
+                D.edges.push(makeStand(rng, sort, roofOf(p.roof === 'mixed' || rname === 'none' ? rname : p.roof), seat(), face, p.size));
             }
             if (gabled >= 0 && D.edges[gabled].roof) D.edges[gabled].roof.gable = rng.chance(0.75);
             // a stand can carry on round a corner into the next one
             for (let c = 0; c < 4; c++) D.corners.push(rng.chance(far((c + 3) % 4) && far(c) ? 0.4 : 0.15) ? D.edges[rng.chance(0.5) ? c : (c + 3) % 4] : null);
-            D.lights = any(p.lights, [[5, 'pylons'], [1, 'masts'], [0.6, 'none']]);
+            D.lights = chosen(p.lights);
             D.lightH = rng.range(38, 50);
             D.score = true;
         } else if (type === 'bowl') {
-            rect(...SPORTS[sportOf([[6, 'football'], [2.5, 'gridiron'], [1.5, 'rugby']])]);
+            rect(...SPORTS[sportOf()]);
             const rc = rng.range(16, 34);
             D.radii = [rc, rc, rc, rc];
             D.bay = 7.8;
-            const rf = roofOf(any(p.roof, [[3, 'cantilever'], [2, 'folded'], [2, 'tent'], [1.5, 'barrel'], [1, 'pitched'], [1, 'none']]));
+            const rf = roofOf(mixed(p.roof, [[3, 'cantilever'], [2, 'folded'], [2, 'tent'], [1.5, 'barrel'], [1, 'pitched'], [1, 'none']]));
             if (rf) { rf.posts = 0; rf.flags = rng.chance(0.4) ? rng.int(2, 4) : 0; }
             const sp = makeStand(rng, rng.weighted([[1, 'kop'], [3, 'double'], [2, 'triple']]), rf, seat(), modern(), p.size);
             sp.sweep = true;
             D.sweep = rng.chance(0.55) ? rng.range(3, 11) : 0;
             for (let e = 0; e < 4; e++) { D.edges.push(sp); D.corners.push(sp); }
-            D.landmark = any(p.landmark, [[5, 'none'], [rf ? 2 : 0, 'arch'], [2, 'towers']]);
-            D.lights = any(p.lights, [[rf ? 4 : 0, 'rim'], [D.landmark === 'towers' ? 0 : 2, 'pylons'], [2, 'masts'], [0.5, 'none']]);
+            D.landmark = chosen(p.landmark);
+            D.lights = chosen(p.lights);
             D.lightH = section(sp, D.sweep).wall + rng.range(18, 26);
             D.score = true;
         } else if (type === 'oval') {
@@ -1813,7 +1825,7 @@
             D.radii = [rc, rc, rc, rc];
             D.bay = 8;
             const plan = rng.weighted([[3, 'ring'], [3, 'main'], [2, 'sides']]), face = modern();
-            const rname = any(p.roof, [[3, 'cantilever'], [2, 'tent'], [1.5, 'folded'], [1, 'barrel'], [plan === 'ring' ? 3 : 0, 'none']]);
+            const rname = mixed(p.roof, [[3, 'cantilever'], [2, 'tent'], [1.5, 'folded'], [1, 'barrel'], [plan === 'ring' ? 3 : 0, 'none']]);
             if (plan === 'ring') {
                 const rf = roofOf(rname);
                 if (rf) rf.posts = 0;
@@ -1831,18 +1843,18 @@
                 big.front = low.front;
                 for (let e = 0; e < 4; e++) { D.edges.push(isLong(e) && (far(e) || plan === 'sides') ? big : low); D.corners.push(low); }
             }
-            D.lights = any(p.lights, [[3, 'masts'], [3, 'pylons'], [D.edges[0].roof ? 2 : 0, 'rim']]);
+            D.lights = chosen(p.lights);
             D.lightH = rng.range(42, 54);
             D.cauldron = rng.chance(0.6);
             D.score = !D.cauldron;
             D.flags = rng.chance(0.6);
         } else if (type === 'horseshoe') {
-            rect(...SPORTS[sportOf([[4, 'gridiron'], [1, 'football']])]);
+            rect(...SPORTS[sportOf()]);
             const open = [0, 1, 2, 3].find(e => !far(e) && !isLong(e)), rc = rng.range(20, 32);
             // corner c lies between edge c - 1 and edge c
             D.radii = [0, 1, 2, 3].map(c => (c === open || c === (open + 1) % 4 ? 4 : rc));
             D.bay = 7.8;
-            const rf = roofOf(any(p.roof, [[5, 'none'], [1, 'cantilever']]));
+            const rf = roofOf(mixed(p.roof, [[5, 'none'], [1, 'cantilever']]));
             if (rf) rf.posts = 0;
             const sp = makeStand(rng, rng.weighted([[3, 'huge'], [2, 'kop'], [2, 'double']]), rf, seat(), rng.weighted([[3, 'arcade'], [2, 'brick'], [1, 'fins']]), p.size);
             sp.sweep = true;
@@ -1852,7 +1864,7 @@
                 D.edges.push(e === open ? closeIt : sp);
                 D.corners.push(e === open || e === (open + 1) % 4 ? null : sp);
             }
-            D.lights = any(p.lights, [[4, 'masts'], [2, 'pylons'], [0.5, 'none']]);
+            D.lights = chosen(p.lights);
             D.lightH = section(sp, D.sweep).wall + rng.range(18, 26);
             D.press = !rf && rng.chance(0.75);
             D.score = true;
@@ -1881,7 +1893,7 @@
                 if (rf && !back) rf.gable = true;
                 D.corners.push(makeStand(rng, sort, rf, seat(), face, p.size));
             }
-            D.lights = any(p.lights, [[5, 'masts'], [1, 'pylons'], [0.5, 'none']]);
+            D.lights = chosen(p.lights);
             D.lightH = rng.range(48, 60);
             D.lightEvery = 2;
             D.score = true;
@@ -1903,7 +1915,7 @@
             D.axis = [f[1], -f[0]];
             D.cross = f;
             const face = rng.weighted([[3, 'brick'], [2, 'arcade'], [1, 'bands'], [1, 'fins']]);
-            const rf = roofOf(any(p.roof, [[4, 'cantilever'], [1, 'barrel'], [1, 'pitched'], [1.5, 'none']]));
+            const rf = roofOf(mixed(p.roof, [[4, 'cantilever'], [1, 'barrel'], [1, 'pitched'], [1.5, 'none']]));
             if (rf) Object.assign(rf, { cover: rng.range(0.35, 0.6), posts: rf.type === 'pitched' ? 2 : 0 });
             // the grandstand wraps round behind home, lower stands run on down the lines and bleachers stand in the outfield
             const main = makeStand(rng, rng.weighted([[3, 'double'], [2, 'triple'], [1, 'main']]), rf, seat(), face, p.size);
@@ -1914,7 +1926,7 @@
             const w1 = wing(), w3 = rng.chance(0.6) ? w1 : wing(), o1 = out(), o2 = out(), o3 = rng.chance(0.5) ? o1 : out();
             D.edges = [main, w1, o1, o2, o2, o3, w3, main];
             D.corners = [main, null, rng.chance(0.5) ? w1 : wall, o1, o2, o3, rng.chance(0.5) ? w3 : wall, null];
-            D.lights = any(p.lights, [[5, 'pylons'], [2, 'masts']]);
+            D.lights = chosen(p.lights);
             D.lightAt = [2, 3, 5, 6];
             D.lightH = rng.range(40, 50);
             D.score = true;
@@ -1932,10 +1944,8 @@
             Object.assign(rf, { cover: 0.34, posts: 1, clear: 3.2, ridge: 0.5, peak: rng.range(1.6, 2.4), flags: rng.chance(0.7) ? 3 : 0 });
             const sp = makeStand(rng, 'plaza', rf, { pat: 'sun', band: 3, seed: 1, swap: false }, rng.weighted([[4, 'arcade'], [1, 'brick']]), p.size);
             for (let c = 0; c < 4; c++) D.corners.push(sp);
-            D.colors = COLORS[p.colors === 'any' ? 'bluegold' : p.colors];
-            field.colors = D.colors;
             D.reach = section(sp, 0).depth;
-            D.lights = any(p.lights, [[3, 'none'], [1, 'masts']]);
+            D.lights = chosen(p.lights);
             D.lightH = section(sp, 0).wall + 14;
         }
         if (D.landmark === 'arch' && (D.lights === 'pylons' || D.lights === 'masts')) D.lights = 'rim';
@@ -1945,7 +1955,7 @@
         D.apron = rng.range(16, 24);
         D.street = 10;
         D.block = p.block;
-        D.uses = SETTINGS[any(p.setting, HOME[type])];
+        D.uses = SETTINGS[chosen(p.setting)];
         D.blimp = p.blimp ? { at: rng.chance(0.5) ? 0.2 : 0.8, turn: rng.range(-25, 25) } : null;
         return D;
     }
@@ -2103,36 +2113,39 @@
             { id: 'elev', label: 'Camera height (°)', type: 'range', min: 30, max: 60, step: 0.5, value: 45, random: false,
                 hint: '35.3 is true isometric. Higher shows more of the pitch over the near stands' },
             { type: 'section', label: 'Stadium' },
-            { id: 'type', label: 'Kind', type: 'select', value: 'any', random: false, hint: 'Any picks one from the seed',
-                options: [['any', 'Any'], ['ground', 'Old ground'], ['bowl', 'Bowl'], ['oval', 'Athletics'], ['horseshoe', 'Horseshoe'], ['ballpark', 'Ballpark'],
+            { id: 'type', label: 'Kind', type: 'select', value: 'horseshoe', was: { any: 'horseshoe' },
+                random: ['ground', 'ground', 'ground', 'bowl', 'bowl', 'bowl', 'oval', 'oval', 'horseshoe', 'ballpark', 'cricket', 'bullring'],
+                options: [['ground', 'Old ground'], ['bowl', 'Bowl'], ['oval', 'Athletics'], ['horseshoe', 'Horseshoe'], ['ballpark', 'Ballpark'],
                     ['cricket', 'Cricket ground'], ['bullring', 'Bullring']] },
-            { id: 'sport', label: 'Sport', type: 'select', value: 'any', random: false, show: p => ['any', 'ground', 'bowl', 'horseshoe'].includes(p.type),
+            { id: 'sport', label: 'Sport', type: 'select', value: 'gridiron', was: { any: 'gridiron' }, random: false, show: p => ['ground', 'bowl', 'horseshoe'].includes(p.type),
                 hint: 'For an old ground, a bowl or a horseshoe. The others are built for one sport',
-                options: [['any', 'Any'], ['football', 'Football'], ['rugby', 'Rugby'], ['gridiron', 'American football']] },
+                options: [['football', 'Football'], ['rugby', 'Rugby'], ['gridiron', 'American football']] },
             { id: 'size', label: 'Stand size', type: 'range', min: 0.7, max: 1.4, step: 0.01, value: 1, random: [0.85, 1.2],
                 hint: 'How deep the stands are. Deeper ones are taller too' },
-            { id: 'roof', label: 'Roof', type: 'select', value: 'any', random: false, show: p => p.type !== 'cricket' && p.type !== 'bullring',
-                hint: 'Stands that never have a roof, like an open terrace, stay open',
-                options: [['any', 'Any'], ['none', 'Open'], ['cantilever', 'Cantilever'], ['pitched', 'Pitched'], ['barrel', 'Barrel'], ['folded', 'Folded'], ['tent', 'Tents']] },
-            { id: 'lights', label: 'Floodlights', type: 'select', value: 'any', random: false,
-                options: [['any', 'Any'], ['pylons', 'Corner pylons'], ['masts', 'Masts'], ['rim', 'Along the roof'], ['none', 'None']] },
-            { id: 'landmark', label: 'Landmark', type: 'select', value: 'any', random: false, show: p => p.type === 'any' || p.type === 'bowl',
+            { id: 'roof', label: 'Roof', type: 'select', value: 'none', was: { any: 'mixed' }, random: false, show: p => p.type !== 'cricket' && p.type !== 'bullring',
+                hint: 'Mixed gives each stand of an old ground its own, and leaves the other kinds to the seed. Stands that never have a roof, like an open terrace, stay open',
+                options: [['mixed', 'Mixed'], ['none', 'Open'], ['cantilever', 'Cantilever'], ['pitched', 'Pitched'], ['barrel', 'Barrel'], ['folded', 'Folded'], ['tent', 'Tents']] },
+            { id: 'lights', label: 'Floodlights', type: 'select', value: 'masts', was: { any: 'masts' }, random: false,
+                options: [['pylons', 'Corner pylons'], ['masts', 'Masts'], ['rim', 'Along the roof'], ['none', 'None']] },
+            { id: 'landmark', label: 'Landmark', type: 'select', value: 'none', was: { any: 'none' }, random: false, show: p => p.type === 'bowl',
                 hint: 'On a bowl: an arch over the far side with cables down to its roof, or a ramp tower at each corner',
-                options: [['any', 'Any'], ['none', 'None'], ['arch', 'Arch'], ['towers', 'Ramp towers']] },
-            { id: 'colors', label: 'Club colors', type: 'select', value: 'any', random: false,
+                options: [['none', 'None'], ['arch', 'Arch'], ['towers', 'Ramp towers']] },
+            // Randomize leaves green to be asked for, green seats get lost against the grass
+            { id: 'colors', label: 'Club colors', type: 'select', value: 'bluered', was: { any: 'bluered' },
+                random: ['red', 'redblue', 'blue', 'bluegold', 'redgold', 'gold', 'redblack', 'bluered'],
                 hint: 'The seats, the boards round the pitch and the home kit. With few pens some colors share one',
-                options: [['any', 'Any'], ['red', 'Red & white'], ['redblue', 'Red & blue'], ['blue', 'Blue & white'], ['bluegold', 'Blue & gold'], ['redgold', 'Red & gold'],
+                options: [['red', 'Red & white'], ['redblue', 'Red & blue'], ['blue', 'Blue & white'], ['bluegold', 'Blue & gold'], ['redgold', 'Red & gold'],
                     ['gold', 'Gold & black'], ['redblack', 'Red & black'], ['bluered', 'Blue & red'], ['green', 'Green & gold']] },
-            { id: 'seats', label: 'Seat pattern', type: 'select', value: 'any', random: false, show: p => p.type !== 'bullring',
-                hint: 'Lettering spells a word along the stands that face the camera',
-                options: [['any', 'Any'], ['plain', 'Plain'], ['tiers', 'By tier'], ['hoops', 'Hoops'], ['stripes', 'Stripes'], ['pairs', 'Wide stripes'], ['checker', 'Checks'], ['chevron', 'Chevrons'],
+            { id: 'seats', label: 'Seat pattern', type: 'select', value: 'mixed', was: { any: 'mixed' }, random: false, show: p => p.type !== 'bullring',
+                hint: 'Mixed gives each stand its own. Lettering spells a word along the stands that face the camera',
+                options: [['mixed', 'Mixed'], ['plain', 'Plain'], ['tiers', 'By tier'], ['hoops', 'Hoops'], ['stripes', 'Stripes'], ['pairs', 'Wide stripes'], ['checker', 'Checks'], ['chevron', 'Chevrons'],
                     ['blocks', 'Odd blocks'], ['fade', 'Fade'], ['letters', 'Lettering']] },
             { id: 'players', label: 'Match on', type: 'checkbox', value: true, hint: 'The teams and officials out on the field' },
             { id: 'blimp', label: 'Airship', type: 'checkbox', value: false, random: 0.3 },
             { type: 'section', label: 'Round about' },
             { id: 'around', label: 'Streets round it', type: 'checkbox', value: true },
-            { id: 'setting', label: 'Setting', type: 'select', value: 'any', random: false, show: p => p.around,
-                options: [['any', 'Any'], ['town', 'Terraced streets'], ['park', 'Parkland'], ['lots', 'Car parks'], ['campus', 'Sports grounds']] },
+            { id: 'setting', label: 'Setting', type: 'select', value: 'campus', was: { any: 'campus' }, random: false, show: p => p.around,
+                options: [['town', 'Terraced streets'], ['park', 'Parkland'], ['lots', 'Car parks'], ['campus', 'Sports grounds']] },
             { id: 'block', label: 'Block size (m)', type: 'range', min: 40, max: 110, step: 1, value: 64, random: [52, 84], show: p => p.around },
             { id: 'people', label: 'People', type: 'range', min: 0, max: 1, step: 0.01, value: 0.55, random: [0.3, 0.9], show: p => p.around },
             { id: 'trees', label: 'Trees', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.3, 0.9], show: p => p.around },
@@ -2141,8 +2154,8 @@
             { id: 'rowGap', label: 'Seat row spacing (mm)', type: 'range', min: 0.6, max: 3, step: 0.05, value: 1, random: false,
                 hint: 'Between rows of seats on paper. Stands seen from behind drop rows to keep to it' },
             { id: 'grass', label: 'Mown stripes', type: 'checkbox', value: true },
-            { id: 'mow', label: 'Mowing', type: 'select', value: 'any', random: false, show: p => p.grass && p.type !== 'bullring',
-                options: [['any', 'Any'], ['stripes', 'Stripes'], ['checker', 'Checks'], ['diagonal', 'Diagonal'], ['plain', 'Plain']] },
+            { id: 'mow', label: 'Mowing', type: 'select', value: 'stripes', was: { any: 'stripes' }, random: false, show: p => p.grass && p.type !== 'bullring',
+                options: [['stripes', 'Stripes'], ['checker', 'Checks'], ['diagonal', 'Diagonal'], ['plain', 'Plain']] },
             { id: 'grassGap', label: 'Grass hatch spacing (mm)', type: 'range', min: 0.6, max: 4, step: 0.05, value: 1, random: false, show: p => p.grass },
             { id: 'roofHatch', label: 'Roof hatching', type: 'checkbox', value: true },
             { id: 'roofGap', label: 'Roof hatch spacing (mm)', type: 'range', min: 0.4, max: 3, step: 0.05, value: 0.9, random: false,
@@ -2155,6 +2168,23 @@
             { type: 'section', label: 'Pens' },
             { id: 'pens' },
         ],
+
+        // The kind is picked before this runs, so a locked kind still gets what suits it
+        randomize(rng, p) {
+            const usual = USUAL[p.type], out = { setting: rng.weighted(HOME[p.type]) };
+            if (usual.sport) out.sport = rng.weighted(usual.sport);
+            if (usual.roof) out.roof = rng.weighted(usual.roof);
+            const roofed = usual.roof && out.roof !== 'none';
+            if (p.type === 'bowl') out.landmark = rng.weighted([[5, 'none'], [roofed ? 2 : 0, 'arch'], [2, 'towers']]);
+            // lights along the roof need a roof, and ramp towers stand where the pylons would
+            out.lights = rng.weighted(usual.lights.filter(([, v]) => (v !== 'rim' || roofed) && (v !== 'pylons' || out.landmark !== 'towers')));
+            // a bowl is one stand all the way round, so it has nothing to mix
+            out.seats = rng.weighted([[p.type === 'bowl' ? 0 : 20, 'mixed'], [3, 'plain'], [2, 'tiers'], [2, 'hoops'], [2, 'stripes'], [1, 'pairs'], [1.5, 'checker'], [1.5, 'chevron'], [1.5, 'blocks'], [1, 'fade'], [2, 'letters']]);
+            out.mow = rng.weighted([[4, 'stripes'], [2, 'checker'], [1.5, 'diagonal'], [0.6, 'plain']]);
+            // a bullring keeps the blue and gold the seed always gave it
+            if (p.type === 'bullring') out.colors = 'bluegold';
+            return out;
+        },
 
         generate(p, ctx) {
             const { width: W, height: H } = ctx, seed = ctx.seed | 0;
