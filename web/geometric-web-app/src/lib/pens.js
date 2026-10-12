@@ -36,6 +36,7 @@
         cosmic: profile(3, 'Dark outlines, a warm sun and sunsets, and cool skies and water. More pens split off sand, distant ranges, plants, crystals and rock.', [INK, RED, BLUE, GOLD, PURPLE, GREEN, CYAN, BROWN]),
         skyline: profile(5, 'Black architecture, red signs and roofs, blue shade, shadows and water, yellow pads, markings, taxis and cranes, green trees. More pens separate glass, traffic and streets.'),
         stadium: profile(5, 'Black structure, red roofs and seats, blue shadows and seats, gold lights, flags and seats, green grass and trees. More pens separate people, glass and the track.'),
+        radiolaria: profile(2, 'Black skeletons, with the shells nested inside them in red. More pens pick out the pore walls, the spines, the bells, the discs, the bristles and beams, and the figure numbers.', [INK, RED, GOLD, BLUE, GREEN, PURPLE, BROWN, CYAN]),
         megastructure: profile(1, 'One black pen, like an old plotter drawing. More pens pick out the fins and grilles, then the slab stacks, the studs and teeth, the ducts and frames, loose blocks, the plinth and every other tier. Hatching takes the second pen when it is on.', [INK, RED, BLUE, GOLD, GREEN, PURPLE, BROWN, CYAN]),
         flowfield: profile(4, 'Color follows flow direction, position or patches of noise.', cool),
         ridgelines: profile(4, 'Colors separate near and distant ridges.', cool),
@@ -189,6 +190,16 @@
         [0, 6, 0, 1, 4, 2, 5, 3],
         [0, 6, 7, 1, 4, 2, 5, 3],
     ], ['Stone', 'Mouldings', 'Frame & sill', 'Lights', 'Every other light', 'Large foils', 'Small foils', 'Spandrels']);
+    P.scenes.radiolaria = inOrder('radiolaria', [
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 0, 0, 0, 0],
+        [0, 1, 2, 0, 0, 0, 0, 0],
+        [0, 1, 2, 3, 0, 0, 3, 0],
+        [0, 1, 2, 3, 4, 0, 3, 0],
+        [0, 1, 2, 3, 4, 5, 3, 0],
+        [0, 1, 2, 3, 4, 5, 6, 0],
+        [0, 1, 2, 3, 4, 5, 6, 7],
+    ], ['Lattice shells', 'Inner shells', 'Pore walls', 'Spines', 'Bells & helmets', 'Discs', 'Bristles & beams', 'Figure numbers']);
     // Roles past the pen count fold back onto earlier accents, so the pen count never changes the geometry
     const FOLD = [0, 0, 1, 1, 2, 2, 2, 3];
     const fold = (role, n) => { while (role >= n) role = FOLD[role]; return role; };

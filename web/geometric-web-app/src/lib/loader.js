@@ -19,7 +19,7 @@
         // Scenes
         'town', 'harbour', 'castle', 'fairground', 'trainyard', 'moonbase', 'alpine', 'skyline', 'stadium',
         // Studies
-        'megastructure', 'stairwell', 'cosmic',
+        'megastructure', 'stairwell', 'cosmic', 'radiolaria',
         // Image
         'image',
     ];

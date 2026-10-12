@@ -44,12 +44,13 @@ preview, clipping and export. Custom pen colors still belong to the user.
 | Megastructure | Tiers in ink, then fins and grilles, slab stacks, studs and teeth, ducts and frames, loose blocks, the plinth and every other tier. Hatching takes the second pen when it's on |
 | Infinite Stairwell | Steps and walls, the handrail and shading, then the floor or skylight, balusters, string, walls and every other turn |
 | Cosmic Comics | Dark outlines, a warm sun and cool skies, then sand, distant ranges, plants, crystals and rock |
+| Radiolaria Plate | Skeletons in ink with the shells nested inside them in red, then the pore walls, spines, bells, discs, bristles and beams, and figure numbers |
 | Image | Tonal bands in every drawing mode |
 
 ## Moving Parts Between Pens
 
-The scenes, Megastructure, Infinite Stairwell, Cosmic Comics, Tidal Atlas and
-Gothic Tracery have named parts, like roofs, shadows or the moat. The pen list shows each part
+The scenes, Megastructure, Infinite Stairwell, Cosmic Comics, Radiolaria Plate,
+Tidal Atlas and Gothic Tracery have named parts, like roofs, shadows or the moat. The pen list shows each part
 under the pen that draws it. Select a part there to move it to another pen.
 
 A moved part keeps its pen when the pen count changes. Everything else still
