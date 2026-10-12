@@ -1046,7 +1046,7 @@
     }
 
     PG.register({
-        id: 'tidal', name: 'Tidal Atlas', category: 'Scenes', fit: false,
+        id: 'tidal', name: 'Tidal Atlas', category: 'Fields', fit: false,
         description: 'One eroded landscape drawn again and again as the sea rises, its valleys drowning into fjords and its ridges into island chains.',
         params: [
             { type: 'section', label: 'Studies' },
@@ -1162,21 +1162,11 @@
                 const bar = find(len + 3, 4.5, W, H);
                 if (bar) scaleBar(C0, bar[0] + 1.5, bar[1] + 1.5, groups[NOTES]);
             }
-            const layers = PG.pens.layers(p.pens);
             // groups: surface water, coast, low, mid and high land, water in section,
-            // block outline, strata, survey marks. Layer i gets the profile's i-th ink.
-            const maps = [
-                [0, 0, 0, 0, 0, 0, 0, 0, 0],
-                [0, 1, 1, 1, 1, 0, 1, 1, 1],
-                [0, 1, 1, 1, 1, 0, 2, 2, 2],
-                [0, 1, 3, 1, 1, 0, 2, 2, 2],
-                [0, 1, 3, 1, 1, 0, 2, 2, 4],
-                [5, 0, 3, 1, 1, 0, 2, 2, 4],
-                [5, 0, 3, 6, 1, 0, 2, 2, 4],
-                [5, 0, 3, 6, 1, 0, 2, 7, 4],
-            ][layers.length - 1];
-            groups.forEach((paths, g) => { for (const q of paths) layers[maps[g]].push(q); });
-            return { layers };
+            // block outline, strata, survey marks. Their pens are in pens.js.
+            const out = PG.pens.partLayers('tidal', p);
+            groups.forEach((paths, g) => { const into = out.of(g); for (const q of paths) into.push(q); });
+            return out.done();
         },
     });
 })();

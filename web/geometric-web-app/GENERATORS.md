@@ -14,7 +14,7 @@ bundle. `npm run check` verifies that it matches the source files.
     PG.register({
         id: 'example',             // unique, matches the file name
         name: 'Example',           // shown in the UI
-        category: 'Curves',        // Curves | Fields | Tiles | Packing | Scenes | Image
+        category: 'Curves',        // Curves | Fields | Tiles | Packing | Scenes | Studies | Image
         description: 'One sentence shown under the name.',
         fit: true,                 // see "Coordinates" below
         params: [
@@ -43,6 +43,13 @@ replaces a `{ id: 'pens' }` placeholder where you want the control to appear.
 Return logical color groups from the generator and the pipeline maps them to
 the profile's pen slots. Scenes use `PG.pens.renderScene` for material groups.
 See [PEN_COLORS.md](PEN_COLORS.md) for the current assignments.
+
+A design with named parts gets a `P.scenes` entry in `pens.js` instead: the
+part names and the pen for each part at every pen count. Users can then move
+single parts to other pens from the pen list. Render an iso scene with
+`PG.pens.renderScene(id, scene, params)`, or sort your own paths with
+`PG.pens.partLayers(id, params)`: push each part's paths to `of(part)` and
+return `done()`. Don't read the pen tables yourself, or moved parts get ignored.
 
 * A **path** is an array of points; a **point** is `[x, y]`. Closed shapes repeat
   the first point at the end (`geo.circle` does this for you).

@@ -107,12 +107,12 @@
 
     const STORAGE_KEY = 'plotter-geometry:state:v1';
     const SNAPS_KEY = 'plotter-geometry:snapshots:v1';
-    // Other scenes stay out of the gallery until unlocked (Konami code, or 6 quick clicks on the logo).
+    // These stay out of the gallery until unlocked (Konami code, or 6 quick clicks on the logo).
     // The key is true once unlocked, false once a locked browser has had its old saved scene checked.
     const SCENES_KEY = 'plotter-geometry:scenes:v1';
     let scenesUnlocked = storageGet(SCENES_KEY) === true;
-    const publicScenes = new Set(['castle', 'fairground', 'trainyard', 'moonbase', 'stairwell', 'alpine', 'tidal', 'skyline', 'stadium', 'megastructure']);
-    const isListedGenerator = g => scenesUnlocked || g.category !== 'Scenes' || publicScenes.has(g.id);
+    const lockedDesigns = new Set(['town', 'harbour', 'cosmic']);
+    const isListedGenerator = g => scenesUnlocked || !lockedDesigns.has(g.id);
     const listedGenerators = () => PG.generators.filter(isListedGenerator);
     const lockedSceneParams = id => !scenesUnlocked && id === 'skyline' ? { landmark: 'none', airship: false } : {};
     const MM_PER_CSS_PX = 25.4 / 96;
@@ -1008,6 +1008,8 @@
                     params[q.id] = v;
                     if (!live) commit();
                     updateVisibility(root, params);
+                    // the pen count moves parts between pens, and some options add or rename one
+                    if (PG.pens.hasParts(def)) renderPenUsage();
                     requestGenerate(live);
                 }, {
                     lockable: q.type !== 'image' && q.type !== 'text',
@@ -1026,6 +1028,7 @@
                         row.sync();
                         commit();
                         updateVisibility(root, params);
+                        if (PG.pens.hasParts(def)) renderPenUsage();
                         requestGenerate();
                     },
                     onPickImage() { pickImage(def.id, q.id); },
@@ -1048,6 +1051,7 @@
             }
         }
         updateVisibility(root, params);
+        renderPenUsage();
     }
 
     // ---- images
@@ -1266,6 +1270,7 @@
                 eye.replaceChildren(icon(pen.visible ? 'eye' : 'eye-off'));
                 draw();
                 renderStats();
+                renderPenUsage();
                 commit();
             });
             const color = el('input', { type: 'color', class: 'color-input', value: pen.color, title: 'Pen color', 'aria-label': `Pen ${i + 1} color` });
@@ -1276,6 +1281,7 @@
                 pen.name = name.value || `Pen ${i + 1}`;
                 const opt = document.querySelector(`[data-key="comp.framePen"] option[value="${i}"]`);
                 if (opt) opt.textContent = `${i + 1} · ${pen.name}`;
+                renderPenUsage();
                 commit();
             });
             const width = el('input', { type: 'number', class: 'num', min: 0.05, max: 5, step: 0.05, value: pen.width, title: 'Pen width in mm', 'aria-label': `Pen ${i + 1} width (mm)` });
@@ -1286,10 +1292,15 @@
                 if (state.opt.overlap) requestGenerate(); else draw();
                 commit();
             });
-            const meta = el('div', { class: 'pen-meta', 'data-pen': i });
+            const meta = el('div', { class: 'pen-meta', 'data-pen': i }, el('span', { class: 'pen-parts' }), el('span', { class: 'pen-count' }));
             list.append(el('div', { class: 'pen-row', 'data-pen': i }, eye, color, name, width, meta));
         });
         body.append(list);
+        partsKey = '';
+        const reset = el('button', { class: 'btn', id: 'partsReset', type: 'button', text: 'Reset',
+            title: 'Put every part back on its default pen', 'aria-label': 'Reset parts to their default pens' });
+        reset.addEventListener('click', resetParts);
+        body.append(el('div', { id: 'partsMoved', class: 'parts-moved', hidden: true }, el('p', { class: 'out-note' }), reset));
 
         // blank when the pens have different widths
         const allWidth = el('input', { type: 'number', class: 'num', min: 0.05, max: 5, step: 0.05, placeholder: 'mixed', title: 'Set the width of every pen in mm', 'aria-label': 'Width of every pen (mm)' });
@@ -1317,18 +1328,80 @@
         const usage = {};
         if (result) for (const l of layerStats(result)) usage[l.pen] = l;
         const def = currentDef(), params = currentParams(def);
-        const roles = PG.pens.roles(def, params);
+        const parts = PG.pens.parts(def, params), roles = PG.pens.roles(def, params);
         const hint = $('#penAssignmentHint');
-        if (hint) hint.textContent = PG.pens.designs[def.id]?.hint || '';
+        if (hint) hint.textContent = [PG.pens.designs[def.id]?.hint, parts && 'Select a part below to move it to another pen.'].filter(Boolean).join(' ');
+        renderParts(rows, parts);
         rows.forEach(row => {
             const i = +row.dataset.pen;
             const u = usage[i];
             row.classList.toggle('unused', !u);
+            const count = u ? `${fmtCount(u.paths)} ${u.paths === 1 ? 'path' : 'paths'}` : '';
             const assignment = roles[i]?.join(', ');
-            row.querySelector('.pen-meta').textContent = u
-                ? `${assignment ? assignment + ' · ' : ''}${fmtCount(u.paths)} ${u.paths === 1 ? 'path' : 'paths'}`
-                : assignment ? `${assignment} · no paths in this drawing` : 'unused at this pen count';
+            // Scenes list their parts as controls (see renderParts), the rest name their colors here
+            row.querySelector('.pen-count').textContent = parts
+                ? count || (assignment ? 'no paths in this drawing' : 'nothing on this pen')
+                : u ? `${assignment ? assignment + ' · ' : ''}${count}` : assignment ? `${assignment} · no paths in this drawing` : 'unused at this pen count';
         });
+    }
+
+    // ---- parts
+    // Scenes show the parts each pen draws under it. A part is a label with an invisible
+    // <select> over it, so picking another pen there moves the part and it works the same
+    // with a mouse, a keyboard, a screen reader or a phone's picker.
+
+    let partsKey = '';
+    function renderParts(rows, parts) {
+        // Only rebuilt when something changed. This also runs for every new drawing, and
+        // rebuilding would close a list the user has open.
+        const key = JSON.stringify([parts, state.pens.map(p => [p.name, p.visible])]);
+        if (key === partsKey) return;
+        partsKey = key;
+        const focused = document.activeElement?.closest?.('#penList .part')?.dataset.part;
+        const options = state.pens.map((p, i) => `${i + 1} · ${p.name}${p.visible ? '' : ' (hidden)'}`);
+        rows.forEach(row => {
+            const here = (parts || []).filter(q => q.pen === +row.dataset.pen);
+            row.querySelector('.pen-parts').replaceChildren(...here.map(q => {
+                const moved = q.pen !== q.default;
+                const sel = el('select', { 'aria-label': `Pen for ${q.name}${moved ? ' (moved by hand)' : ''}`,
+                    title: moved ? `${q.name} was moved by hand. The default is pen ${q.default + 1}.` : `Move ${q.name} to another pen` },
+                options.map((text, pen) => el('option', { value: pen, text })));
+                sel.value = q.pen;
+                sel.addEventListener('change', () => movePart(q.part, +sel.value));
+                return el('span', { class: 'part' + (moved ? ' moved' : ''), 'data-part': q.part }, el('span', { 'aria-hidden': 'true', text: q.name }), sel);
+            }));
+        });
+        const moved = (parts || []).filter(q => q.pen !== q.default).length;
+        $('#partsMoved').hidden = !moved;
+        $('#partsMoved p').textContent = `${moved} ${moved === 1 ? 'part' : 'parts'} moved by hand. Moved parts keep their pen when the pen count changes.`;
+        // A part that just moved takes the focus along to its new pen
+        if (focused !== undefined) {
+            const sel = $(`#penList .part[data-part="${focused}"] select`);
+            if (sel) { sel.focus({ preventScroll: true }); sel.scrollIntoView({ block: 'nearest' }); }
+        }
+    }
+
+    function movePart(part, pen) {
+        const def = currentDef(), params = currentParams(def);
+        const map = { ...params.penMap };
+        // Back on its default pen it follows the pen count again
+        if (pen === PG.pens.parts(def, params)[part].default) delete map[part];
+        else map[part] = pen;
+        if (Object.keys(map).length) params.penMap = map;
+        else delete params.penMap;
+        renderPenUsage();
+        requestGenerate();
+        commit();
+    }
+
+    function resetParts() {
+        delete currentParams().penMap;
+        renderPenUsage();
+        requestGenerate();
+        commit();
+        announce('Every part is back on its default pen');
+        // the Reset button is hidden now
+        ($('#penList .part select') || $('#penList .eye')).focus();
     }
 
     // ---- snapshots

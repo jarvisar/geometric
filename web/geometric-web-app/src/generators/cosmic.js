@@ -5,10 +5,8 @@
     'use strict';
     const { geo, TAU } = PG;
     const PI = Math.PI, clamp = geo.clamp, lerp = geo.lerp;
+    // line roles, mapped to pens by P.scenes.cosmic in pens.js
     const INK = 0, WARM = 1, COOL = 2, GOLD = 3, VIOLET = 4, GREEN = 5, CYAN = 6, BROWN = 7;
-    // Roles past the pen count fold back onto earlier accents, so the pen count never changes the geometry.
-    const FOLD = [0, 0, 1, 1, 2, 2, 2, 3];
-    const penOf = (role, pens) => { if (pens < 2) return 0; while (role >= pens) role = FOLD[role]; return role; };
     const rngOf = (...n) => new PG.RNG(PG.iso.hash(...n));
     const shift = (poly, dx, dy) => poly.map(([x, y]) => [x + dx, y + dy]);
     const bounds = (paths, pad = 0) => { const b = geo.bbox(paths); return [b.minX - pad, b.minY - pad, b.maxX + pad, b.maxY + pad]; };
@@ -1494,7 +1492,7 @@
     }
 
     PG.register({
-        id: 'cosmic', name: 'Cosmic Comics', category: 'Scenes', fit: false,
+        id: 'cosmic', name: 'Cosmic Comics', category: 'Studies', fit: false,
         description: 'Comic pages of alien worlds: faceted mountains, lakes, deserts and cloud banks under sunbursts, ringed planets and starfields, with a little story running across the panels.',
         params: [
             { type: 'section', label: 'Page' },
@@ -1525,7 +1523,7 @@
             };
         },
         generate(p, ctx) {
-            const { width: W, height: H, seed } = ctx, pens = PG.pens.count(p.pens), layers = PG.pens.layers(pens);
+            const { width: W, height: H, seed } = ctx, out = PG.pens.partLayers('cosmic', p);
             const { rects, gap } = layout(p, W, H, rngOf(seed, 1)), n = rects.length, crng = rngOf(seed, 2);
             const E = { p, gap: p.spacing, light: crng.sign(), cast: makeCast(crng), starRoles: [COOL, WARM, GOLD, CYAN] };
             E.suit = E.cast.suit;
@@ -1584,14 +1582,14 @@
                     scene.local(D, rngOf(seed, 5, idx), elev[idx]);
                     const f = p.frame === 'bold' ? 0.4 : 0, inner = PG.shapes.rect(f, f, w - f, h - f);
                     D.render().forEach((paths, role) => {
-                        const into = layers[penOf(role, pens)];
+                        const into = out.of(role);
                         for (const q of PG.clipPaths(paths, inner)) into.push(q.map(([u, v]) => [u + X, v + Y]));
                     });
-                    if (p.frame !== 'none') layers[0].push(geo.close([[X, Y], [X + w, Y], [X + w, Y + h], [X, Y + h]]));
-                    if (p.frame === 'bold') layers[0].push(geo.close([[X + f, Y + f], [X + w - f, Y + f], [X + w - f, Y + h - f], [X + f, Y + h - f]]));
+                    if (p.frame !== 'none') out.of(INK).push(geo.close([[X, Y], [X + w, Y], [X + w, Y + h], [X, Y + h]]));
+                    if (p.frame === 'bold') out.of(INK).push(geo.close([[X + f, Y + f], [X + w - f, Y + f], [X + w - f, Y + h - f], [X + f, Y + h - f]]));
                 }
             });
-            return { layers };
+            return out.done();
         },
     });
 })();

@@ -10,8 +10,8 @@ const save = (file, b64) => {
 };
 
 await open('index.html');
-// Scenes are left off the public pages for now
-const ids = await evaluate(`PG.generators.filter(g => g.category !== 'Scenes').map(g => g.id)`);
+// Scenes, Studies and Tidal Atlas are left off the public pages for now
+const ids = await evaluate(`PG.generators.filter(g => !['Scenes', 'Studies'].includes(g.category) && g.id !== 'tidal').map(g => g.id)`);
 for (const id of ids) {
     await evaluate(`plotterApp.select('${id}'); plotterApp.resetParams(); plotterApp.regenerate()`);
     // 800px for the design page, 360px for the designs list

@@ -138,6 +138,50 @@
         alpine: scene(illustrated, [0, 1, 2, 3, 0, 0, 2, 0], ['Architecture & rock', 'Roofs & trains', 'Shade & snow', 'Shutters & balconies', 'Fir woods', 'People & fliers', 'Water', 'Timber & paths']),
     };
 
+    // The designs below number their inks in the design's own order instead of naming pens,
+    // so 1 is its second ink. A single pen always uses slot 1.
+    const inOrder = (id, maps, roles) => scene(maps.map((map, n) => map.map(i => n ? P.designs[id].order[i] : INK)), roles.map((_, i) => i), roles);
+    const megastructure = [
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 1, 0],
+        [0, 0, 0, 0, 2, 0, 1, 0],
+        [0, 0, 0, 0, 2, 0, 1, 3],
+        [0, 0, 0, 0, 2, 4, 1, 3],
+        [0, 0, 0, 5, 2, 4, 1, 3],
+        [0, 0, 6, 5, 2, 4, 1, 3],
+        [0, 7, 6, 5, 2, 4, 1, 3],
+    ];
+    const megaRoles = ['Tiers', 'Every other tier', 'Plinth', 'Loose blocks', 'Slab stacks', 'Ducts & frames', 'Fins & grilles', 'Studs & teeth'];
+    P.scenes.megastructure = inOrder('megastructure', megastructure, megaRoles);
+    // Hatching takes the second ink when it's on, and the rest share what's left
+    P.scenes['megastructure-hatched'] = inOrder('megastructure',
+        megastructure.map((_, n) => [...megastructure[Math.max(0, n - 1)].map(i => i && i + 1), n ? 1 : 0]), [...megaRoles, 'Hatching']);
+    P.scenes.stairwell = inOrder('stairwell', [
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 1, 0, 0, 0],
+        [0, 1, 2, 0, 1, 0, 0, 0],
+        [0, 1, 2, 3, 1, 0, 0, 0],
+        [0, 1, 2, 3, 4, 0, 0, 0],
+        [0, 1, 2, 3, 4, 5, 0, 0],
+        [0, 1, 2, 3, 4, 5, 6, 0],
+        [0, 1, 2, 3, 4, 5, 6, 7],
+    ], ['Steps', 'Handrail', 'Shading', 'Floor or skylight', 'Balusters', 'String', 'Walls', 'Every other turn']);
+    P.scenes.tidal = inOrder('tidal', [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 1, 1, 1, 0, 1, 1, 1],
+        [0, 1, 1, 1, 1, 0, 2, 2, 2],
+        [0, 1, 3, 1, 1, 0, 2, 2, 2],
+        [0, 1, 3, 1, 1, 0, 2, 2, 4],
+        [5, 0, 3, 1, 1, 0, 2, 2, 4],
+        [5, 0, 3, 6, 1, 0, 2, 2, 4],
+        [5, 0, 3, 6, 1, 0, 2, 7, 4],
+    ], ['Sea surface', 'Coast', 'Lowland', 'Hills', 'Peaks', 'Water in section', 'Block outline', 'Strata', 'Survey marks']);
+    // Roles past the pen count fold back onto earlier accents, so the pen count never changes the geometry
+    const FOLD = [0, 0, 1, 1, 2, 2, 2, 3];
+    const fold = (role, n) => { while (role >= n) role = FOLD[role]; return role; };
+    P.scenes.cosmic = inOrder('cosmic', FOLD.map((_, n) => FOLD.map((_, role) => fold(role, n + 1))),
+        ['Outlines & frames', 'Sun & sunsets', 'Skies & water', 'Sand', 'Distant ranges', 'Plants', 'Crystals', 'Rock']);
+
     P.count = n => Math.max(1, Math.min(PG.MAX_PENS, Math.round(Number(n)) || 1));
     P.layers = n => Array.from({ length: P.count(n) }, () => []);
     P.band = (t, n) => Math.max(0, Math.min(n - 1, Math.floor(t * n)));
@@ -229,29 +273,52 @@
         }
         return { layers };
     };
+    // Saved maps of moved parts are checked against this. Skyline has the most parts, 11.
+    P.MAX_PARTS = 16;
+    // The pen for each part of a scene. p.penMap holds the parts moved by hand as
+    // { part: pen }, and those keep their pen at any pen count.
+    P.partPens = (scene, p) => {
+        const map = scene.maps[P.count(p.pens) - 1], moved = p.penMap;
+        if (!moved) return map;
+        return map.map((pen, part) => Number.isInteger(moved[part]) && moved[part] >= 0 && moved[part] < PG.MAX_PENS ? moved[part] : pen);
+    };
     P.renderScene = (id, S, p) => {
         const config = P.scenes[id];
         const pens = p.pens === undefined ? P.migrate({ id }, { ...p }).pens || 4 : p.pens;
         const layers = [];
-        PG.iso.renderPens(S, config.maps[P.count(pens) - 1], config.groups).forEach((paths, pen) => layers.push({ pen, paths }));
+        PG.iso.renderPens(S, P.partPens(config, { pens, penMap: p.penMap }), config.groups).forEach((paths, pen) => layers.push({ pen, paths }));
         return { layers };
+    };
+    // For designs that sort their own lines into parts instead of rendering an iso scene.
+    // of(part) is the list to push that part's paths to.
+    P.partLayers = (id, p) => {
+        const pens = P.partPens(P.scenes[id], p), layers = Array.from({ length: PG.MAX_PENS }, (_, pen) => ({ pen, paths: [] }));
+        return { of: part => layers[pens[part]].paths, done: () => ({ layers: layers.filter(l => l.paths.length) }) };
     };
     // A design can pick its scene maps from its params, like Moon Base does for Mars
     const sceneOf = (def, p) => P.scenes[def.penScene ? def.penScene(p) : def.id];
+    P.hasParts = def => !!(def.penScene || P.scenes[def.id]);
+    // The named parts of a design with the pen each one is on, or null for designs without any
+    P.parts = (def, p) => {
+        const scene = sceneOf(def, p);
+        if (!scene) return null;
+        const defaults = scene.maps[P.count(p.pens) - 1], pens = P.partPens(scene, p);
+        return scene.roles.map((name, part) => ({ part, name, pen: pens[part], default: defaults[part] }));
+    };
     P.slots = (def, p) => {
         const n = P.count(p.pens), scene = sceneOf(def, p);
         const order = P.designs[def.id]?.order || [INK, RED, BLUE, GREEN, GOLD, PURPLE, CYAN, BROWN];
-        return scene ? [...new Set(scene.maps[n - 1])] : n === 1 ? [INK] : order.slice(0, n);
+        return scene ? [...new Set(P.partPens(scene, p))] : n === 1 ? [INK] : order.slice(0, n);
     };
     P.roles = (def, p) => {
         const scene = sceneOf(def, p), roles = {};
-        if (scene) scene.maps[P.count(p.pens) - 1].forEach((pen, i) => (roles[pen] ||= []).push(scene.roles[i]));
+        if (scene) P.partPens(scene, p).forEach((pen, i) => (roles[pen] ||= []).push(scene.roles[i]));
         else P.slots(def, p).forEach((pen, i) => { roles[pen] = [`Color ${i + 1}`]; });
         return roles;
     };
     P.apply = (def, out, p) => {
         const config = P.designs[def.id];
-        if (!config || !out || P.scenes[def.id]) return out;
+        if (!config || !out || sceneOf(def, p)) return out;
         const n = P.count(p.pens);
         const groups = Array.isArray(out) ? [out] : (out.layers || []).map(l => Array.isArray(l) ? l : l.paths);
         if (config.style === 'sequence') out = P.sequence(groups.flat(), n);

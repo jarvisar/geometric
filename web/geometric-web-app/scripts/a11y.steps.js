@@ -92,6 +92,44 @@ await click('#penList .pen-row[data-pen="1"] .eye');
 await click('[data-tab="design"]');
 log('Hints, locks, pen visibility, preview toggles and panel tabs work from the keyboard and expose their state');
 
+// A scene's parts move to another pen from the keyboard. Each one says what it is, focus goes
+// along with a part that moves, and Reset is announced and leaves focus on a part.
+await evaluate(`plotterApp.select('castle'); plotterApp.resetParams()`);
+await ready();
+await evaluate(`document.querySelector('#penList .pen-row[data-pen="1"] .num').focus()`);
+await key('Tab');
+await check(`(() => { const s = document.activeElement, all = [...document.querySelectorAll('#penList .part select')];
+    return s.matches('#penList .pen-row[data-pen="1"] .part select') && s.getAttribute('aria-label') === 'Pen for Roofs & banners' && s.value === '1' &&
+        [...s.options].map(o => o.textContent).join() === plotterApp.state.pens.map((p, i) => (i + 1) + ' · ' + p.name).join() &&
+        all.length === 8 && new Set(all.map(x => x.getAttribute('aria-label'))).size === 8 && all.every(x => x.title); })()`, 'part cannot be reached with Tab, or parts are not named');
+await check(`getComputedStyle(document.activeElement.parentElement).boxShadow.includes('90, 162, 255')`, 'focused part shows no focus ring');
+await check(`[...document.querySelectorAll('#penList .part')].every(p => { const a = p.getBoundingClientRect(), b = p.querySelector('select').getBoundingClientRect();
+    return Math.abs(a.width - b.width) < 3 && Math.abs(a.height - b.height) < 3 && a.width <= p.closest('.pen-meta').getBoundingClientRect().width; })`, 'a part\'s control does not cover it, or the part overflows the panel');
+await key('ArrowDown');
+await until(`plotterApp.state.params.castle.penMap?.[1] === 2`, 'arrow key did not move the part');
+await check(`(() => { const s = document.activeElement;
+    return s.matches('#penList .pen-row[data-pen="2"] .part select') && s.getAttribute('aria-label') === 'Pen for Roofs & banners (moved by hand)' && s.value === '2' &&
+        s.title.includes('default is pen 2') && !document.querySelector('#partsMoved').hidden; })()`, 'focus did not follow the moved part, or the move is not named');
+await ready();
+await key('Tab'); await key('Tab');
+await check(`document.activeElement.matches('#penList .pen-row[data-pen="2"] .part[data-part="6"] select')`, 'Tab does not go through the parts in order');
+await evaluate(`document.querySelector('#partsReset').focus()`);
+await check(`document.querySelector('#partsReset').getAttribute('aria-label').includes(document.querySelector('#partsReset').textContent)`, 'Reset is not named after its label');
+await key(' ', {code:'Space'});
+await check(`plotterApp.state.params.castle.penMap === undefined && document.querySelector('#partsMoved').hidden &&
+    document.activeElement.matches('#penList .part select') && __live().includes('Every part is back on its default pen')`, 'Reset lost focus or was not announced');
+await ready();
+// touch screens get bigger parts
+// touch emulation is what makes Chrome report a coarse pointer
+const touch = async on => { await protocol('Emulation.setTouchEmulationEnabled', { enabled: on, maxTouchPoints: on ? 5 : 1 }); await sleep(300); };
+await touch(true);
+await check(`matchMedia('(pointer: coarse)').matches && [...document.querySelectorAll('#penList .part')].every(p => p.getBoundingClientRect().height >= 28)`, 'parts are too small to tap');
+await touch(false);
+await evaluate(`plotterApp.select('spirograph')`);
+await ready();
+await check(`!document.querySelector('#penList .part') && document.querySelector('#penList .pen-count').textContent.length > 0`, 'a design without parts lists some');
+log('Scene parts can be moved between pens with the keyboard, keep focus and are named for screen readers');
+
 // Menus track aria-expanded, Escape hands focus back to the menu button, tabbing out closes them
 await evaluate(`document.querySelector('#exportMenuBtn').focus()`);
 await click('#exportMenuBtn');

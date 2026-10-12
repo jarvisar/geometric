@@ -101,6 +101,24 @@
             const migrated = PG.pens.migrate(def, { ...legacy, sets: out.sets });
             if (migrated.pens !== undefined) out.pens = migrated.pens;
         }
+        // Not in def.params, it's set from the pen list. Left out when nothing was moved.
+        if (own(from, 'penMap') && PG.pens.hasParts(def)) {
+            try {
+                const map = readPenMap(from.penMap, `params.${id}.penMap`);
+                if (Object.keys(map).length) out.penMap = map;
+            } catch (err) { if (!session) throw err; }
+        }
+        return out;
+    }
+
+    // Parts moved to another pen by hand, as { part: pen }
+    function readPenMap(from, name) {
+        object(from, name);
+        const out = {};
+        for (const [part, pen] of Object.entries(from)) {
+            if (!/^(0|[1-9]\d?)$/.test(part) || +part >= PG.pens.MAX_PARTS) fail(name);
+            out[part] = number(0, PG.MAX_PENS - 1, true)(pen, name);
+        }
         return out;
     }
 

@@ -65,6 +65,18 @@ assert.equal(read({ gen: 'hyperbolic', params: { hyperbolic: { split: false } } 
 assert.equal(read({ gen: 'moire', params: { moire: { separate: true, sets: 3 } } }).params.moire.pens, 3);
 assert.equal(read({ gen: 'harbour', params: { harbour: { inks: 'eight', pens: 2 } } }).params.harbour.pens, 2);
 
+// Parts moved to another pen come back as they were saved. A bad map fails a recipe, and a
+// saved session opens without it.
+const moved = { ...recipe, gen: 'castle', params: { castle: { pens: 5, penMap: { 1: 2, 6: 7 } } } };
+assert.deepEqual(read(moved).params.castle.penMap, { 1: 2, 6: 7 });
+assert.deepEqual(PG.settings.read(json(read(moved)), true).params.castle.penMap, { 1: 2, 6: 7 });
+assert.ok(!('penMap' in read({ ...recipe, gen: 'castle', params: { castle: { penMap: {} } } }).params.castle), 'an empty map is left out');
+assert.ok(!('penMap' in read({ ...recipe, params: { spirograph: { penMap: { 0: 1 } } } }).params.spirograph), 'designs without parts have no map');
+for (const penMap of [null, [], 'x', 3, { 0: 8 }, { 0: -1 }, { 0: 1.5 }, { 0: '1' }, { 0: null }, { 16: 1 }, { a: 1 }, { '01': 1 }, { '-1': 1 }, { 1.5: 1 }]) {
+    assert.throws(() => read({ ...recipe, gen: 'castle', params: { castle: { penMap } } }), /Invalid settings/, JSON.stringify(penMap));
+    assert.ok(!('penMap' in PG.settings.read({ gen: 'castle', params: { castle: { penMap } } }, true).params.castle));
+}
+
 let count = 0;
 for (const def of PG.generators) {
     const defaults = PG.defaultParams(def);

@@ -13,18 +13,8 @@
     const { geo, TAU } = PG;
     const { Scene } = PG.iso;
 
+    // line groups, mapped to pens by P.scenes.stairwell in pens.js
     const TREAD = 0, RAIL = 1, SHADE = 2, BOTTOM = 3, POST = 4, STRING = 5, WALL = 6, DEEP = 7;
-    // Pen layer for each group, by pen count
-    const MAPS = [
-        [0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 1, 0, 0, 1, 0, 0, 0],
-        [0, 1, 2, 0, 1, 0, 0, 0],
-        [0, 1, 2, 3, 1, 0, 0, 0],
-        [0, 1, 2, 3, 4, 0, 0, 0],
-        [0, 1, 2, 3, 4, 5, 0, 0],
-        [0, 1, 2, 3, 4, 5, 6, 0],
-        [0, 1, 2, 3, 4, 5, 6, 7],
-    ];
     const GAP = 0.45, RAIL_H = 0.45, INSET = 0.035;
 
     const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -443,7 +433,7 @@
     }
 
     PG.register({
-        id: 'stairwell', name: 'Infinite Stairwell', category: 'Scenes', fit: false,
+        id: 'stairwell', name: 'Infinite Stairwell', category: 'Studies', fit: false,
         description: 'Looking straight down a stairwell, or up it from the floor, in one-point perspective. The handrail and balusters wind away to a floor pattern or a skylight.',
         params: [
             { type: 'section', label: 'Stair' },
@@ -471,9 +461,7 @@
         ],
         generate(p, ctx) {
             const { width: W, height: H, rng } = ctx;
-            const S = build(p, W, H, rng), layers = PG.pens.layers(p.pens), map = MAPS[layers.length - 1];
-            PG.iso.render(S).forEach((paths, kind) => { if (paths) for (const q of paths) layers[map[kind]].push(q); });
-            return { layers };
+            return PG.pens.renderScene('stairwell', build(p, W, H, rng), p);
         },
     });
 })();

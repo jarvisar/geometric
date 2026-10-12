@@ -15,19 +15,9 @@
 
     // Line groups in order of priority: an edge between two parts takes the higher one.
     // BODY and BODY2 are the tiers, turn about.
+    // Their pens are in pens.js, with a second table for when the hatching is on.
     const BODY = 0, BODY2 = 1, BASE = 2, BLOCK = 3, STACK = 4, DUCT = 5, FIN = 6, BITS = 7, SHADE = 8;
-    // Pen layer for each group, by pen count. Hatching isn't in here: when it's on
-    // it takes the second pen and the rest share what's left.
-    const MAPS = [
-        [0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 1, 0],
-        [0, 0, 0, 0, 2, 0, 1, 0],
-        [0, 0, 0, 0, 2, 0, 1, 3],
-        [0, 0, 0, 0, 2, 4, 1, 3],
-        [0, 0, 0, 5, 2, 4, 1, 3],
-        [0, 0, 6, 5, 2, 4, 1, 3],
-        [0, 7, 6, 5, 2, 4, 1, 3],
-    ];
+    const penScene = p => p.shade === 'none' ? 'megastructure' : 'megastructure-hatched';
     const MAX_CELLS = 6e6;
     // Faces grow a hair so a hidden line can't show through the joint between two of them
     const GROW = 1e-4;
@@ -714,8 +704,9 @@
     }
 
     PG.register({
-        id: 'megastructure', name: 'Megastructure', category: 'Scenes', fit: true,
+        id: 'megastructure', name: 'Megastructure', category: 'Studies', fit: true,
         description: 'A tower block crammed with slab stacks, fin arrays, piers and recessed grilles, drawn in isometric outline like a machine the size of a building.',
+        penScene,
         params: [
             { type: 'section', label: 'Structure' },
             { id: 'height', label: 'Height', type: 'range', min: 0.5, max: 3, step: 0.05, value: 1.75, random: [1.2, 2.4], hint: 'Height against width' },
@@ -771,8 +762,7 @@
                     x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]);
                 }
             });
-            const layers = PG.pens.layers(p.pens), n = layers.length, hatched = p.shade !== 'none' && n > 1, map = MAPS[hatched ? n - 2 : n - 1];
-            if (!segs.length) return { layers };
+            if (!segs.length) return { layers: [] };
             const k = Math.min(W / (x1 - x0), H / (y1 - y0));
             // the camera centers on half its page size, so this puts the middle of the drawing in the middle of ours
             const cam = makeCamera(p.yaw, p.elev, k, W - k * (x0 + x1), H - k * (y0 + y1), 0, 0), S = new Scene(cam, W, H);
@@ -804,11 +794,7 @@
                     if (t1 - t0 > 1e-6) S.line([P(pu - B * t0, pv + A * t0), P(pu - B * t1, pv + A * t1)]);
                 }
             });
-            PG.iso.render(S).forEach((paths, kind) => {
-                const pen = kind === SHADE ? Math.min(1, n - 1) : map[kind] && hatched ? map[kind] + 1 : map[kind];
-                for (const q of paths) layers[pen].push(q);
-            });
-            return { layers };
+            return PG.pens.renderScene(penScene(p), S, p);
         },
     });
 })();

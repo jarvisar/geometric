@@ -13,8 +13,8 @@ const load = f => vm.runInThisContext(fs.readFileSync(path.join(src, f), 'utf8')
 ['core', 'pens', 'noise', 'contours', 'iso', 'isokit', 'optimize', 'pipeline', 'loader'].forEach(n => load(`lib/${n}.js`));
 PG.GENERATOR_FILES.forEach(n => load(`generators/${n}.js`));
 
-// Scenes are left off the public pages for now
-const designs = PG.generators.filter(d => d.category !== 'Scenes');
+// Scenes, Studies and Tidal Atlas are left off the public pages for now
+const designs = PG.generators.filter(d => !['Scenes', 'Studies'].includes(d.category) && d.id !== 'tidal');
 const categories = [...new Set(designs.map(d => d.category))];
 const slug = cat => cat.toLowerCase();
 

@@ -102,19 +102,20 @@ for (const layer of result.layers) for (const line of layer.paths) {
 // draws, then check a frameless page stays inside them.
 const raw = (params, seed, W, H) => {
     const shape = PG.shapes.rect(0, 0, W, H);
-    return def.generate(params, { width: W, height: H, seed, rng: new PG.RNG(seed), noise: PG.makeNoise(new PG.RNG(seed)), images: {},
-        shape: { ...shape, polygon: () => shape.outline().slice(0, -1) } }).layers;
+    return PG.normalizeOutput(def.generate(params, { width: W, height: H, seed, rng: new PG.RNG(seed), noise: PG.makeNoise(new PG.RNG(seed)), images: {},
+        shape: { ...shape, polygon: () => shape.outline().slice(0, -1) } }));
 };
 for (const [seed, W, H, panels] of [[1, 186, 273, 14], [5, 186, 273, 30], [9, 273, 186, 8], [12, 81, 124, 40]]) {
     const story = { ...PG.defaultParams(def), panels, gutter: 4 };
-    const rects = raw({ ...story, frame: 'thin' }, seed, W, H)[0].filter(q => q.length === 5 && q[0][0] === q[3][0] && q[0][1] === q[1][1] && q[1][0] === q[2][0] && q[2][1] === q[3][1])
+    // frames are drawn with the outlines, on the first pen
+    const rects = raw({ ...story, frame: 'thin' }, seed, W, H).find(l => l.pen === 0).paths.filter(q => q.length === 5 && q[0][0] === q[3][0] && q[0][1] === q[1][1] && q[1][0] === q[2][0] && q[2][1] === q[3][1])
         .map(q => [q[0][0], q[0][1], q[2][0], q[2][1]]);
     assert.ok(rects.length >= Math.min(panels, 8), `Comic layout seed ${seed}: panel frames not found`);
     for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
         const [a, b] = [rects[i], rects[j]];
         assert.ok(a[2] <= b[0] + 1e-6 || b[2] <= a[0] + 1e-6 || a[3] <= b[1] + 1e-6 || b[3] <= a[1] + 1e-6, `Comic layout seed ${seed}: panels overlap`);
     }
-    for (const layer of raw({ ...story, frame: 'none' }, seed, W, H)) for (const line of layer) {
+    for (const layer of raw({ ...story, frame: 'none' }, seed, W, H)) for (const line of layer.paths) {
         const [x, y] = line[0], r = rects.find(r => x >= r[0] - 1e-6 && x <= r[2] + 1e-6 && y >= r[1] - 1e-6 && y <= r[3] + 1e-6);
         assert.ok(r && line.every(([px, py]) => px >= r[0] - 1e-6 && px <= r[2] + 1e-6 && py >= r[1] - 1e-6 && py <= r[3] + 1e-6), `Comic layout seed ${seed}: line crosses a gutter`);
     }

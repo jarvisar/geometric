@@ -576,7 +576,8 @@ select:focus-visible { outline: none; border-color: var(--focus); box-shadow: va
     gap: 8px;
     padding: 5px 0;
 }
-.pen-row.unused { opacity: 0.45; }
+/* an idle pen is dimmed, but not the parts listed under it, those are still controls */
+.pen-row.unused > :not(.pen-meta), .pen-row.unused .pen-count { opacity: 0.45; }
 .pen-row .eye { width: 22px; height: 22px; border: 0; background: none; color: var(--text-2); padding: 0; display: grid; place-items: center; }
 .pen-row .eye:hover { color: var(--text); }
 .pen-row .eye.off { color: var(--muted); }
@@ -592,7 +593,55 @@ select:focus-visible { outline: none; border-color: var(--focus); box-shadow: va
 }
 .pen-row .pen-name:hover { border-color: var(--input-border); background: var(--input-bg); box-shadow: var(--input-shadow); }
 .pen-row .pen-name:focus { outline: none; border-color: var(--focus); background: var(--input-bg); box-shadow: var(--input-shadow), var(--focus-glow); }
-.pen-row .pen-meta { grid-column: 3 / 5; margin-top: -4px; padding-left: 7px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.pen-row .pen-meta {
+    grid-column: 3 / 5;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    margin-top: -4px;
+    padding-left: 7px;
+    color: var(--muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+.pen-parts { display: contents; }
+.pen-count:empty { display: none; }
+/* A part of a scene, under the pen that draws it. The select lies over it, see renderParts in app.js */
+.part {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+    height: 20px;
+    padding: 0 18px 0 6px;
+    border: 1px solid var(--btn-border);
+    border-bottom-color: var(--btn-border-bottom);
+    border-radius: var(--radius);
+    background: var(--select-arrow) no-repeat right 5px center, linear-gradient(var(--btn-1), var(--btn-2));
+    box-shadow: var(--btn-highlight), var(--shadow-sm);
+    color: var(--text);
+    text-shadow: var(--emboss);
+}
+.part > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.part select { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; opacity: 0; }
+.part:hover { background-image: var(--select-arrow), linear-gradient(var(--btn-hover-1), var(--btn-hover-2)); }
+.part:focus-within { border-color: var(--focus); box-shadow: var(--btn-highlight), var(--focus-glow); }
+/* moved by hand */
+.part.moved > span::before {
+    content: "";
+    display: inline-block;
+    width: 5px; height: 5px;
+    margin: 0 5px 1px 0;
+    border-radius: 50%;
+    background: var(--accent);
+    vertical-align: middle;
+}
+.parts-moved { display: flex; align-items: center; gap: 10px; padding: 4px 0 8px; }
+.parts-moved .out-note { flex: 1; margin: 0; }
+.parts-moved .btn { height: 26px; padding: 0 10px; }
 .pen-row .num { width: 60px; }
 .pen-all { border-top: 1px solid var(--bar-border); margin-top: 2px; }
 .pen-all-label { padding-left: 7px; font-size: 12px; color: var(--text-2); }
@@ -1041,6 +1090,9 @@ a.card .thumb { object-fit: cover; }
     .pen-row { grid-template-columns: 28px 40px 1fr 66px; }
     .pen-row .eye { width: 28px; height: 28px; }
     .pen-row .num { width: 66px; }
+    .pen-row .pen-meta { gap: 6px; margin-top: 0; }
+    .part { height: 30px; padding: 0 22px 0 9px; font-size: 13px; background-position: right 8px center, 0 0; }
+    .parts-moved .btn { height: 34px; }
     .image-ctl .btn { height: 34px; }
     .image-ctl .icon-btn { width: 34px; height: 34px; }
     .snap .del { width: 26px; height: 26px; }
