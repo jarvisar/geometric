@@ -107,14 +107,6 @@
 
     const STORAGE_KEY = 'plotter-geometry:state:v1';
     const SNAPS_KEY = 'plotter-geometry:snapshots:v1';
-    // These stay out of the gallery until unlocked (Konami code, or 6 quick clicks on the logo).
-    // The key is true once unlocked, false once a locked browser has had its old saved scene checked.
-    const SCENES_KEY = 'plotter-geometry:scenes:v1';
-    let scenesUnlocked = storageGet(SCENES_KEY) === true;
-    const lockedDesigns = new Set(['town', 'harbour', 'cosmic']);
-    const isListedGenerator = g => scenesUnlocked || !lockedDesigns.has(g.id);
-    const listedGenerators = () => PG.generators.filter(isListedGenerator);
-    const lockedSceneParams = id => !scenesUnlocked && id === 'skyline' ? { landmark: 'none', airship: false } : {};
     const MM_PER_CSS_PX = 25.4 / 96;
 
     const PAPERS = PG.settings.papers;
@@ -138,7 +130,7 @@
         const p = s.params[def.id] || (s.params[def.id] = {});
         PG.pens.migrate(def, p);
         for (const q of def.params) if (q.id && !(q.id in p)) p[q.id] = q.value;
-        return Object.assign(p, lockedSceneParams(def.id));
+        return p;
     }
 
     function applyPaperSize() {
@@ -164,8 +156,7 @@
             // Only overlap removal depends on pen width. Otherwise a width change is just a redraw.
             penWidths: s.opt.overlap ? s.pens.map(p => p.width) : null,
             cols: c.cols, rows: c.rows, gutter: c.gutter, cellVary: c.cellVary,
-            // Grid variation must keep the hidden Skyline options off too.
-            locks: [...new Set([...(s.locks[s.gen] || []), ...Object.keys(lockedSceneParams(s.gen))])],
+            locks: s.locks[s.gen] || [],
             sweep: c.sweepId ? { id: c.sweepId, amount: c.sweepAmount / 100 } : null,
         };
     }
@@ -975,12 +966,10 @@
         document.title = `${def.name} · Plotter Geometry`;
 
         const locks = new Set(state.locks[def.id] || []);
-        const restricted = lockedSceneParams(def.id);
         const groups = [{ label: 'Pens', controls: def.params.filter(q => q.id === 'pens') }];
         let group = { label: 'Parameters', controls: [] };
         groups.push(group);
         for (const q of def.params) {
-            if (Object.hasOwn(restricted, q.id)) continue;
             if (q.type === 'section') {
                 if (q.label === 'Pens') group = groups[0];
                 else { group = { label: q.label, controls: [] }; groups.push(group); }
@@ -1542,10 +1531,9 @@
         // Thumbnails use the current pen and paper colors, which can also change through undo or loaded settings
         const colors = JSON.stringify([state.paper.color, state.pens.map(p => p.color)]);
         if (colors !== thumbColors) { thumbCache.clear(); thumbColors = colors; }
-        const listed = listedGenerators();
-        const cats = PG.categories.concat([...new Set(listed.map(g => g.category))].filter(c => !PG.categories.includes(c)));
+        const cats = PG.categories.concat([...new Set(PG.generators.map(g => g.category))].filter(c => !PG.categories.includes(c)));
         for (const cat of cats) {
-            const gens = listed.filter(g => g.category === cat);
+            const gens = PG.generators.filter(g => g.category === cat);
             if (!gens.length) continue;
             const section = el('section', { 'data-cat': cat }, el('h3', { class: 'gallery-cat', text: cat }));
             const cards = el('div', { class: 'cards' });
@@ -1594,7 +1582,6 @@
     }
 
     async function renderThumb(def, canvasEl, params = PG.defaultParams(def), key = def.id) {
-        Object.assign(params, lockedSceneParams(def.id));
         // near-A4 scale, since fill designs size their features in real millimeters
         const size = 190;
         const S = {
@@ -1666,7 +1653,7 @@
     }
 
     function surprise() {
-        const others = listedGenerators().filter(g => g.id !== state.gen);
+        const others = PG.generators.filter(g => g.id !== state.gen);
         const def = others[Math.floor(Math.random() * others.length)] || currentDef();
         switchGenerator(def.id);
         closeGallery();
@@ -2142,47 +2129,13 @@
         });
     }
 
-    function unlockScenes() {
-        if (scenesUnlocked) return;
-        scenesUnlocked = true;
-        storageSet(SCENES_KEY, true);
-        thumbCache.delete('skyline');
-        if (state.gen === 'skyline') buildParams();
-        toast('Scenes unlocked');
-        if (!$('#gallery').hidden) { buildGallery(); filterGallery($('#gallerySearch').value); }
-    }
-
-    function bindScenesUnlock() {
-        const code = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
-        let pos = 0;
-        document.addEventListener('keydown', e => {
-            const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-            pos = key === code[pos] ? pos + 1 : key === code[0] ? 1 : 0;
-            if (pos === code.length) { pos = 0; unlockScenes(); }
-        });
-
-        const logoButton = $('.brand button');
-        let clicks = 0, timer = 0;
-        logoButton.addEventListener('click', e => {
-            if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
-            clearTimeout(timer);
-            if (++clicks >= 6) { clicks = 0; unlockScenes(); return; }
-            timer = setTimeout(() => { clicks = 0; }, 350);
-        });
-    }
-
     // Initial state: share link (#s=…) > saved state > defaults. `#gen=<id>` picks a design.
     async function loadInitialState() {
         const saved = storageGet(STORAGE_KEY);
-        const scenesChecked = storageGet(SCENES_KEY) !== null;
         if (saved) {
             try { state = PG.settings.read(saved, true); }
             catch (err) { toast(`Saved settings could not be restored. Using defaults. ${err.message}`, true); }
-            // Saved from before scenes were hidden. Only checked once, so a scene opened later from a
-            // share link or settings file is still there after a reload.
-            if (!scenesChecked && PG.byId[state.gen] && !isListedGenerator(PG.byId[state.gen])) state.gen = PG.generators[0].id;
         }
-        if (!scenesChecked) storageSet(SCENES_KEY, false);
         const hash = location.hash.slice(1);
         if (hash) {
             const q = new URLSearchParams(hash);
@@ -2229,7 +2182,6 @@
         window.addEventListener('pagehide', () => { if (saveTimer) saveNow(); });
         bindTopbar();
         bindKeys();
-        bindScenesUnlock();
         bindCanvas();
         rebuildAll();
         syncInstallItem();
@@ -2253,8 +2205,6 @@
         get state() { return state; },
         get result() { return result; },
         select: selectGenerator, randomize, surprise, resetParams, resetAll, newSeed, undo, redo, exportAs: doExport, regenerate,
-        // Controls left out on purpose, e.g. Skyline's landmark and airship until scenes are unlocked
-        hiddenParams: id => Object.keys(lockedSceneParams(id)),
     };
 
     setupInstallPrompt(); // before init: the browser's install event can arrive while designs load

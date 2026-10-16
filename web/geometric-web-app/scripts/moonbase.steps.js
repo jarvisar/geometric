@@ -5,7 +5,7 @@ await evaluate(`localStorage.clear()`);
 await open('index.html');
 await evaluate(`plotterApp.regenerate()`);
 await click('#designBtn');
-assert(await evaluate(`document.querySelector('#galleryBody').textContent.includes('Moon Base')`), 'Moon Base missing from the locked gallery');
+assert(await evaluate(`document.querySelector('#galleryBody').textContent.includes('Moon Base')`), 'Moon Base missing from the gallery');
 await evaluate(`document.querySelector('#gallerySearch').value = 'moon'; document.querySelector('#gallerySearch').dispatchEvent(new Event('input', { bubbles: true }));`);
 await key('Enter');
 await evaluate(`plotterApp.regenerate()`);
