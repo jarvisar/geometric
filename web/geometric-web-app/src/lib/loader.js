@@ -17,7 +17,7 @@
         // Packing
         'circlepack', 'apollonian', 'subdivide', 'voronoi',
         // Scenes
-        'town', 'harbour', 'castle', 'fairground', 'trainyard', 'moonbase', 'alpine', 'skyline', 'stadium',
+        'town', 'harbour', 'castle', 'fairground', 'trainyard', 'moonbase', 'alpine', 'skyline', 'stadium', 'farmland',
         // Studies
         'megastructure', 'stairwell', 'cosmic', 'radiolaria',
         // Image

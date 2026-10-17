@@ -68,6 +68,7 @@
         trainyard: profile(5, 'Black trains and buildings, red roofs and paint, blue shadows, gold trim and brown track. More pens separate plants, people and steam.'),
         moonbase: profile(6, 'Black structures, red pressure collars, blue shadows and solar cells, gold equipment, green gardens and light blue glazing. Seven pens separate astronauts, and eight add brown dust. On Mars the ground is drawn with the red pen until the eighth pen takes it over.'),
         alpine: profile(4, 'Dark architecture, red roofs, blue shade and gold details. More pens separate fir woods, people, water and timber.'),
+        farmland: profile(7, 'Black buildings and machines, red roofs and barns, blue shadows and water, gold grain and hay, green crops and trees, brown soil and tracks, and purple people, animals and flowers. Eight pens give the water light blue. With fewer pens the soil goes gold, then the shadows go black.', [INK, RED, BLUE, GOLD, GREEN, BROWN, PURPLE, CYAN]),
         image: profile(3, 'Colors follow image darkness in every drawing mode.', [BLUE, PURPLE, INK, RED, BROWN, GREEN, CYAN, GOLD]),
     };
 
@@ -140,6 +141,17 @@
             [INK, RED, BLUE, GOLD, GREEN, PURPLE, CYAN, BROWN, BROWN],
         ], [0, 1, 2, 3, 4, 5, 6, 7, 8], ['Structure', 'Roofs & seats', 'Shadows & seats', 'Lights, flags & seats', 'Grass & trees', 'People & players', 'Glass & water', 'Track & clay', 'Streets & paths']),
         alpine: scene(illustrated, [0, 1, 2, 3, 0, 0, 2, 0], ['Architecture & rock', 'Roofs & trains', 'Shade & snow', 'Shutters & balconies', 'Fir woods', 'People & fliers', 'Water', 'Timber & paths']),
+        // The land is most of the drawing, so green comes second. Soil is gold until brown has a pen of its own.
+        farmland: scene([
+            [INK, INK, INK, INK, INK, INK, INK, INK, INK],
+            [INK, INK, INK, GREEN, GREEN, INK, INK, GREEN, GREEN],
+            [INK, RED, INK, GREEN, GREEN, INK, INK, GREEN, RED],
+            [INK, RED, INK, GOLD, GREEN, INK, INK, GOLD, RED],
+            [INK, RED, BLUE, GOLD, GREEN, INK, BLUE, GOLD, RED],
+            [INK, RED, BLUE, GOLD, GREEN, INK, BLUE, BROWN, RED],
+            [INK, RED, BLUE, GOLD, GREEN, PURPLE, BLUE, BROWN, PURPLE],
+            [INK, RED, BLUE, GOLD, GREEN, PURPLE, CYAN, BROWN, PURPLE],
+        ], [0, 1, 2, 3, 4, 5, 6, 7, 8], ['Buildings & machines', 'Roofs & barn paint', 'Shadows', 'Grain, hay & sunflowers', 'Crops, trees & hedges', 'People & animals', 'Water', 'Soil, tracks & fences', 'Blossom & flowers']),
     };
 
     // The designs below number their inks in the design's own order instead of naming pens,

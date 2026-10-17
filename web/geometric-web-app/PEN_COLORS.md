@@ -41,6 +41,7 @@ preview, clipping and export. Custom pen colors still belong to the user.
 | Town, Harbor, Castle Town, Fairground, Trainyard, Moon Base, Alpine, Skyline District | Scene materials and objects |
 | Moon Base on Mars | Same as the Moon, with the ground on the red pen until an eighth pen takes it over in brown |
 | Stadium | Scene materials and objects, with the seats in the club's colors. The running track, clay courts and infield stay on the red pen until an eighth pen takes them over in brown, along with the streets |
+| Farmland | Scene materials and objects, with the crops in green and gold before anything else, since the fields are most of the drawing. Soil and tracks are gold until a sixth pen gives them brown, and the shadows are black until a fifth pen gives them blue |
 | Megastructure | Tiers in ink, then fins and grilles, slab stacks, studs and teeth, ducts and frames, loose blocks, the plinth and every other tier. Hatching takes the second pen when it's on |
 | Infinite Stairwell | Steps and walls, the handrail and shading, then the floor or skylight, balusters, string, walls and every other turn |
 | Cosmic Comics | Dark outlines, a warm sun and cool skies, then sand, distant ranges, plants, crystals and rock |
