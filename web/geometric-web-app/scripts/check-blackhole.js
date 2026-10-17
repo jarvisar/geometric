@@ -75,6 +75,7 @@ assert.deepEqual(raw({ structure: 'rings', flow: 1, winding: 3, stars: 0 }), smo
 for (const incl of [0, 77, 89]) for (const tilt of [-90, -12, 90]) {
     const disk = raw({ incl, tilt, stars: 0 }), sky = raw({ incl, tilt, stars: 240 });
     disk.forEach((layer, i) => assert.deepEqual(sky[i].slice(0, layer.length), layer, 'Stars changed disk strokes or pen assignments'));
+    assert.equal(disk[0].length, 0, 'Disk drawn on the star pen');
     const stars = sky[0].slice(disk[0].length);
     assert.ok(stars.length >= 240, 'Sky failed to place the requested stars');
     // Every star segment must clear the visible disk lines, including its two rims.

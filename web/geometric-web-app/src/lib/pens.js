@@ -45,7 +45,7 @@
         chladni: profile(4, 'Nodal lines anchor the drawing. Colors distinguish vibration bands on either side.', [INK, BLUE, RED, CYAN, GOLD, PURPLE, GREEN, BROWN]),
         fieldlines: profile(4, 'Source fans and potential levels form color families.', [INK, BLUE, RED, CYAN, PURPLE, GOLD, GREEN, BROWN]),
         // Black Hole sorts these into a spectrum itself, see SPECTRUM in blackhole.js
-        blackhole: profile(3, 'Colors follow the redshift, from the side of the disk coming towards you to the side going away. Disk line lengths are balanced between pens. Stars use the first pen.', [BLUE, RED, GOLD, CYAN, PURPLE, GREEN, BROWN, INK]),
+        blackhole: profile(3, 'Stars get the first pen of their own from two pens up. The rest follow the redshift, from the side of the disk coming towards you to the side going away, with disk line lengths balanced between them.', [INK, BLUE, RED, GOLD, CYAN, PURPLE, GREEN, BROWN]),
         moire: profile(3, 'Each line family gets a palette, split into broad bands as more pens are added.', jewel, 'families'),
         warp: profile(4, 'Color bands follow the woven directions and warped stripes.', jewel, 'families'),
         tracery: profile(4, 'Black stone, blue lights, red foils and gold spandrels. More pens split out every other light, the smaller foils, the moulding lines and the frame.', [INK, BLUE, RED, GOLD, GREEN, PURPLE, BROWN, CYAN]),

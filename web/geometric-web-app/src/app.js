@@ -1523,7 +1523,8 @@
 
     function openGallery() {
         const g = $('#gallery');
-        openDialog(g, $('#gallerySearch'));
+        // Focus the dialog, not the search, so mobile doesn't pop up the keyboard
+        openDialog(g, g);
         buildGallery();
         const search = $('#gallerySearch');
         search.value = '';

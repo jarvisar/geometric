@@ -810,6 +810,7 @@ select:focus-visible { outline: none; border-color: var(--focus); box-shadow: va
     padding: 24px;
 }
 .gallery[hidden] { display: none; }
+.gallery:focus-visible { outline: none; }
 .gallery-inner, .keys-inner {
     width: min(1180px, 100%);
     height: min(860px, 100%);

@@ -31,9 +31,10 @@
     const RIN = 6;
     const SHORT = 9; // mm
     const DPHI = 0.008, NPHI = Math.ceil((3 * Math.PI + 0.1) / DPHI) + 1;
-    // Layers from the bluest band to the reddest. Follows the pen order in pens.js
-    // (blue, red, gold, light blue, purple, green, brown, ink).
-    const SPECTRUM = [4, 0, 3, 5, 2, 6, 1, 7];
+    // Disk layers from the bluest band to the reddest. Follows the pen order in pens.js
+    // (ink, blue, red, gold, light blue, purple, green, brown). Layer 0 is the stars
+    // from two pens up, so they get a color of their own.
+    const SPECTRUM = [5, 1, 4, 6, 3, 7, 2];
 
     // u along the ray for each impact parameter in b, a row each. Rows are packed
     // close to BC, where a hair's difference in b is another turn round the hole.
@@ -313,9 +314,9 @@
                 const len = Math.hypot(s[i][0] - s[i - 1][0], s[i][1] - s[i - 1][1]);
                 hist[bin((s[i][2] + s[i - 1][2]) / 2)] += len; total += len;
             }
+            const order = pens > 1 ? SPECTRUM.filter(i => i < pens) : [0], diskPens = order.length;
             const band = new Uint8Array(BINS);
-            for (let i = 0, run = 0; i < BINS; i++) { band[i] = Math.min(pens - 1, Math.floor((run / (total || 1)) * pens)); run += hist[i]; }
-            const order = SPECTRUM.filter(i => i < pens);
+            for (let i = 0, run = 0; i < BINS; i++) { band[i] = Math.min(diskPens - 1, Math.floor((run / (total || 1)) * diskPens)); run += hist[i]; }
             for (const s of strokes) {
                 let cur = null, at = -1;
                 for (let i = 1; i < s.length; i++) {

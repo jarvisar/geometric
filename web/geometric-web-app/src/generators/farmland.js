@@ -346,10 +346,10 @@
             G.each((v, px, py) => { G.h[v] += h * Math.exp(-((px - x) ** 2 + (py - y) ** 2) / (r * r)); });
         }
         if (plan.dike) {
-            // the dike's bank, and the river bed sloping down beyond its foot and back up to the far bank
-            const { y: yd, h, crest, run, river } = plan.dike;
+            // the dikes' banks, and the river bed sloping down beyond the near one's foot and back up to the far one
+            const { y: yd, h, crest, run, river, far } = plan.dike;
             G.each((v, x, y) => {
-                G.h[v] = G.h[v] * 0.3 + h * (1 - smooth(crest, crest + run, Math.abs(y - yd)));
+                G.h[v] = G.h[v] * 0.3 + h * (1 - smooth(crest, crest + run, Math.min(Math.abs(y - yd), Math.abs(y - far))));
                 G.h[v] -= 2.2 * Math.min(smooth(river[0] - 3, river[0] + 3, y), 1 - smooth(river[1] - 3, river[1] + 3, y));
             });
         }
@@ -921,9 +921,9 @@
         plan.lot = { rect: lot, poly: rectPoly(lot), F: frame(cx, cy, 0, 0), W, D };
         const ext = 60;
         plan.roads.push({ pts: [[P.x0 - ext, ry], [P.x1 + ext, ry]], hw: 2.6, kind: 'paved', poplars: true });
-        // the dike runs along behind the farm, the river beyond it
-        const yd = cy + D / 2 + rng.range(70, 130);
-        plan.dike = { y: yd, h: 3.6, crest: 2.8, run: 9.5, river: [yd + 14, yd + 14 + rng.range(55, 80)] };
+        // the dike runs along behind the farm, the river beyond it and another dike on the far bank
+        const yd = cy + D / 2 + rng.range(70, 130), r1 = yd + 14 + rng.range(55, 80);
+        plan.dike = { y: yd, h: 3.6, crest: 2.8, run: 9.5, river: [yd + 14, r1], far: r1 + 14 };
         plan.drive = { pts: [[cx + rng.range(-0.3, 0.3) * W, ry + 2.6], [cx, cy - D / 2 + 12]], hw: 1.8 };
         plan.drive.pts[1][0] = plan.drive.pts[0][0];
         // strips of field between ditches, back from the road to the dike and down from it to the page's edge
@@ -935,7 +935,7 @@
         const bands = [[ry + rw / 2 + 3, yd - 12 - 3]];
         let y = ry - rw / 2 - 3;
         while (y > P.y0 - 60) { const y1 = y - rng.range(140, 220); bands.push([y1, y]); y = y1 - 6; }
-        for (const [y0, y1] of bands) {
+        const strips = (y0, y1, far) => {
             for (let i = 0; i + 1 < xs.length; i++) {
                 const r = [xs[i] + 1.4, y0, xs[i + 1] - 1.4, y1];
                 if (r[0] >= lot[0] - 0.1 && r[2] <= lot[2] + 0.1 && y0 < lot[3] && y1 > lot[1]) {
@@ -943,15 +943,19 @@
                     if (y1 > lot[3] + 20) plan.fields.push({ poly: rectPoly([r[0], lot[3] + 3, r[2], y1]) });
                     continue;
                 }
-                plan.fields.push({ poly: rectPoly(r) });
+                plan.fields.push({ poly: rectPoly(r), far });
             }
             for (const x of xs) plan.ditches.push([[x, y0 - 1.5], [x, y1 + 1.5]]);
             plan.ditches.push([[P.x0 - ext, y0 - 1.5], [P.x1 + ext, y0 - 1.5]]);
-        }
+        };
+        for (const [y0, y1] of bands) strips(y0, y1, false);
         // the mill stands at the dike end of a ditch near the middle of the page
         const near = xs.filter(x => Math.abs(x - cx) > W / 2 + 10 && P.seen(x, yd - 16, 0, 25));
         const mx = near.length ? rng.pick(near) : cx + W;
         plan.mill = { x: mx, y: yd - 17 };
+        // More strips past the far dike, which is in view when the river's narrow or the
+        // camera's high. Laid last so they don't move anything else on a given seed.
+        for (let y = plan.dike.far + 12 + 3; y < P.y1 + 60;) { const y1 = y + rng.range(140, 220); strips(y, y1, true); y = y1 + 3; }
         plan.creek = null;
         return plan;
     }
@@ -3240,14 +3244,14 @@
             S.kind = INK;
             kit.underway(T, x, by, rng.chance(0.5) ? 0 : Math.PI, rng, zw);
         }
-        // the road along the top of the dike, and the foot of the bank either side
+        // the road along the top of each dike, and the foot of the near bank
         S.kind = INK;
-        for (const s of [-1, 1]) lay(T, [[P.x0 - 60, dk.y + s * 2.2], [P.x1 + 60, dk.y + s * 2.2]], 0.1);
+        for (const yd of [dk.y, dk.far]) for (const s of [-1, 1]) lay(T, [[P.x0 - 60, yd + s * 2.2], [P.x1 + 60, yd + s * 2.2]], 0.1);
         S.kind = GREEN;
         lay(T, [[P.x0 - 60, dk.y - dk.crest - dk.run], [P.x1 + 60, dk.y - dk.crest - dk.run]], 0.08, (x, y) => !(plan.mill && Math.hypot(x - plan.mill.x, y - plan.mill.y) < 7));
-        // grass on the slope turned to us, in strokes down the bank
-        if (T.detail) for (let x = P.x0 - 60 + rng.range(0, 6); x < P.x1 + 60; x += rng.range(4, 7)) {
-            const y0 = dk.y - dk.crest - dk.run * rng.range(0.25, 0.4), y1 = y0 + dk.run * rng.range(0.2, 0.35);
+        // grass on the slopes turned to us, in strokes down the bank
+        if (T.detail) for (const yd of [dk.y, dk.far]) for (let x = P.x0 - 60 + rng.range(0, 6); x < P.x1 + 60; x += rng.range(4, 7)) {
+            const y0 = yd - dk.crest - dk.run * rng.range(0.25, 0.4), y1 = y0 + dk.run * rng.range(0.2, 0.35);
             if (T.P.seen(x, y0, 0, -2) && !(plan.mill && Math.hypot(x - plan.mill.x, y0 - plan.mill.y) < 8)) lay(T, [[x, y0], [x + 0.6, y1]], 0.08, null, true);
         }
     }
@@ -3726,7 +3730,7 @@
         const { P } = T;
         const options = plan.fields.filter(f => {
             const [cx, cy] = geo.centroid(f.poly);
-            return Math.abs(geo.polygonArea(f.poly)) > 1500 && P.seen(cx, cy, 0, 15) && polyDist(plan.lot.poly, cx, cy) > 45 && plan.holdings.every(lot => polyDist(lot.poly, cx, cy) > 24) && (!plan.creek || distToPath(plan.creek.pts, cx, cy) > 40)
+            return !f.far && Math.abs(geo.polygonArea(f.poly)) > 1500 && P.seen(cx, cy, 0, 15) && polyDist(plan.lot.poly, cx, cy) > 45 && plan.holdings.every(lot => polyDist(lot.poly, cx, cy) > 24) && (!plan.creek || distToPath(plan.creek.pts, cx, cy) > 40)
                 && plan.roads.every(r => distToPath(r.pts, cx, cy) > 25);
         });
         if (!options.length) return;
@@ -3831,7 +3835,7 @@
         });
         for (const f of order) {
             const job = WORK[f.kind];
-            if (!job || machines >= 1 + Math.round(p.work * 2) || !frng.chance(p.work) || f.pond) continue;
+            if (!job || f.far || machines >= 1 + Math.round(p.work * 2) || !frng.chance(p.work) || f.pond) continue;
             const c = geo.centroid(f.poly);
             if (!P.seen(c[0], c[1], 0, 20) || Math.abs(geo.polygonArea(f.poly)) < 1800) continue;
             f.before = f.kind;
