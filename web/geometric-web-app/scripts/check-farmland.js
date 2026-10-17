@@ -43,6 +43,9 @@ for (const country of countries) {
 }
 // the camera limits, small and large views, flat and hilly ground
 for (const country of countries) {
+    const settled = run({ country, holdings: true }, { seed: 3 });
+    const isolated = run({ country, holdings: false }, { seed: 3 });
+    assert.notDeepEqual(settled.layers, isolated.layers, `${country}: outlying farmyards did not change the scene`);
     for (const [yaw, elev] of [[20, 25], [20, 60], [70, 25], [70, 60]]) run({ country, yaw, elev });
     for (const size of [140, 420]) run({ country, size });
     for (const hills of [0, 1]) for (const fieldSize of [0.5, 1.6]) run({ country, hills, fieldSize });

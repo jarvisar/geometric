@@ -198,7 +198,8 @@ await check(`(async () => {
         __svgParts(text)===__svgParts(PG.exporters.svg(res,saved.paper,saved.pens,{},i)));
 })()`, 'split export changed while editing');
 await evaluate(`__downloads.length=0; plotterApp.select('spirograph'); plotterApp.exportAs('png'); plotterApp.select('maze');`);
-await sleep(500);
+// A 600 dpi PNG can take well over half a second to encode on a busy machine
+for (let i = 0; i < 100 && !(await evaluate(`__downloads.length`)); i++) await sleep(100);
 await check(`__downloads.length===1 && __downloads[0].name.startsWith('spirograph-') && __downloads[0].blob.type==='image/png'`, 'PNG filename changed during encoding');
 log('Pending edits, split SVG batches and asynchronous PNG filenames stay consistent');
 

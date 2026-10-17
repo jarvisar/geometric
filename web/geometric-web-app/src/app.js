@@ -276,8 +276,13 @@
     function restoreUndo(i) {
         if (i < 0 || i >= undoStack.items.length) return;
         const keep = { ui: state.ui, view: state.view, locks: state.locks };
+        const pensLocked = (state.locks[state.gen] || []).includes('pens');
         state = PG.settings.read(JSON.parse(undoStack.items[i]), true);
         Object.assign(state, keep);
+        // Undoing back to another design is a design switch too, so the pens lock follows it like in switchGenerator
+        const locks = new Set(state.locks[state.gen] || []);
+        pensLocked ? locks.add('pens') : locks.delete('pens');
+        state.locks[state.gen] = [...locks];
         undoStack.index = i;
         rebuildAll();
         requestGenerate();
@@ -1175,6 +1180,13 @@
                         hint: 'Shorter overlaps, like where lines cross or meet, are drawn anyway so they don\'t cost an extra pen lift.' },
                 ],
             },
+            {
+                id: 'png', title: 'PNG export', badge: () => `${state.view.pngDpi} dpi`, controls: [
+                    { key: 'view.pngDpi', label: 'Resolution', type: 'select', effect: 'none', then: syncViewButtons,
+                        options: PG.settings.pngDpis.map(d => [d, `${d} dpi${d === 96 ? ' (screen)' : d === 300 ? ' (print)' : ''}`]),
+                        hint: 'Paper too big for this resolution exports at the highest one the browser allows. Phones and iPads allow far fewer pixels than desktop browsers.' },
+                ],
+            },
             { id: 'snaps', title: 'Snapshots', custom: buildSnapshotsSection },
         ];
     }
@@ -1343,7 +1355,10 @@
     function renderParts(rows, parts) {
         // Only rebuilt when something changed. This also runs for every new drawing, and
         // rebuilding would close a list the user has open.
-        const key = JSON.stringify([parts, state.pens.map(p => [p.name, p.visible])]);
+        // A part is moved while it has a pin in penMap, even when the pin matches the default
+        // at this pen count. It still keeps that pen when the count changes again.
+        const pinned = currentParams().penMap || {};
+        const key = JSON.stringify([parts, pinned, state.pens.map(p => [p.name, p.visible])]);
         if (key === partsKey) return;
         partsKey = key;
         const focused = document.activeElement?.closest?.('#penList .part')?.dataset.part;
@@ -1351,7 +1366,7 @@
         rows.forEach(row => {
             const here = (parts || []).filter(q => q.pen === +row.dataset.pen);
             row.querySelector('.pen-parts').replaceChildren(...here.map(q => {
-                const moved = q.pen !== q.default;
+                const moved = Object.hasOwn(pinned, q.part);
                 const sel = el('select', { 'aria-label': `Pen for ${q.name}${moved ? ' (moved by hand)' : ''}`,
                     title: moved ? `${q.name} was moved by hand. The default is pen ${q.default + 1}.` : `Move ${q.name} to another pen` },
                 options.map((text, pen) => el('option', { value: pen, text })));
@@ -1360,7 +1375,7 @@
                 return el('span', { class: 'part' + (moved ? ' moved' : ''), 'data-part': q.part }, el('span', { 'aria-hidden': 'true', text: q.name }), sel);
             }));
         });
-        const moved = (parts || []).filter(q => q.pen !== q.default).length;
+        const moved = (parts || []).filter(q => Object.hasOwn(pinned, q.part)).length;
         $('#partsMoved').hidden = !moved;
         $('#partsMoved p').textContent = `${moved} ${moved === 1 ? 'part' : 'parts'} moved by hand. Moved parts keep their pen when the pen count changes.`;
         // A part that just moved takes the focus along to its new pen
@@ -1725,6 +1740,7 @@
             $(sel).classList.toggle('on', on);
             $(sel).setAttribute('aria-pressed', String(on));
         }
+        $('[data-export="png"] small').textContent = `${state.view.pngDpi} dpi`;
     }
 
     // ------------------------------------------------------------------ export
@@ -1783,13 +1799,33 @@
                 download(`${base}-pen${l.pen + 1}.svg`, PG.exporters.svg(res, paper, recipe.pens, meta, l.pen), 'image/svg+xml');
             }, i * 300));
         } else if (kind === 'png') {
-            const k = 600 / 25.4;
-            const c = el('canvas', { width: Math.round(paper.w * k), height: Math.round(paper.h * k) });
-            PG.drawResult(c.getContext('2d'), res, { scale: k, ox: 0, oy: 0 },
-                { paper, paperColor: recipe.paper.color, pens: recipe.pens, minLinePx: 1, hairline: !recipe.view.penWidth });
-            // toBlob hands back null when the canvas is over the browser's size limit (big custom paper, iOS)
-            c.toBlob(b => (b ? download(`${base}.png`, b) : toast('Paper is too large for a PNG export', true)));
+            const want = recipe.view.pngDpi, dpi = pngDpi(paper, want);
+            if (!dpi) { toast('Paper is too large for a PNG export in this browser', true); return; }
+            const k = dpi / 25.4;
+            // floor keeps a fitted size under the limit, rounding could tip it a pixel over
+            const c = el('canvas', { width: Math.floor(paper.w * k), height: Math.floor(paper.h * k) });
+            try {
+                PG.drawResult(c.getContext('2d'), res, { scale: k, ox: 0, oy: 0 },
+                    { paper, paperColor: recipe.paper.color, pens: recipe.pens, minLinePx: 1, hairline: !recipe.view.penWidth });
+            } catch (err) { toast(`Could not export: ${err.message}`, true); return; }
+            // toBlob still hands back null if the browser runs out of memory for the canvas
+            c.toBlob(b => {
+                if (!b) { toast('Paper is too large for a PNG export at this resolution. Try a lower one.', true); return; }
+                download(`${base}.png`, b);
+                if (dpi < want) toast(`Saved at ${dpi} dpi. ${want} dpi is over this browser's limit for this paper size.`);
+            });
         }
+    }
+
+    // Browsers refuse canvases over a size limit. iOS Safari allows about 16.7 million pixels, which
+    // A5 at 600 dpi already passes. Desktop browsers allow about 268 million and 32767 px a side.
+    // Past that the PNG drops to the highest whole dpi that fits, or 0 if not even 72 dpi does.
+    function pngDpi(paper, want) {
+        const w = paper.w / 25.4, h = paper.h / 25.4;
+        const area = isIOS() ? 16777216 : 268435456;
+        const fit = Math.floor(Math.min(Math.sqrt(area / (w * h)), 32767 / Math.max(w, h)));
+        const dpi = Math.min(want, fit);
+        return dpi >= 72 ? dpi : 0;
     }
 
     function shareUrl(recipe) {

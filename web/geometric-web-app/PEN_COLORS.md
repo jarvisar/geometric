@@ -25,7 +25,7 @@ preview, clipping and export. Custom pen colors still belong to the user.
 | Wireframe | Elevation bands from the coldest ink to the hottest, near-to-far bands, or one color per line direction |
 | Chladni | Distance from the nodal lines and vibration polarity |
 | Field Lines | Source fans and potential levels |
-| Black Hole | Redshift, from the side of the disk coming towards you to the side going away. Each pen draws the same length of line |
+| Black Hole | Redshift, from the side of the disk coming towards you to the side going away. Disk line lengths are balanced between pens. Stars use the first pen |
 | Moiré | Line families, subdivided into broad bands |
 | Warp | Woven directions and successive warped stripes |
 | Tidal Atlas | Water and land, then the cut block, elevation bands, survey marks and the sea surface |

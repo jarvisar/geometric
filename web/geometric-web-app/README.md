@@ -33,7 +33,7 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 * **Wireframe**: a triangulated wire mesh draped over a landscape, like the terrain plots from early computer graphics. The ground can be city blocks, rolling hills, ridged peaks, an island, canyons, craters or ripples, and it can be cut into flat terraces with a cliff between each step. Hidden lines are removed exactly, by walking the sight line from each point back to the eye across the mesh. The mesh fills the page by default and can fray at the edge, where border cells drop out and leave loose threads sticking out. It can also be drawn as a whole tile, face on or isometric. Diagonals run one way, in zigzag rows, diamonds or crosses, follow the slope, or are left off for a plain grid. Pens color it by elevation, by distance or by line direction.
 * **Chladni**: nodal patterns of vibrating square plates and circular membranes (real Bessel modes), with "sand" bands.
 * **Field Lines**: electric field lines and equipotentials of charges (dipoles, quadrupoles, plates, random), or the magnetic field around wires, traced so line density follows field strength.
-* **Black Hole**: a thin disk of gas round a black hole seen from far off, after Luminet's 1979 picture. Light from the far side is bent up over the top of the hole, and the underside of the disk shows as a second image below it. The disk is drawn as rings, which thin out where it's dim and where they'd crowd closer than the pen. Pens follow the redshift, from the side coming towards you to the side going away. Curves of equal redshift can be added across it.
+* **Black Hole**: a thin disk of gas round a black hole seen from far off, after Luminet's 1979 picture. Light from the far side is bent up over the top of the hole, and the underside shows as a second image below it. Pick smooth rings, spiral bands or turbulent bands, with adjustable flow strength and winding. The gas patterns are stylized, with brighter filaments and dimmer gaps, while the light bending stays the same. Lines thin out where it's dim or they'd crowd closer than the pen. Distant stars stay behind the opaque disk and outside the hole's shadow. Set Stars to 0 for the disk alone. Pens follow the redshift, from the side coming towards you to the side going away, with stars on the first pen. Curves of equal redshift can be added across it.
 * **Moiré**: overlaid circles, gratings, spirals or rays on separate pens.
 * **Op-Art Warp**: Vasarely-style bulges pushing hatched checkerboards out of the page.
 * **Tidal Atlas**: one landscape drawn again and again as the sea rises, so the valleys drown into fjords and the ridges break up into islands. The terrain comes from a quick erosion simulation, as an alpine massif, a fjord coast, an archipelago or a volcanic island. Land is drawn with fine ridge lines, contours, hachures or a wire mesh, and the sea with coastal ripple lines like an old atlas. Each study can be cut out as a block with the water standing in section and a tide staff beside it.
@@ -124,7 +124,12 @@ Any design can also be laid out as a **grid** on one sheet. Each cell gets its o
    * **EPS**: EPSF 3.0, PostScript Level 2, with RGB strokes and pen widths. Its
      bounds include the ink rather than the full paper, so placing it usually
      crops away the margins. Use PDF when the full page size matters.
-   * **PNG**: a 600 dpi picture of the preview.
+   * **PNG**: a picture of the preview, 600 dpi by default. Change it under
+     **PNG export** in the Paper & Output panel (96 to 1200 dpi). If the paper is
+     too big for that resolution in the browser, it saves at the highest one that
+     fits and says so. iOS Safari allows about 16.7 million pixels, so on an iPhone
+     A4 comes out at 416 dpi. Large PNGs can freeze the page for a few seconds
+     while they render.
 
 Vector exports contain the visible pens only, without the preview's paper color,
 travel lines or guides. PDF and EPS retain colors but do not retain named pen

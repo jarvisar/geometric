@@ -98,17 +98,24 @@
         id: 'blackhole',
         name: 'Black Hole',
         category: 'Fields',
-        description: 'A glowing disk round a black hole, with its far side bent up over the top by gravity, after Luminet\'s 1979 picture.',
+        description: 'Spiraling gas and distant stars round a black hole, with the disk bent over its shadow by gravity, after Luminet\'s 1979 picture.',
         fit: false,
         params: [
             { type: 'section', label: 'View' },
-            { id: 'incl', label: 'Inclination (°)', type: 'range', min: 0, max: 89, step: 1, value: 80, random: [55, 87],
+            { id: 'incl', label: 'Inclination (°)', type: 'range', min: 0, max: 89, step: 1, value: 77, random: [55, 87],
                 hint: '0 looks straight down on the disk, 90 is edge-on' },
             { id: 'tilt', label: 'Tilt (°)', type: 'range', min: -90, max: 90, step: 1, value: -12, random: [-35, 35] },
             { type: 'section', label: 'Disk' },
-            { id: 'outer', label: 'Outer radius', type: 'range', min: 10, max: 60, step: 1, value: 30, random: [16, 44],
+            { id: 'structure', label: 'Disk pattern', type: 'select', value: 'turbulent', random: true,
+                options: [['rings', 'Smooth rings'], ['spiral', 'Spiral bands'], ['turbulent', 'Turbulent bands']],
+                hint: 'Stylized gas patterns on the same light-bending model' },
+            { id: 'flow', label: 'Flow strength', type: 'range', min: 0, max: 1, step: 0.05, value: 0.85, random: [0.4, 1],
+                show: p => p.structure !== 'rings' },
+            { id: 'winding', label: 'Winding (turns)', type: 'range', min: 0.5, max: 3, step: 0.1, value: 1.3, random: [0.7, 2],
+                show: p => p.structure !== 'rings' && p.flow > 0 },
+            { id: 'outer', label: 'Outer radius', type: 'range', min: 10, max: 60, step: 1, value: 22, random: [16, 44],
                 hint: 'In units of the hole\'s mass. The inner edge is at 6, the last stable orbit' },
-            { id: 'rings', label: 'Rings', type: 'range', min: 4, max: 192, step: 1, value: 96, random: [48, 140],
+            { id: 'rings', label: 'Rings', type: 'range', min: 4, max: 192, step: 1, value: 128, random: [48, 140],
                 hint: 'Uses the nearest of 4, 6, 8, 12, 16, 24 and so on, so they thin out evenly' },
             { id: 'under', label: 'Underside image', type: 'checkbox', value: true,
                 hint: 'The bottom of the disk, seen by light bent right round the hole' },
@@ -121,6 +128,9 @@
             { id: 'redshift', label: 'Redshift contours', type: 'range', min: 0, max: 40, step: 1, value: 0, random: false },
             { id: 'gap', label: 'Finest spacing (mm)', type: 'range', min: 0.3, max: 2, step: 0.05, value: 0.5, random: false,
                 hint: 'Rings closer than this drop out. Keep it above the pen width' },
+            { type: 'section', label: 'Sky' },
+            { id: 'stars', label: 'Stars', type: 'range', min: 0, max: 240, step: 10, value: 80, random: [30, 120],
+                hint: 'Distant stars behind the disk. Set to 0 for the disk alone' },
         ],
 
         generate(p, ctx) {
@@ -133,6 +143,21 @@
             for (const n of [3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192]) if (Math.abs(n - p.rings) < Math.abs(gaps - p.rings)) gaps = n;
             const N = gaps + 1;
             const pens = PG.pens.count(p.pens), layers = PG.pens.layers(pens);
+            const flowRng = new PG.RNG((ctx.seed || 0) ^ 0x4b1d);
+            const phase = flowRng.range(0, TAU), eddy = flowRng.range(0, TAU);
+            const winding = TAU * geo.clamp(p.winding ?? 1.3, 0.5, 3);
+            const flow = p.structure === 'spiral' || p.structure === 'turbulent' ? geo.clamp(p.flow ?? 0.85, 0, 1) : 0;
+            const pattern = (t, psi) => {
+                let wave = Math.sin(2 * psi - winding * t + phase);
+                if (p.structure === 'turbulent') wave = 0.7 * wave + 0.3 * Math.sin(5 * psi + 0.65 * winding * t + eddy);
+                return wave;
+            };
+            const diskRadius = (r, psi) => {
+                if (!flow || r === RIN || r === rout) return r;
+                const t = (r - RIN) / (rout - RIN);
+                // Bound the radial derivative so neighboring bands never cross. Both rims stay fixed.
+                return r + (rout - RIN) * flow * 0.9 / (Math.PI + winding) * Math.sin(Math.PI * t) * pattern(t, psi);
+            };
 
             const turn = al => Math.atan2(ci, -Math.sin(al) * si);
             // Image `order` of the disk at radius r and angle psi round it: x, y, impact
@@ -141,7 +166,8 @@
                 const al = Math.atan2(Math.sin(psi) * ci, Math.cos(psi)) + order * Math.PI;
                 const b = impact(T, turn(al) + order * Math.PI, r), x = b * Math.cos(al);
                 const g = (1 + (x * si) / (r * Math.sqrt(r))) / Math.sqrt(1 - 3 / r);
-                return { x, y: -b * Math.sin(al), b, al, g, f: flux(r) / (g * g * g * g) };
+                const light = flow ? 1 - flow + flow * (0.15 + 1.85 * Math.pow((1 + pattern((r - RIN) / (rout - RIN), psi)) / 2, 2)) : 1;
+                return { x, y: -b * Math.sin(al), b, al, g, f: flux(r) * light / (g * g * g * g) };
             };
             const hidden = (order, q) => {
                 for (let m = 0; m < order; m++) {
@@ -162,7 +188,8 @@
             }
             psis.sort((a, b) => a - b);
             const psiAt = j => psis[j % M] + (j >= M ? TAU : 0);
-            const ringOf = (order, r) => psis.map(psi => image(order, r, psi));
+            const ringPoint = (order, r, psi) => image(order, order < 2 ? diskRadius(r, psi) : r, psi);
+            const ringOf = (order, r) => psis.map(psi => ringPoint(order, r, psi));
             const images = [radii.map(r => ringOf(0, r))];
             if (p.under) images.push(radii.map(r => ringOf(1, r)));
 
@@ -216,9 +243,9 @@
             const edge = (order, r, seen, gone) => {
                 for (let i = 0; i < 12; i++) {
                     const mid = (seen + gone) / 2;
-                    if (hidden(order, image(order, r, mid))) gone = mid; else seen = mid;
+                    if (hidden(order, ringPoint(order, r, mid))) gone = mid; else seen = mid;
                 }
-                return image(order, r, seen);
+                return ringPoint(order, r, seen);
             };
             images.forEach((im, order) => {
                 im.forEach((ring, k) => {
@@ -296,6 +323,40 @@
                     if (to !== at) { cur = [[s[i - 1][0], s[i - 1][1]]]; layers[order[to]].push(cur); at = to; }
                     cur.push([s[i][0], s[i][1]]);
                 }
+            }
+            // Keep sky randomness separate so adding stars never changes the disk or its colors.
+            const skyRng = new PG.RNG((ctx.seed || 0) ^ 0x735a);
+            const count = geo.clamp(Math.round(p.stars || 0), 0, 240), stars = [];
+            const clearSky = (x, y) => {
+                if (!ctx.shape.inside(x, y)) return false;
+                const dx = (x - ox) / K, dy = (y - oy) / K;
+                const qx = dx * cr + dy * sr, qy = -dx * sr + dy * cr;
+                const b = Math.hypot(qx, qy);
+                if (b < BC + gap / K) return false;
+                if (b > rout + BC) return true;
+                const gamma = turn(Math.atan2(-qy, qx));
+                for (let m = 0; m < 3; m++) {
+                    const r = radius(T, b, gamma + m * Math.PI);
+                    if (r >= RIN && r <= rout) return false;
+                }
+                return true;
+            };
+            for (let attempt = 0; stars.length < count && attempt < count * 20; attempt++) {
+                const x = skyRng.range(bb.minX, bb.maxX), y = skyRng.range(bb.minY, bb.maxY);
+                const bright = skyRng.chance(0.14), size = skyRng.range(0.28, 0.55) * (bright ? 2 : 1);
+                const clearance = size + gap * 1.5;
+                if (stars.some(s => Math.hypot(x - s.x, y - s.y) < clearance + s.size + 3)) continue;
+                if (!clearSky(x, y)) continue;
+                let clear = true;
+                for (let j = 0; j < 16 && clear; j++) {
+                    const a = TAU * j / 16;
+                    clear = clearSky(x + clearance * Math.cos(a), y + clearance * Math.sin(a));
+                }
+                if (!clear) continue;
+                stars.push({ x, y, size });
+                if (bright) {
+                    layers[0].push([[x - size, y], [x + size, y]], [[x, y - size], [x, y + size]]);
+                } else layers[0].push(geo.circle(x, y, size, 12));
             }
             return { layers };
         },

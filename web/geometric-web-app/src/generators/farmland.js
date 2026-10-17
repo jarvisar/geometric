@@ -79,6 +79,12 @@
         return geo.pointInPolygon(x, y, poly) ? -d : d;
     }
 
+    function pathNearPoly(path, poly, gap) {
+        return path.some(q => polyDist(poly, q[0], q[1]) < gap)
+            || poly.some(q => distToPath(path, q[0], q[1]) < gap)
+            || !!crossing(path, poly.concat([poly[0]]));
+    }
+
     // The line `off` meters to the left of a path
     function sidePath(pts, off) {
         return pts.map((q, i) => {
@@ -354,13 +360,12 @@
                 G.h[v] -= creek.depth * (1 - smooth(0, creek.width, d)) + 0.8 * (1 - smooth(creek.hw * 0.5, creek.hw + 1, d));
             });
         }
-        const lot = plan.lot;
-        if (lot) {
-            // level the lot to the average height over it, blending back out over 30 m
+        for (const lot of [plan.lot, ...(plan.holdings || [])]) {
+            // Level each yard, with a wider blend round the main farm.
             let z = 0, n = 0;
             G.each((v, x, y) => { if (polyDist(lot.poly, x, y) < 0) { z += G.h[v]; n++; } });
             z = n ? z / n : 0;
-            G.each((v, x, y) => { G.h[v] = geo.lerp(G.h[v], z, 1 - smooth(-2, 30, polyDist(lot.poly, x, y))); });
+            G.each((v, x, y) => { G.h[v] = geo.lerp(G.h[v], z, 1 - smooth(-2, lot === plan.lot ? 30 : 12, polyDist(lot.poly, x, y))); });
             lot.z = z;
         }
         const pond = plan.pond;
@@ -814,11 +819,11 @@
             stretch: { ang: rng.range(0, TAU), k: rng.range(1, 1.5) }, roads: [], fields: [],
         };
         const [cx, cy] = P.w(P.U * rng.range(0.42, 0.58), P.V * rng.range(0.52, 0.64));
-        const W = rng.range(54, 62), D = rng.range(46, 52);
+        const W = rng.range(78, 84), D = rng.range(70, 76);
         plan.lot = makeLot(T, cx, cy, W, D, frontAngle(T, rng));
         plan.hill = { x: cx, y: cy, r: rng.range(70, 95), h: relief * 0.7 + 3 };
         // the white road climbs from the bottom of the page in a long S to the farm's gate
-        const gate = plan.lot.F.P(rng.range(-0.2, 0.2) * W, -D / 2, 0).slice(0, 2);
+        const gate = plan.lot.F.P(0, -D / 2, 0).slice(0, 2);
         const [gu, gv] = P.uv(...gate), side = rng.sign();
         const ctrl = [P.w(gu + side * P.U * rng.range(0.25, 0.4), -30), P.w(gu + side * P.U * 0.3, gv * 0.3), P.w(gu - side * P.U * 0.25, gv * 0.62), P.w(gu - side * 12, gv - 22), gate];
         const road = smoothPath(ctrl, 5);
@@ -833,6 +838,72 @@
         plan.chapel = { x: mid[0], y: mid[1] };
         plan.creek = planCreek(T, plan, rng);
         return plan;
+    }
+
+    // Separate working yards give the lane somewhere else to go. Reserve them
+    // before shaping the ground so crops, water and trees respect their plots.
+    function planHoldings(T, plan, rng) {
+        plan.holdings = [];
+        if (!T.p.holdings) return;
+        const { P } = T, roads = plan.roads.slice(), want = T.p.size > 280 ? 2 : 1;
+        const nearest = (q, paths) => {
+            let best = null, distance = Infinity;
+            for (const r of paths) for (let i = 0; i + 1 < r.pts.length; i++) {
+                const a = r.pts[i], b = r.pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1];
+                const t = geo.clamp(((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+                const p = [a[0] + t * dx, a[1] + t * dy], d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+                if (d < distance) { best = p; distance = d; }
+            }
+            return best;
+        };
+        for (let n = 0; n < want; n++) {
+            const candidates = [];
+            for (let v = 0.16; v <= 0.88; v += 0.09) for (let u = 0.2; u <= 0.81; u += 0.1) {
+                const [x, y] = P.w(P.U * (u + rng.range(-0.025, 0.025)), P.V * v);
+                const near = nearest([x, y], roads);
+                if (!near) continue;
+                const ang = Math.atan2(near[1] - y, near[0] - x) + Math.PI / 2;
+                const lot = makeLot(T, x, y, plan.country === 'prairie' ? 54 : 48, 42, ang);
+                const samples = [lot.F.P(0, 0, 0), ...lot.poly];
+                if (!samples.every(q => P.seen(q[0], q[1], 0, 7) && P.seen(q[0], q[1], 18, 3))) continue;
+                const occupied = [plan.lot, ...plan.holdings];
+                if (occupied.some(o => pathNearPoly(o.poly.concat([o.poly[0]]), lot.poly, 18))) continue;
+                if (roads.some(r => pathNearPoly(r.pts, lot.poly, r.hw + 5))) continue;
+                if (plan.creek && pathNearPoly(plan.creek.pts, lot.poly, plan.creek.hw + 10)) continue;
+                if (plan.dike && samples.some(q => q[1] > plan.dike.y - 15)) continue;
+                if (plan.mill && polyDist(lot.poly, plan.mill.x, plan.mill.y) < 15) continue;
+                const gate = lot.F.P(0, -lot.D / 2, 0).slice(0, 2), from = nearest(gate, roads);
+                const route = [from, gate];
+                if (occupied.some(o => pathNearPoly(route, o.poly, 6))) continue;
+                if (plan.creek && (crossing(route, plan.creek.pts) || plan.creek.pts.some(q => distToPath(route, ...q) < plan.creek.hw + 4))) continue;
+                const length = Math.hypot(from[0] - gate[0], from[1] - gate[1]);
+                if (length > P.U * 0.7) continue;
+                lot.drive = { pts: [from, gate], hw: 1.7, kind: 'gravel' };
+                lot.variant = n;
+                const front = lot.F.V(0, -1, 0), facing = -front[0] * T.cam.fx - front[1] * T.cam.fy;
+                candidates.push({ lot, score: length * 0.25 + Math.abs(u - 0.5) * 12 - facing * 12 + rng.range(0, 8) });
+            }
+            candidates.sort((a, b) => a.score - b.score);
+            if (!candidates.length) break;
+            const lot = candidates[0].lot;
+            plan.holdings.push(lot);
+            plan.roads.push(lot.drive);
+        }
+        if (plan.ditches) for (const lot of plan.holdings) {
+            // Drainage goes round the nursery, with a bridge at its entrance.
+            const [x, y] = lot.F.P(0, 0, 0), u = lot.F.V(1, 0, 0), v = lot.F.V(0, 1, 0), W = lot.W + 4, D = lot.D + 4;
+            const local = p => [(p[0] - x) * u[0] + (p[1] - y) * u[1] + W / 2, (p[0] - x) * v[0] + (p[1] - y) * v[1] + D / 2];
+            plan.ditches = plan.ditches.flatMap(([a, b]) => {
+                const clip = clipSeg(local(a), local(b), W, D);
+                if (!clip) return [[a, b]];
+                const [p, q] = clip.map(c => lot.F.P(c[0] - W / 2, c[1] - D / 2, 0).slice(0, 2)), pieces = [];
+                if (Math.hypot(p[0] - a[0], p[1] - a[1]) > 0.1) pieces.push([a, p]);
+                if (Math.hypot(b[0] - q[0], b[1] - q[1]) > 0.1) pieces.push([q, b]);
+                return pieces;
+            });
+            const rim = rectPoly([-W / 2, -D / 2, W / 2, D / 2]).map(q => lot.F.P(...q, 0).slice(0, 2));
+            for (let i = 0; i < 4; i++) plan.ditches.push([rim[i], rim[(i + 1) % 4]]);
+        }
     }
 
     // Polder: level ground drained by ditches, long strips of field running
@@ -935,9 +1006,10 @@
     // lot, with a gate into some of the fields
     function hedgerows(T, plan, rng, claims) {
         const lane = plan.roads[0], creek = plan.creek, lot = plan.lot.poly, drive = plan.drive;
+        const outlying = (x, y) => plan.holdings.every(o => polyDist(o.poly, x, y) > 2 && distToPath(o.drive.pts, x, y) > o.drive.hw + 2);
         const ok = (x, y) => distToPath(lane.pts, x, y) > lane.hw + 1.2 && polyDist(lot, x, y) > 1.6
             && (!creek || distToPath(creek.pts, x, y) > creek.hw + 2.2) && distToPath(drive.pts, x, y) > drive.hw + 1.2 && !T.wet(x, y)
-            && (!plan.pond || polyDist(plan.pond.rim, x, y) > 4) && !(plan.bridge && Math.hypot(x - plan.bridge.x, y - plan.bridge.y) < plan.bridge.r);
+            && (!plan.pond || polyDist(plan.pond.rim, x, y) > 4) && outlying(x, y) && !(plan.bridge && Math.hypot(x - plan.bridge.x, y - plan.bridge.y) < plan.bridge.r);
         T.casting = true;
         for (const e of plan.edges) {
             const mid = [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2];
@@ -952,7 +1024,7 @@
             } else hedge(T, [e.a, e.b], rng, ok, claims);
         }
         const along = (x, y) => polyDist(lot, x, y) > 1.6 && (!creek || distToPath(creek.pts, x, y) > creek.hw + 1.5) && distToPath(drive.pts, x, y) > drive.hw + 1
-            && !(plan.bridge && Math.hypot(x - plan.bridge.x, y - plan.bridge.y) < plan.bridge.r);
+            && outlying(x, y) && !(plan.bridge && Math.hypot(x - plan.bridge.x, y - plan.bridge.y) < plan.bridge.r);
         for (const s of [-1, 1]) hedge(T, sidePath(lane.pts, s * (lane.hw + 1.4)), rng, along, claims);
         // round the lot, gapped for the gate
         const ring4 = lot.concat([lot[0]]).map(([x, y], i, arr) => [x, y]);
@@ -1215,12 +1287,18 @@
 
     // Pasture: grass and a herd or two grazing together, fenced in
     function pasture(T, f, rng, claims, kind) {
+        pastureShelter(T, f, rng, claims, kind);
         tufts(T, f, rng, 60);
         const inner = geo.insetConvex(f.poly, 7);
-        if (inner.length < 3) return;
-        const area = Math.abs(geo.polygonArea(inner)), n = Math.round((area / 700) * (0.2 + T.p.animals));
+        if (inner.length < 3 || T.p.animals <= 0) return;
+        const area = Math.abs(geo.polygonArea(inner)), n = Math.max(2, Math.round((area / 700) * (0.2 + T.p.animals)));
         const [x0, y0, x1, y1] = bounds(inner), herd = [];
-        const groups = Array.from({ length: rng.int(1, 3) }, () => [rng.range(x0, x1), rng.range(y0, y1)]);
+        const groups = [], wanted = rng.int(1, 3);
+        for (let i = 0; i < 30 && groups.length < wanted; i++) {
+            const x = rng.range(x0, x1), y = rng.range(y0, y1);
+            if (geo.pointInPolygon(x, y, inner) && T.free(x, y)) groups.push([x, y]);
+        }
+        if (!groups.length) return;
         const spread = Math.sqrt(area) * 0.12;
         for (let i = 0; i < n * 4 && herd.length < n; i++) {
             const g = groups[i % groups.length], x = g[0] + rng.gauss(0, spread), y = g[1] + rng.gauss(0, spread);
@@ -1234,6 +1312,36 @@
             if (kind === 'sheep') sheep(T, x, y, rng.sign());
             else if (kind === 'horses') horse(T, x, y, rng.sign(), rng);
             else cow(T, x, y, rng.sign(), rng, coat);
+        }
+    }
+
+    function pastureShelter(T, f, rng, claims, kind) {
+        if (T.p.animals <= 0 || T.pastureShelters || Math.abs(geo.polygonArea(f.poly)) < 2400) return;
+        const candidates = spots(T, f, 16, rng, 14, 0.15).map(q => ({ q,
+            d: Math.min(...T.plan.roads.map(r => distToPath(r.pts, ...q))) }));
+        candidates.sort((a, b) => a.d - b.d);
+        for (const { q: [x, y] } of candidates) {
+            const F = turned(x, y, T.G.at(x, y), frontAngle(T, rng));
+            const footprint = rectPoly([-8, -10, 8, 10]).map(q => F.P(...q, 0).slice(0, 2));
+            if (!footprint.every(q => geo.pointInPolygon(...q, f.poly) && T.keep(...q) && T.P.seen(...q, 0, 8) && claims.free(...q, 2))
+                || !claims.free(x, y, 12) || !T.keep(x, y)) continue;
+            const levels = footprint.map(q => T.G.at(...q));
+            if (Math.max(...levels) - Math.min(...levels) > 2) continue;
+            cartShed(T, F, [-7, 3, 7, 9], rng);
+            for (const [a, b] of [[[-7, 3], [-7, -9]], [[-7, -9], [-2, -9]], [[2, -9], [7, -9]], [[7, -9], [7, 3]]]) boardFence(T, F.P(...a, 0), F.P(...b, 0));
+            T.S.kind = INK;
+            T.S.box(F, -6, -4, 0, -4, 1, 0.8);
+            T.S.loop([F.P(-5.7, -3.7, 0.82), F.P(-4.3, -3.7, 0.82), F.P(-4.3, 0.7, 0.82), F.P(-5.7, 0.7, 0.82)]);
+            for (const [a, b] of [[0, -4], [4, 0]]) {
+                const [cx, cy] = F.P(a, b, 0);
+                if (kind === 'sheep') sheep(T, cx, cy, rng.sign());
+                else if (kind === 'horses') horse(T, cx, cy, rng.sign(), rng);
+                else cow(T, cx, cy, rng.sign(), rng);
+            }
+            claims.poly(footprint);
+            T.reserve(footprint);
+            T.pastureShelters++;
+            return;
         }
     }
 
@@ -2410,7 +2518,10 @@
     // Vineyard: rows of vines on wires, the leaves making a low hedge along each
     // Rows of vines and hops don't cast shadows, which would fill the field with hatching
     function vineyard(T, f) {
-        rows(T, f, f.ang, Math.max(2.6, T.p.rows * 1.8), seg => trellis(T, seg[0], seg[1], 1.6, GREEN, T.keep), T.inset + 1);
+        rows(T, f, f.ang, Math.max(2.6, T.p.rows * 1.8), (seg, i) => {
+            if (T.p.country === 'tuscan' && i % 5 === 0) dryStoneWall(T, seg, 1.2);
+            else trellis(T, seg[0], seg[1], 1.6, GREEN, T.keep);
+        }, T.inset + 1);
     }
 
     // Tulip beds: the field cut into beds along its length, each a solid
@@ -2594,32 +2705,198 @@
         return F;
     }
 
-    // The farm on its hilltop: the casale and its loggia, the hay barn, a
-    // threshing floor in front, cypresses, olives and pines round it
+    function yardWall(T, F, a, b, h = 1.1) {
+        const S = T.S, dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+        if (L < 0.1) return;
+        const nx = -dy / L * 0.3, ny = dx / L * 0.3;
+        const base = [[a[0] - nx, a[1] - ny], [b[0] - nx, b[1] - ny], [b[0] + nx, b[1] + ny], [a[0] + nx, a[1] + ny]];
+        S.kind = SOIL;
+        S.prism(base.map(q => F.P(...q, -0.6)), F.V(0, 0, h + 0.6));
+        if (T.detail && h * T.k > 0.8) S.line([F.P(a[0] - nx, a[1] - ny, h * 0.45), F.P(b[0] - nx, b[1] - ny, h * 0.45)]);
+    }
+
+    function encloseYard(T, F, W, D, h = 1.1) {
+        const x = W / 2 - 2, y = D / 2 - 2;
+        for (const [a, b] of [[[-x, -y], [-4, -y]], [[4, -y], [x, -y]], [[x, -y], [x, y]], [[x, y], [-x, y]], [[-x, y], [-x, -y]]]) yardWall(T, F, a, b, h);
+        T.S.kind = INK;
+        for (const a of [-4, 4]) {
+            T.S.box(F, a - 0.5, -y - 0.5, -0.4, a + 0.5, -y + 0.5, h + 0.9);
+            T.S.box(F, a - 0.65, -y - 0.65, h + 0.9, a + 0.65, -y + 0.65, h + 1.15);
+        }
+    }
+
+    function well(T, F, a, b) {
+        const S = T.S, [x, y, z] = F.P(a, b, 0), r = 1.3;
+        S.kind = INK;
+        S.lathe(x, y, [[r, z], [r, z + 0.9], [r + 0.15, z + 1.05]], 16);
+        S.loop(ring(16, (c, s) => [x + r * 0.75 * c, y + r * 0.75 * s, z + 1.06]));
+        for (const u of [-1.7, 1.7]) S.box(F, a + u - 0.13, b - 0.13, 0, a + u + 0.13, b + 0.13, 3.4);
+        S.line([F.P(a - 1.7, b, 2.1), F.P(a + 1.7, b, 2.1)]);
+        S.line([F.P(a, b, 2.1), F.P(a, b, 0.65)]);
+        shadeGable(T, F, gableRoof(T, F, [a - 2.2, b - 1.7, a + 2.2, b + 1.7], 3.4, true, geo.rad(28), null, { attic: false }));
+    }
+
+    function pergola(T, F, fp) {
+        const S = T.S, [a0, b0, a1, b1] = fp, h = 3.2;
+        S.kind = SOIL;
+        for (const a of [a0, (a0 + a1) / 2, a1]) for (const b of [b0, b1]) S.box(F, a - 0.15, b - 0.15, 0, a + 0.15, b + 0.15, h);
+        for (const b of [b0, b1]) S.line([F.P(a0 - 0.4, b, h), F.P(a1 + 0.4, b, h)]);
+        const n = Math.max(3, Math.floor((a1 - a0) * onPaper(T, ...F.V(1, 0, 0)) / 1.3));
+        for (let i = 0; i <= n; i++) {
+            const a = geo.lerp(a0, a1, i / n);
+            S.line([F.P(a, b0 - 0.4, h), F.P(a, b1 + 0.4, h)]);
+        }
+        S.kind = GREEN;
+        for (const v of [0.25, 0.65]) S.line(Array.from({ length: n * 3 + 1 }, (_, i) => F.P(geo.lerp(a0, a1, i / (n * 3)), geo.lerp(b0, b1, v) + 0.5 * Math.sin(i * 1.4), h + 0.2)));
+        S.kind = SOIL;
+        const a = (a0 + a1) / 2, b = (b0 + b1) / 2;
+        S.box(F, a - 2.4, b - 0.7, 0.9, a + 2.4, b + 0.7, 1.1);
+        for (const db of [-1.4, 1.4]) S.box(F, a - 2.4, b + db - 0.25, 0.5, a + 2.4, b + db + 0.25, 0.7);
+    }
+
+    function wineCellar(T, F, fp, rng) {
+        const S = T.S, [a0, b0, a1, b1] = fp, h = 5;
+        S.kind = INK;
+        kit.plinth(T, F, fp, 0.35, 0.2);
+        S.box(F, a0, b0, 0.35, a1, b1, h);
+        shadeGable(T, F, gableRoof(T, F, fp, h, true, geo.rad(23), rng, { attic: false }));
+        const W = wall(F, 0, fp), L = a1 - a0;
+        if (T.sees(W.n)) {
+            for (const s of [L * 0.25, L * 0.75]) kit.arch(T, W.at, s, 0.35, 2.8, 3.6);
+            pane(T, W.at, L / 2 - 0.4, 3.5, 0.8, 0.8, null);
+        }
+        for (const side of [1, 2, 3]) {
+            const wallSide = wall(F, side, fp);
+            if (!T.sees(wallSide.n)) continue;
+            const n = Math.max(1, Math.floor(wallSide.len / 4.5));
+            for (let i = 0; i < n; i++) {
+                const s = wallSide.len * (i + 0.5) / n;
+                kit.arch(T, wallSide.at, s, 1.7, 1.1, 1.8);
+            }
+            S.line([wallSide.at(0, 0.8), wallSide.at(wallSide.len, 0.8)]);
+        }
+        leanTo(T, W, 0.5, L - 0.5, 3.5, 3.4, 2.7);
+        S.kind = SOIL;
+        for (const a of [a0 + 2, a0 + 4.5, a1 - 2]) {
+            const [x, y, z] = F.P(a, b0 - 1.7, 0.2);
+            S.lathe(x, y, [[0.7, z], [0.9, z + 0.7], [0.7, z + 1.5]], 12);
+            for (const h of [0.3, 1.2]) S.line(frontArc(T, x, y, z + h, 0.85));
+        }
+    }
+
+    function greenhouse(T, F, fp) {
+        const S = T.S, [a0, b0, a1, b1] = fp, h = 2.5, ridge = 4.6, bm = (b0 + b1) / 2;
+        S.kind = INK;
+        S.box(F, a0, b0, 0, a1, b1, 0.4);
+        S.prism([F.P(a0, b0, 0.4), F.P(a0, b1, 0.4), F.P(a0, b1, h), F.P(a0, bm, ridge), F.P(a0, b0, h)], F.V(a1 - a0, 0, 0));
+        const n = Math.max(3, Math.floor((a1 - a0) * onPaper(T, ...F.V(1, 0, 0)) / 1.5));
+        for (let i = 1; i < n; i++) {
+            const a = geo.lerp(a0, a1, i / n);
+            S.line([F.P(a, b0 - 0.03, 0.4), F.P(a, b0 - 0.03, h), F.P(a, bm, ridge + 0.03), F.P(a, b1 + 0.03, h), F.P(a, b1 + 0.03, 0.4)]);
+        }
+        for (const b of [b0, b1]) S.line([F.P(a0, b, 1.4), F.P(a1, b, 1.4)]);
+        S.kind = GREEN;
+        for (const b of [(b0 + bm) / 2, (bm + b1) / 2]) S.line([F.P(a0, b, (h + ridge) / 2 + 0.04), F.P(a1, b, (h + ridge) / 2 + 0.04)]);
+        S.kind = INK;
+        const W = wall(F, T.sees(F.V(-1, 0, 0)) ? 3 : 1, fp);
+        if (T.sees(W.n)) door(T, W.at, W.len / 2, 0.4, 1.3, 2.1, true);
+    }
+
+    function drawHoldings(T, plan, rng, claims) {
+        const S = T.S;
+        for (const lot of plan.holdings) {
+            const [x, y] = lot.F.P(0, 0, 0), F = turned(x, y, lot.z, lot.ang), xy = (a, b) => F.P(a, b, 0).slice(0, 2);
+            T.casting = true;
+            if (plan.country === 'tuscan') {
+                encloseYard(T, F, lot.W, lot.D);
+                if (lot.variant === 0) {
+                    casale(T, F, [-19, 6, -3, 16], rng);
+                    wineCellar(T, F, [4, 7, 19, 16], rng);
+                    loggiaWing(T, F, [-19, -9, -11, 3], rng);
+                    well(T, F, 2, -1);
+                    pergola(T, F, [8, -15, 19, -7]);
+                } else {
+                    fienile(T, F, [-18, 5, 1, 16], rng);
+                    garden(T, F, 6, 1, 19, 16);
+                    haystack(T, ...xy(-12, -4));
+                    baleStack(T, ...xy(-5, -4), lot.ang, 4);
+                }
+                for (const a of [-20, 20]) cypress(T, ...xy(a, -15), rng, 11);
+            } else if (plan.country === 'prairie') {
+                machineShed(T, F, [-22, 5, 1, 17], rng);
+                const tops = [];
+                for (const a of [8, 19]) {
+                    const [bx, by] = xy(a, 10);
+                    grainBin(T, bx, by, lot.z, 4.3, 9);
+                    tops.push([bx, by, lot.z + 11.8]);
+                }
+                grainLeg(T, ...xy(13.5, 2), lot.z, tops);
+                if (T.p.work > 0) {
+                    const tf = tractor(T, ...xy(6, -8), lot.ang, GREEN);
+                    grainCart(T, tf);
+                }
+                baleStack(T, ...xy(-16, -2), lot.ang, 5);
+                boardFence(T, F.P(-25, -17, 0), F.P(-25, 17, 0));
+                shelterbelt(T, xy(-23, 19), xy(23, 19), F.V(0, -1, 0), rng, claims, 1);
+            } else {
+                encloseYard(T, F, lot.W, lot.D, 0.8);
+                greenhouse(T, F, [-19, 7, 3, 16]);
+                greenhouse(T, F, [-19, -5, 3, 4]);
+                if (plan.country === 'hedgerows') stoneHouse(T, F, [8, 5, 19, 15], rng);
+                else machineShed(T, F, [7, 6, 20, 16], rng);
+                garden(T, F, 8, -12, 19, 1);
+                garden(T, F, -19, -16, -5, -8);
+            }
+            S.kind = SOIL;
+            const nursery = plan.country === 'hedgerows' || plan.country === 'polder';
+            for (const s of [-1, 1]) S.line([F.P(s * 1.3, -lot.D / 2, 0.08), F.P(nursery ? 5 + s : s * 2, -7, 0.08), F.P(nursery ? 5 + s : s * 5, 2, 0.08)]);
+            if (T.p.people > 0) {
+                person(T, ...F.P(3, -7, 0), rng);
+                vehicle(T, ...xy(-5, -12), lot.ang, 'pickup', rng);
+            }
+            claims.poly(lot.poly);
+            T.casting = false;
+        }
+    }
+
+    // Buildings face a shared working court, with a garden and pergola at
+    // the front. The gate stays clear all the way to the winery.
     function tuscanFarm(T, plan, rng, claims) {
         const S = T.S, lot = plan.lot, z = lot.z, W = lot.W, D = lot.D;
         const F = turned(...lot.F.P(0, 0, 0).slice(0, 2), z, lot.ang), P = F.P, xy = (a, b) => P(a, b, 0).slice(0, 2);
         const m = T.sees(F.V(1, 0, 0)) ? 1 : -1;
         const fpm = (a0, b0, a1, b1) => (m > 0 ? [a0, b0, a1, b1] : [-a1, b0, -a0, b1]);
         T.casting = true;
-        const L = rng.range(15, 18), Dh = rng.range(9, 10.5), hb = -D / 2 + 16;
+        encloseYard(T, F, W, D, 1.35);
+        const L = rng.range(22, 25), Dh = rng.range(12, 14), hb = D / 2 - 25;
         const hfp = fpm(-W / 2 + 8, hb, -W / 2 + 8 + L, hb + Dh);
         casale(T, F, hfp, rng);
         // the wing off the far end with its loggia facing the front
-        const wfp = fpm(-W / 2 + 8 + L, hb + 1.5, -W / 2 + 8 + L + 9, hb + 7.5);
+        const wfp = fpm(-W / 2 + 8 + L, hb + 1.5, -W / 2 + 8 + L + 11, hb + 10);
         loggiaWing(T, F, wfp, rng);
         // hay barn back on the other side
-        fienile(T, F, fpm(W / 2 - 17, D / 2 - 14, W / 2 - 6, D / 2 - 6), rng);
+        fienile(T, F, fpm(W / 2 - 20, D / 2 - 21, W / 2 - 6, D / 2 - 7), rng);
+        const CF = turned(...xy(m * (W / 2 - 13), -3), z, lot.ang - m * Math.PI / 2);
+        wineCellar(T, CF, [-12, -5, 12, 5], rng);
+        const gfp = fpm(-W / 2 + 7, -D / 2 + 7, -12, -8);
+        garden(T, F, ...gfp);
+        for (const [a, b] of [[[gfp[0], gfp[1]], [gfp[0], gfp[3]]], [[gfp[0], gfp[3]], [gfp[2], gfp[3]]], [[gfp[2], gfp[1]], [gfp[2], gfp[3]]]]) yardWall(T, F, a, b, 0.7);
+        pergola(T, F, fpm(9, -D / 2 + 8, W / 2 - 8, -D / 2 + 17));
+        well(T, F, m * -8, 3);
         // threshing floor: a round of paving in front of the house
         S.kind = INK;
-        const [tx, ty] = xy(m * (-W / 2 + 8 + L * 0.5), -D / 2 + 8);
-        S.loop(ring(36, (c, s) => [tx + 5 * c, ty + 5 * s, z + 0.05]));
-        if (T.detail) S.loop(ring(28, (c, s) => [tx + 4.4 * c, ty + 4.4 * s, z + 0.05]));
-        claims.take(tx, ty, 6);
+        const [tx, ty] = xy(m * -1, -12);
+        S.loop(ring(40, (c, s) => [tx + 7 * c, ty + 7 * s, z + 0.08]));
+        S.loop(ring(40, (c, s) => [tx + 6.3 * c, ty + 6.3 * s, z + 0.08]));
+        if (T.detail) for (let i = 0; i < 16; i++) {
+            const a = TAU * i / 16;
+            S.line([[tx + 6.3 * Math.cos(a), ty + 6.3 * Math.sin(a), z + 0.08], [tx + 7 * Math.cos(a), ty + 7 * Math.sin(a), z + 0.08]]);
+        }
+        claims.take(tx, ty, 8);
         // a straw rick and a few bales by the barn
-        const [rx, ry] = xy(m * (W / 2 - 10), D / 2 - 20);
+        const [rx, ry] = xy(m * (W / 2 - 12), D / 2 - 4);
         if (claims.free(rx, ry, 3)) { claims.take(rx, ry, 3); haystack(T, rx, ry); }
-        baleStack(T, ...xy(m * (W / 2 - 18), -D / 2 + 10), lot.ang + rng.range(-0.3, 0.3), 3);
+        baleStack(T, ...xy(m * (W / 2 - 24), D / 2 - 9), lot.ang, 4);
         // cypresses and a pine round the house
         for (let i = 0; i < rng.int(3, 6); i++) {
             const [x, y] = xy(m * rng.range(-W / 2 + 2, -W / 2 + 6), rng.range(-D / 2 + 4, D / 2 - 4));
@@ -2627,23 +2904,36 @@
         }
         const [px, py] = xy(m * rng.range(0, 10), D / 2 - 4);
         if (claims.free(px, py, 4)) { claims.take(px, py, 4); stonePine(T, px, py, rng); }
-        for (let i = 0; i < 5; i++) {
-            const [x, y] = xy(m * rng.range(-6, W / 2 - 4), rng.range(-D / 2 + 3, -D / 2 + 7));
+        for (let i = 0; i < 4; i++) {
+            const [x, y] = xy(m * (-W / 2 + 7 + i * 6), -D / 2 + 3.5);
             if (claims.free(x, y, 2.6)) { claims.take(x, y, 2.8); olive(T, x, y, rng); }
         }
-        kit.car(T, ...xy(m * (W / 2 - 22), -D / 2 + 14), z, 0, rng, false, 'sedan');
-        tractor(T, ...xy(m * (W / 2 - 12), D / 2 - 18), lot.ang + rng.range(-0.5, 0.5), rng.chance(0.5) ? RED : GREEN);
-        for (let i = rng.int(1, 3); i > 0; i--) {
-            const [x, y] = xy(m * rng.range(-W / 2 + 10, 8), rng.range(-D / 2 + 5, -D / 2 + 13));
+        S.kind = SOIL;
+        for (const s of [-1, 1]) S.line([[0, -D / 2], [5, -25], [11, -12], [11, 2], [17, 8]].map(([a, b]) => P(m * (a + s), b, 0.08)));
+        if (T.p.people > 0) kit.car(T, ...xy(m * -24, -2), z, 0, rng, false, 'sedan');
+        if (T.p.work > 0) tractor(T, ...xy(m * 13, 9), lot.ang + Math.PI / 2, RED);
+        for (let i = Math.ceil(T.p.people * 4); i > 0; i--) {
+            const [x, y] = xy(m * rng.range(-5, 10), rng.range(-3, 5));
             if (claims.free(x, y, 1)) person(T, x, y, z, rng);
         }
-        dog(T, ...xy(m * rng.range(-4, 4), -D / 2 + 12), z, rng.sign());
+        if (T.p.animals > 0) dog(T, ...xy(m * 6, -5), z, rng.sign());
         T.casting = false;
     }
 
     // Cypresses in pairs along the white road, and the chapel at the bend
     function tuscanEdges(T, plan, rng, claims) {
         const road = plan.roads[0], cum = runLength(road.pts), L = cum[cum.length - 1];
+        const wallRng = new PG.RNG(hash(T.seed, 21));
+        for (const edge of cellEdges(plan.fields.map(f => f.poly))) {
+            const { a, b } = edge, mid = geo.lerpPt(a, b, 0.5), len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+            if (edge.cells.length < 2 || len < 18 || !T.P.seen(...mid, 0, -30) || !wallRng.chance(0.8)) continue;
+            if (len > 32 && wallRng.chance(0.3)) {
+                const q0 = geo.lerpPt(a, b, 0.5 - 2.4 / len), q1 = geo.lerpPt(a, b, 0.5 + 2.4 / len);
+                dryStoneWall(T, [a, q0]);
+                dryStoneWall(T, [q1, b]);
+                if (T.keep(...mid)) fieldGate(T, q0, q1, true);
+            } else dryStoneWall(T, [a, b]);
+        }
         T.casting = true;
         if (plan.chapel) {
             const { x, y } = plan.chapel;
@@ -2654,7 +2944,7 @@
             let nx = -(b[1] - a[1]) / l, ny = (b[0] - a[0]) / l;
             if (nx * T.cam.fx + ny * T.cam.fy < 0) { nx = -nx; ny = -ny; }
             const cx = x + nx * 11, cy = y + ny * 11;
-            if (T.P.seen(cx, cy, 0, 5) && claims.free(cx, cy, 6)) {
+            if (T.P.seen(cx, cy, 0, 5) && T.keep(cx, cy) && claims.free(cx, cy, 9)) {
                 claims.take(cx, cy, 7);
                 chapel(T, cx, cy, Math.atan2(-nx, ny), rng);
                 // a cypress either side, set back behind its front
@@ -2671,12 +2961,27 @@
                 let i = 0;
                 while (i + 2 < sc.length && sc[i + 1] < d) i++;
                 const [x, y] = geo.lerpPt(side[i], side[i + 1], (d - sc[i]) / (sc[i + 1] - sc[i] || 1));
-                if (!T.P.seen(x, y, 0, -16) || !claims.free(x, y, 1.4) || polyDist(plan.lot.poly, x, y) < 2) continue;
+                if (!T.P.seen(x, y, 0, -16) || !claims.free(x, y, 1.4) || polyDist(plan.lot.poly, x, y) < 2 || plan.holdings.some(lot => polyDist(lot.poly, x, y) < 3)) continue;
                 claims.take(x, y, 1.6);
                 cypress(T, x, y, rng);
             }
         }
         T.casting = false;
+    }
+
+    function dryStoneWall(T, pts, h = 1) {
+        const S = T.S, [a, b] = pts, len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const n = Math.max(1, Math.ceil(len / T.drapeStep));
+        S.kind = SOIL;
+        lay(T, pts, h, T.keep);
+        if (h * T.k * T.cam.ce > 0.5) lay(T, pts, 0.08, T.keep);
+        // Short planar faces follow the terrain without exposing their seams.
+        for (let i = 0; i < n; i++) {
+            const p = geo.lerpPt(a, b, i / n), q = geo.lerpPt(a, b, (i + 1) / n);
+            if (!T.keep(...p) || !T.keep(...q) || !T.P.seen(...p, 0, -4)) continue;
+            const zp = T.G.at(...p), zq = T.G.at(...q);
+            S.face([[...p, zp], [...q, zq], [...q, zq + h], [...p, zp + h]], false);
+        }
     }
 
     // Trees standing out in the fields here and there: pines on the
@@ -2892,7 +3197,8 @@
         const S = T.S, lot = plan.lot.poly, road = plan.roads[0];
         const ok = (x, y) => polyDist(lot, x, y) > 0.5 && !(Math.abs(y - road.pts[0][1]) < road.hw + 0.6) && distToPath(plan.drive.pts, x, y) > plan.drive.hw + 0.4;
         S.kind = WATER;
-        for (const d of plan.ditches) for (const s of [-1, 1]) lay(T, sidePath(d, s * 1.0), 0.05, ok);
+        for (const d of plan.ditches) for (const s of [-1, 1]) lay(T, sidePath(d, s * 1.0), 0.05, (x, y) => ok(x, y) && !T.onRoad(x, y));
+        for (const lot of plan.holdings) for (const d of plan.ditches) culvert(T, lot.drive, { pts: d, hw: 1 });
         // the farm bridge over the ditch by the road
         const [dx, dy] = plan.drive.pts[0];
         S.kind = INK;
@@ -2904,7 +3210,7 @@
         // poplars along the road on the far side
         for (let x = road.pts[0][0] + rng.range(0, 9); x < road.pts[1][0]; x += 9) {
             const y = road.pts[0][1] + road.hw + 4.6;
-            if (!T.P.seen(x, y, 0, -22) || polyDist(lot, x, y) < 3 || !claims.free(x, y, 2) || Math.abs(x - dx) < 5) continue;
+            if (!T.P.seen(x, y, 0, -22) || polyDist(lot, x, y) < 3 || !claims.free(x, y, 2) || Math.abs(x - dx) < 5 || plan.holdings.some(o => distToPath(o.drive.pts, x, y) < 5)) continue;
             claims.take(x, y, 2);
             poplar(T, x, y, rng);
         }
@@ -3420,7 +3726,7 @@
         const { P } = T;
         const options = plan.fields.filter(f => {
             const [cx, cy] = geo.centroid(f.poly);
-            return Math.abs(geo.polygonArea(f.poly)) > 1500 && P.seen(cx, cy, 0, 15) && polyDist(plan.lot.poly, cx, cy) > 45 && (!plan.creek || distToPath(plan.creek.pts, cx, cy) > 40)
+            return Math.abs(geo.polygonArea(f.poly)) > 1500 && P.seen(cx, cy, 0, 15) && polyDist(plan.lot.poly, cx, cy) > 45 && plan.holdings.every(lot => polyDist(lot.poly, cx, cy) > 24) && (!plan.creek || distToPath(plan.creek.pts, cx, cy) > 40)
                 && plan.roads.every(r => distToPath(r.pts, cx, cy) > 25);
         });
         if (!options.length) return;
@@ -3436,6 +3742,7 @@
         const rng = new PG.RNG(hash(seed, 1));
         const plan = C.plan(T, rng);
         T.plan = plan;
+        planHoldings(T, plan, new PG.RNG(hash(seed, 20)));
         if (p.pond) placePond(T, plan, new PG.RNG(hash(seed, 6)));
         landscape(T, plan, new PG.RNG(hash(seed, 2)));
         drawGround(T);
@@ -3444,15 +3751,18 @@
         for (const r of plan.roads) { keep.line(r.pts, r.hw + (r.hedged ? 4 : 2)); roadMask.line(r.pts, r.hw + 0.5); }
         if (plan.creek) { keep.line(plan.creek.pts, plan.creek.hw + 3); water.line(plan.creek.pts, plan.creek.hw); }
         if (plan.dike) { const [r0, r1] = plan.dike.river; water.poly(rectPoly([P.x0 - 80, r0, P.x1 + 80, r1])); }
-        if (plan.ditches) for (const d of plan.ditches) water.line(d, 1.0);
+        if (plan.ditches) for (const d of plan.ditches) { water.line(d, 1.0); keep.line(d, 1.6); }
         if (plan.pond) {
             const [cx, cy] = geo.centroid(plan.pond.rim);
             keep.poly(plan.pond.rim.map(([x, y]) => { const l = Math.hypot(x - cx, y - cy) || 1; return [x + ((x - cx) / l) * 3.5, y + ((y - cy) / l) * 3.5]; }));
             water.poly(plan.pond.rim);
         }
         keep.poly(plan.lot.poly);
+        for (const lot of plan.holdings) keep.poly(lot.poly);
         if (plan.drive) keep.line(plan.drive.pts, plan.drive.hw + 1);
         T.keep = (x, y) => !keep.hit(x, y);
+        T.reserve = poly => keep.poly(poly);
+        T.pastureShelters = 0;
         T.free = (x, y) => !keep.hit(x, y) && !shade.hit(x, y);
         T.wet = (x, y) => water.hit(x, y);
         T.onRoad = (x, y) => roadMask.hit(x, y);
@@ -3463,6 +3773,8 @@
 
         // the farm, the roads and the water
         C.farm(T, plan, new PG.RNG(hash(seed, 4)), claims);
+        claims.poly(plan.lot.poly);
+        drawHoldings(T, plan, new PG.RNG(hash(seed, 22)), claims);
         S.kind = INK;
         const d = plan.drive;
         if (d) for (const s of [-1, 1]) lay(T, sidePath(d.pts, s * d.hw), 0.1, (x, y) => !T.onRoad(x, y));
@@ -3536,6 +3848,7 @@
             // screen boxes of the things the balloon shouldn't hang in front of
             const avoid = [], box = pts => { const q = pts.map(([x, y, z]) => T.cam.project(x, y, z)), b = bounds(q); avoid.push([b[0] - 4, b[1] - 4, b[2] + 4, b[3] + 4]); };
             box(plan.lot.poly.flatMap(([x, y]) => [[x, y, plan.lot.z], [x, y, plan.lot.z + 22]]));
+            for (const lot of plan.holdings) box(lot.poly.flatMap(([x, y]) => [[x, y, lot.z], [x, y, lot.z + 18]]));
             if (plan.mill) box([[plan.mill.x - 13, plan.mill.y, 0], [plan.mill.x + 13, plan.mill.y, 34]]);
             if (plan.chapelAt) box([[plan.chapelAt[0] - 6, plan.chapelAt[1], T.G.at(...plan.chapelAt)], [plan.chapelAt[0] + 6, plan.chapelAt[1], T.G.at(...plan.chapelAt) + 16]]);
             if (arng.chance(0.75)) balloon(T, arng, avoid);
@@ -3585,6 +3898,8 @@
                 options: [['spring', 'Spring'], ['summer', 'Summer'], ['harvest', 'Harvest']] },
             { id: 'hills', label: 'Rolling hills', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.3, 1], show: p => p.country !== 'polder' },
             { id: 'fieldSize', label: 'Field size', type: 'range', min: 0.5, max: 1.6, step: 0.01, value: 1, random: [0.7, 1.3] },
+            { id: 'holdings', label: 'Outlying farmyards', type: 'checkbox', value: true, random: 0.9,
+                hint: 'Connected cottages and a winery, a grain yard, or glasshouses and market gardens. Wider views can fit two' },
             { id: 'creek', label: 'Creek', type: 'checkbox', value: true, random: 0.75, show: p => p.country !== 'polder',
                 hint: 'The polder has ditches and a river behind the dike instead' },
             { id: 'pond', label: 'Pond', type: 'checkbox', value: true, random: 0.6 },
@@ -3636,7 +3951,7 @@
             const cot = 1 / Math.tan(geo.rad(p.sun)), sd = unit([0.85 * r[0] - 0.4 * f[0], 0.85 * r[1] - 0.4 * f[1], 0]);
             const sun = [sd[0] * cot, sd[1] * cot], toSun = unit([-sun[0], -sun[1], 1]);
             const T = {
-                S, G, P, cam, p, k, W, H, sun,
+                S, G, P, cam, p, k, W, H, sun, seed,
                 season: p.season,
                 detail: p.detail,
                 sees: n => cam.facing(n[0], n[1], n[2]),

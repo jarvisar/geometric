@@ -46,7 +46,7 @@ jobs:
           echo '{ "build": "${{ github.sha }}" }' > _site/version.json
 
       # Nothing is published if these fail. They run after the build so check-generation tests the
-      # worker bundle that ships. The slower scene suites (boundaries, examples, alpine) and the
+      # worker bundle that ships. The slowest suites (boundaries, examples, alpine) and the
       # browser smoke tests are still run locally.
       - name: Run checks
         working-directory: web/geometric-web-app
@@ -59,6 +59,10 @@ jobs:
           node scripts/check-pens.js
           node scripts/check-castle.js
           node scripts/check-moonbase.js
+          node scripts/check-stadium.js
+          node scripts/check-farmland.js
+          node scripts/check-blackhole.js
+          node scripts/check-overlap.js
 
       - uses: actions/configure-pages@v5
 

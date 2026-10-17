@@ -23,6 +23,7 @@
         ['4×6 in', 101.6, 152.4], ['5×7 in', 127, 177.8], ['9×12 in', 228.6, 304.8], ['11×14 in', 279.4, 355.6],
         ['Square 20 cm', 200, 200], ['Square 12 in', 304.8, 304.8], ['custom', 0, 0],
     ];
+    settings.pngDpis = [96, 150, 300, 600, 1200];
     settings.defaults = () => ({
         v: 3, gen: 'spirograph', params: {}, locks: {}, images: {}, seed: 1,
         paper: { size: 'A4', landscape: false, w: 210, h: 297, margin: 15, color: '#fbfaf6' },
@@ -32,7 +33,7 @@
         },
         pens: PG.pens.sets.fineliner.colors.map((color, i) => ({ name: `Pen ${i + 1}`, color, width: 0.35, visible: true })),
         opt: { merge: true, mergeTol: 0.1, simplify: true, simplifyTol: 0.02, sort: true, minLength: 0, overlap: false, overlapPct: 100, overlapMin: 1 },
-        view: { margin: false, penWidth: true },
+        view: { margin: false, penWidth: true, pngDpi: 600 },
         ui: { tab: 'design', open: { paper: true, comp: true, pens: true }, paramClosed: [] },
     });
 
@@ -66,7 +67,7 @@
             merge: boolean, mergeTol: number(0.01, 1), simplify: boolean, simplifyTol: number(0.005, 0.5),
             sort: boolean, minLength: number(0, 5), overlap: boolean, overlapPct: number(25, 100), overlapMin: number(0.2, 10),
         },
-        view: { margin: boolean, penWidth: boolean },
+        view: { margin: boolean, penWidth: boolean, pngDpi: choice(settings.pngDpis) },
         pen: { name: string(200), color, width: number(0.05, 5), visible: boolean },
     };
 
@@ -181,7 +182,7 @@
                 next.ui.paramClosed = [...new Set(obj.ui.paramClosed.map(k => string(200)(k, 'collapsed section')))];
             }
             if (own(obj.ui, 'open')) fields(next.ui.open, obj.ui.open,
-                Object.fromEntries(['paper', 'comp', 'grid', 'pens', 'opt', 'snaps'].map(k => [k, boolean])), 'ui.open');
+                Object.fromEntries(['paper', 'comp', 'grid', 'pens', 'opt', 'png', 'snaps'].map(k => [k, boolean])), 'ui.open');
         }
         if (next.paper.size !== 'custom') {
             const paper = settings.papers.find(p => p[0] === next.paper.size);
