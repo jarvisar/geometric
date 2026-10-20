@@ -141,6 +141,10 @@ kbd {
 .note { font-size: 13px; color: var(--muted); }
 .credit { margin-top: 40px; text-align: center; }
 .credit .support-links { display: block; margin-top: 4px; font-size: 12px; }
+.credit .coffee { color: #ffd23f; text-decoration-color: rgba(255, 210, 63, 0.35); }
+.credit .coffee:hover { color: #ffe27a; text-decoration-color: currentColor; }
+.credit .patreon { color: #ff5f66; text-decoration-color: rgba(255, 95, 102, 0.35); }
+.credit .patreon:hover { color: #ff858a; text-decoration-color: currentColor; }
 
 .shot { margin: 28px 0; border: 1px solid #000; border-radius: 4px; overflow: hidden; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5); }
 

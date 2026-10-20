@@ -286,7 +286,10 @@ await open('index.html');
 await helpers();
 await until(`window.__cleanup === 'before-check'`, 'cleanup did not start');
 // This tab saves its own session as it starts. The other tab's save has to come after that.
-await until(`!!plotterApp.result && window.__savedAt && Date.now() - window.__savedAt > 600`, 'this tab did not save');
+// This tab sits behind the other one, where Chrome holds timers back, so a quiet stretch doesn't
+// mean its save went out. A late one would overwrite the other tab's. pagehide flushes it now.
+await until(`!!plotterApp.result && document.querySelector('#busy').hidden && !!window.__savedAt`, 'this tab did not save');
+await evaluate(`dispatchEvent(new Event('pagehide'))`);
 await inTab(other.session, `plotterApp.undo()`);
 await untilIn(other.session, `JSON.parse(localStorage.getItem('plotter-geometry:state:v1'))?.images?.image?.image === '${older}'`, 'undo was not saved');
 await protocol('Target.closeTarget', { targetId: other.targetId });

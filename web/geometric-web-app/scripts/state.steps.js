@@ -3,6 +3,11 @@ await open('index.html');
 await sleep(400);
 const assert = (ok, message) => { if (!ok) throw new Error(message); };
 const check = async (expr, message) => assert(await evaluate(expr), message);
+const until = async (expr, message) => {
+    const end = Date.now() + 10000;
+    while (Date.now() < end) { if (await evaluate(expr)) return; await sleep(50); }
+    throw new Error(message);
+};
 const installHelpers = async () => evaluate(`
     window.__downloads = [];
     const create = URL.createObjectURL;
@@ -89,7 +94,8 @@ await check(`(() => {
 })()`, 'snapshot recipe and thumbnail did not include pending edit');
 await sleep(350);
 await click('#snapGrid .snap:last-child .snap-restore');
-await check(`plotterApp.state.params.spirograph.R === 96`, 'snapshot restore failed');
+// Restore generates the drawing in a worker before applying it, so give it time
+await until(`plotterApp.state.params.spirograph.R === 96`, 'snapshot restore failed');
 await evaluate(`plotterApp.undo()`);
 await sleep(100);
 await check(`plotterApp.state.params.spirograph.R === 80`, 'snapshot restore could not be undone');
@@ -127,8 +133,7 @@ await click('#snapshotBtn');
 await evaluate(`plotterApp.resetAll()`);
 await sleep(300);
 await click('#snapGrid .snap:first-child .snap-restore');
-await sleep(400);
-await check(`plotterApp.state.opt.simplifyTol === 0.5 && !plotterApp.state.pens[1].visible`, 'snapshot omitted output settings');
+await until(`plotterApp.state.opt.simplifyTol === 0.5 && !plotterApp.state.pens[1].visible`, 'snapshot omitted output settings');
 log('SVG, JSON and snapshot round trips preserve output settings and visible geometry');
 
 await evaluate(`window.__stateBeforeBad = JSON.stringify(plotterApp.state); window.__resultBeforeBad = plotterApp.result;`);

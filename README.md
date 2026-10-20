@@ -40,3 +40,7 @@ npm start
 ```
 
 See [GENERATORS.md](web/geometric-web-app/GENERATORS.md) for instructions on adding designs.
+
+## Support
+
+If you get some use out of it, you can [buy me a coffee](https://buymeacoffee.com/jarvizar) or support it on [Patreon](https://www.patreon.com/Jarvizar).

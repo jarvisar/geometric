@@ -11,7 +11,7 @@
     const L = 100, EN = 65;
     const NB = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
     // logical line groups, mapped onto pens at the end
-    const WATER = 0, COAST = 1, LOW = 2, SECTION = 5, ROCK = 6, STRATA = 7, NOTES = 8;
+    const WATER = 0, COAST = 1, LOW = 2, SECTION = 5, ROCK = 6, STRATA = 7, NOTES = 8, RIVER = 9;
 
     // ------------------------------------------------------------------
     // Terrain
@@ -143,6 +143,10 @@
             } else if (kind === 'volcano') {
                 const r = Math.hypot(wu - cx0, wv - cy0);
                 up = Math.max(0, 1 - r / 0.48) ** 1.3 * (0.8 + 0.2 * ridged(wu, wv, 2));
+            } else if (kind === 'mesa') {
+                // a broad table land with a ragged rim, for the canyons to cut back into
+                const e = Math.min(wu, wv, 1 - wu, 1 - wv) + 0.12 * N2.fbm2(u * 3 - 9, v * 3 + 4, 3);
+                up = geo.smoothstep(0.03, 0.24, e) * (0.85 + 0.15 * ridged(wu, wv, 2));
             } else {
                 const du = wu - cx0, dv = wv - cy0;
                 up = Math.max(0, 1 - Math.hypot(du, dv) / 0.45) ** 1.6;
@@ -194,10 +198,10 @@
         const cut = new Float64Array(N), a0 = Math.log(12), a1 = Math.log(N * (kind === 'alpine' ? 0.03 : 0.06));
         for (let i = 0; i < N; i++) cut[i] = geo.smoothstep(a0, a1, Math.log(area[i]));
         for (let pass = 0; pass < 2; pass++) blur(cut, EN, 2);
-        const depth = { fjords: 0.55, alpine: 0.42, archipelago: 0.12, volcano: 0.08 }[kind] * (hi - lo);
+        const depth = { fjords: 0.55, alpine: 0.42, archipelago: 0.12, volcano: 0.08, mesa: 0.2 }[kind] * (hi - lo);
         // Ground far from any uplift sinks, so straits between islands run deep.
         // Blurred so the sea floor keeps falling away instead of going flat.
-        const sink = { fjords: 0, alpine: 0.1, archipelago: 0.3, volcano: 0.25 }[kind] * (hi - lo), far = Float64Array.from(U);
+        const sink = { fjords: 0, alpine: 0.1, archipelago: 0.3, volcano: 0.25, mesa: 0.15 }[kind] * (hi - lo), far = Float64Array.from(U);
         for (let pass = 0; pass < 3; pass++) blur(far, EN, 4);
         for (let i = 0; i < N; i++) h[i] -= depth * cut[i] + sink * (1 - geo.smoothstep(0.02, 0.3, U[i])) * (1 - geo.smoothstep(0, 0.35, far[i]));
         // one soft pass takes the grid scale kinks out of the gullies, so profiles
@@ -212,6 +216,12 @@
         const edges = new Uint8Array(N);
         for (let i = 0; i < N; i++) { const x = i % EN, y = (i - x) / EN; edges[i] = x === 0 || y === 0 || x === EN - 1 || y === EN - 1 ? 1 : 0; }
         h.set(flood(h, EN, neighbours(EN), edges).filled);
+        if (kind === 'mesa') {
+            // Caprock: the high ground between the canyons is planed off into
+            // table tops, otherwise it erodes into badlands
+            const land = Array.from(h).filter((v, i) => U[i] > 0.3).sort((a, b) => a - b), cap = land[Math.floor(land.length * 0.5)];
+            for (let i = 0; i < N; i++) if (h[i] > cap) h[i] = cap + (h[i] - cap) * 0.03;
+        }
         lo = Infinity; hi = -Infinity;
         for (const v of h) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
         let crater = null;
@@ -254,6 +264,14 @@
             warp[(j * wn + i) * 2 + 1] = fade * N2.fbm2(u * 3.2, v * 3.2 + 20, 2);
         }
         const out = new Float32Array(rn * rn);
+        // Mesa beds: flat treads and steep risers, dipping a little to one side.
+        // Done at render resolution so the risers stay sharp, and a bit of the
+        // old slope is kept so the treads still drain.
+        const steps = 5 + Math.abs(PG.iso.hash(seed, 47)) % 3, dip = 0.05 * (PG.iso.hash(seed, 48) % 2 ? 1 : -1);
+        const terrace = (z, u, v) => {
+            const s = (z + dip * (u - v)) * steps, i = Math.floor(s);
+            return geo.lerp((i + geo.smoothstep(0.55, 1, s - i)) / steps - dip * (u - v), z, 0.04);
+        };
         let hub = -1, hubD = Infinity;
         for (let j = 0; j < rn; j++) {
             const v = j / (rn - 1), wy = v * (wn - 1), wj = Math.min(wn - 2, Math.floor(wy)), ty = wy - wj;
@@ -270,8 +288,9 @@
                 }
                 const x0 = Math.min(n - 2, Math.floor(fx)), y0 = Math.min(n - 2, Math.floor(fy)), sx = fx - x0, sy = fy - y0;
                 const row = dy => cubic(g(x0 - 1, y0 + dy), g(x0, y0 + dy), g(x0 + 1, y0 + dy), g(x0 + 2, y0 + dy), sx);
-                const z = Math.max(cubic(row(-1), row(0), row(1), row(2), sy), Math.min(g(x0, y0), g(x0 + 1, y0), g(x0, y0 + 1), g(x0 + 1, y0 + 1)));
-                out[j * rn + i] = z + rough * (0.004 + 0.012 * z) * N2.fbm2(u * 7 + 5, v * 7 - 3, 2);
+                let z = Math.max(cubic(row(-1), row(0), row(1), row(2), sy), Math.min(g(x0, y0), g(x0 + 1, y0), g(x0, y0 + 1), g(x0 + 1, y0 + 1)));
+                z += rough * (0.004 + 0.012 * z) * N2.fbm2(u * 7 + 5, v * 7 - 3, 2);
+                out[j * rn + i] = kind === 'mesa' ? terrace(z, u, v) : z;
             }
         }
         // Single node pits (from Catmull-Rom undershoot and the warp) notch every
@@ -320,6 +339,51 @@
             quantile: f => sorted[Math.round(geo.clamp(f, 0, 1) * (sorted.length - 1))] };
         terrainCache = [T, ...terrainCache.slice(0, 1)];
         return T;
+    }
+
+    // Rivers on the render grid, as plan view polylines. Water runs down the
+    // steepest way over the flooded surface, and a node counts as river once
+    // `share` of the tile drains through it. Each stream stops where it joins
+    // one already found. Grid paths only step in eight directions, so they're
+    // smoothed, keeping the ends where they meet.
+    function streams(T, share) {
+        const key = share.toFixed(4);
+        T.streams = T.streams || {};
+        if (T.streams[key]) return T.streams[key];
+        const { n, h, cell } = T, N = n * n, nbr = neighbours(n), edge = new Uint8Array(N);
+        for (let i = 0; i < N; i++) { const x = i % n, y = (i - x) / n; edge[i] = x === 0 || y === 0 || x === n - 1 || y === n - 1 ? 1 : 0; }
+        const { filled, order, cnt } = flood(h, n, nbr, edge), rec = new Int32Array(N), area = new Float64Array(N).fill(1);
+        for (let i = 0; i < N; i++) {
+            rec[i] = i;
+            if (edge[i]) continue;
+            let best = 0;
+            for (let e = 0; e < 8; e++) {
+                const m = nbr[i * 8 + e];
+                if (m < 0) continue;
+                const s = (filled[i] - filled[m]) / (e < 4 ? 1 : Math.SQRT2);
+                if (s > best) { best = s; rec[i] = m; }
+            }
+        }
+        for (let q = cnt - 1; q >= 0; q--) { const i = order[q]; if (rec[i] !== i) area[rec[i]] += area[i]; }
+        const thr = N * share, fed = new Uint8Array(N), used = new Uint8Array(N), lines = [];
+        for (let i = 0; i < N; i++) if (area[i] >= thr && rec[i] !== i) fed[rec[i]] = 1;
+        // highest sources first, so the long streams come out whole
+        const sources = [];
+        for (let i = 0; i < N; i++) if (area[i] >= thr && !fed[i]) sources.push(i);
+        sources.sort((a, b) => h[b] - h[a]);
+        for (const s of sources) {
+            const ids = [s];
+            let c = s;
+            used[c] = 1;
+            while (rec[c] !== c) {
+                c = rec[c];
+                ids.push(c);
+                if (used[c]) break;
+                used[c] = 1;
+            }
+            lines.push(geo.chaikin(ids.map(i => [(i % n) * cell, Math.floor(i / n) * cell]), 3));
+        }
+        return (T.streams[key] = lines);
     }
 
     // ------------------------------------------------------------------
@@ -565,15 +629,32 @@
             }
             if (run.length > 1) emit(run);
         };
-        const land = (pts, VV = V) => dry(pts, d => split(d, sea, true, run => bands(run, cuts, (b, part) => trace(part, C, VV, put(LOW + b)))));
         const sp = p.spacing;
+        // Rivers go down first, so the terrain lines can stop short of the
+        // parts that show instead of running through them
+        let VL = V;
+        if (p.rivers > 0) {
+            const seen = [], kept = [];
+            for (const line of streams(T, geo.lerp(0.012, 0.0012, p.rivers))) {
+                dry(line.map(q => [q[0], q[1], Z(q[0], q[1])]), d => split(d, sea, true, run => trace(run, C, V, seen)));
+            }
+            for (const path of seen) if (geo.pathLength(path) > 1.2) { kept.push(path); put(RIVER).push(path); }
+            VL = clearing(V, C, kept, Math.max(0.55, sp * 1.25));
+        }
+        const land = (pts, VV = VL) => dry(pts, d => split(d, sea, true, run => bands(run, cuts, (b, part) => trace(part, C, VV, put(LOW + b)))));
         // screen vectors of the world axes, for spacing lines in paper mm
         const [ex, ey] = axes(C);
         const cross = Math.abs(ex[0] * ey[1] - ex[1] * ey[0]);
 
-        if (p.style === 'ridges' || p.style === 'wire') {
-            const ridges = p.style === 'ridges', dirs = ridges ? [C.fy >= C.fx] : [true, false];
+        if (p.style === 'ridges' || p.style === 'shaded' || p.style === 'wire') {
+            const ridges = p.style !== 'wire', dirs = ridges ? [C.fy >= C.fx] : [true, false];
             const gap = ridges ? sp : sp * 4.5, e = cell * 1.5, minGap = Math.max(0.4, sp * 0.85);
+            // Light from the left and a little behind. Shaded ridges thin out on
+            // slopes facing it in the same order as the gap rule below: full on
+            // the shadow side, every other line on flat ground, then every fourth
+            // and every eighth as it gets brighter.
+            const lx = -0.8 * C.rx + 0.2 * C.fx, ly = -0.8 * C.ry + 0.2 * C.fy, lz = 0.6, ll = Math.hypot(lx, ly, lz), es = cell * 4;
+            const shade = p.style === 'shaded' ? [lz / ll - 0.06, lz / ll + 0.08, lz / ll + 0.28] : null;
             for (const ax of dirs) {
                 const step = Math.min(L / 12, gap * Math.hypot(...(ax ? ex : ey)) / cross);
                 // a runs along the profiles, b across them
@@ -594,27 +675,21 @@
                     const need = minGap / (1 << tz);
                     land(pts, Object.assign({}, V, {
                         see(x, y, z, was) {
-                            if (!V.see(x, y, z)) return false;
+                            if (!VL.see(x, y, z)) return false;
                             if (tz >= 8) return true;
                             const zx = (Z(x + e, y) - Z(x - e, y)) / (2 * e), zy = (Z(x, y + e) - Z(x, y - e)) / (2 * e);
+                            if (shade && tz < 3) {
+                                // slope over a wider span than the gap rule, so rock texture doesn't flicker it
+                                const sx = (Z(x + es, y) - Z(x - es, y)) / (2 * es), sy = (Z(x, y + es) - Z(x, y - es)) / (2 * es);
+                                const lit = (lz - sx * lx - sy * ly) / (ll * Math.hypot(sx, sy, 1));
+                                if (lit > shade[tz] + (was ? 0.06 : -0.06)) return false;
+                            }
                             const za = ax ? zx : zy, zb = ax ? zy : zx, rise = af * C.se + za * C.ce;
                             const D = -br / ar * rise + bf * C.se + zb * C.ce;
                             const gapHere = step * C.k * D * Math.abs(ar) / Math.hypot(ar, rise);
                             return gapHere >= need * (was ? 0.85 : 1.15);
                         },
                     }));
-                }
-            }
-            if (p.style === 'wire') {
-                // diagonals through the mesh, like a triangulated wireframe
-                const dx = [ex[0] + ey[0], ex[1] + ey[1]], step = gap * Math.hypot(...dx) / cross;
-                for (let s = -L + step / 2; s < L; s += step) {
-                    const pts = [];
-                    for (let q = 0; q < n; q++) {
-                        const x = q * cell, y = x - s;
-                        if (y >= 0 && y <= L) pts.push([x, y, Z(x, y)]);
-                    }
-                    if (pts.length > 1) land(pts);
                 }
             }
         } else {
@@ -624,8 +699,8 @@
             for (let z = Math.ceil((sea + dz * 0.5) / dz) * dz; z < T.hi * rel; z += dz) {
                 const lines = isolines(h, n, z / rel, cell);
                 if (p.style === 'contours') {
-                    for (const line of lines) bands(line.map(q => [q[0], q[1], z]), cuts, (b, part) => trace(part, C, V, put(LOW + b)));
-                } else hachure(C, V, cell, lines, z, dz, sea, put, cuts, occ);
+                    for (const line of lines) bands(line.map(q => [q[0], q[1], z]), cuts, (b, part) => trace(part, C, VL, put(LOW + b)));
+                } else hachure(C, VL, cell, lines, z, dz, sea, put, cuts, occ, p.land === 'mesa' ? 0.3 : 0.08);
             }
         }
 
@@ -651,14 +726,17 @@
         for (const line of isolines(h, n, sea / rel, cell)) trace(line.map(q => [q[0], q[1], sea]), C, V, put(COAST));
 
         // water
-        if (p.sea === 'ripples' || p.sea === 'both') {
+        if (p.sea === 'ripples' || p.sea === 'both' || p.sea === 'fading') {
             const mask = new Uint8Array(n * n), ls = sea / rel;
             for (let i = 0; i < n * n; i++) mask[i] = h[i] >= ls ? 1 : 0;
             const dist = distanceField(mask, n), scale = C.k * Math.sqrt(C.se);
             let r = 0, gap = Math.max(0.5, sp * 1.2);
             for (let q = 0; q < p.ripples; q++) {
                 r += gap; gap *= 1.28;
-                for (const line of isolines(dist, n, r / scale / cell, cell)) trace(line.map(pt => [pt[0], pt[1], sea]), C, V, put(WATER));
+                // fading: the outer rings break up into shorter and shorter dashes
+                const f = p.sea === 'fading' && p.ripples > 2 ? geo.smoothstep(0.2, 1, q / (p.ripples - 1)) : 0, seen = f > 0 ? [] : put(WATER);
+                for (const line of isolines(dist, n, r / scale / cell, cell)) trace(line.map(pt => [pt[0], pt[1], sea]), C, V, seen);
+                if (f > 0) for (const path of seen) chop(path, geo.lerp(9, 1.1, f), geo.lerp(0.7, 1.6, f), (q * 0.37) % 1, put(WATER), V);
             }
         }
         if (lk) {
@@ -671,9 +749,10 @@
                 }
                 if (run.length > 1) trace(run, C, V, put(COAST));
             }
-            ruled(Math.max(0.45, sp * 1.3), lakeZ + rel * 2e-5, run => { if (run.every(inBox)) trace(run, C, V, put(WATER)); }, lk.box);
+            ruled(Math.max(0.8, sp * 1.8), lakeZ + rel * 2e-5, run => { if (run.every(inBox)) trace(run, C, V, put(WATER)); }, lk.box);
         }
-        if (p.sea === 'ruled' || p.sea === 'both') ruled((p.sea === 'both' ? 2.2 : 1) * Math.max(0.45, sp * 1.3), sea, run => trace(run, C, V, put(WATER)));
+        // Closer than about 0.9 mm the ruling fills in to a solid blue at pen width
+        if (p.sea === 'ruled' || p.sea === 'both') ruled((p.sea === 'both' ? 2 : 1) * Math.max(0.9, sp * 2), sea, run => trace(run, C, V, put(WATER)));
 
         // tile edges at the surface: the back two only show over the terrain
         const edge = (x0, y0, x1, y1) => {
@@ -703,8 +782,9 @@
     // Hachures: short strokes down the fall line between two contour levels,
     // packed closer where the slope is steeper. Fall lines converge in gullies,
     // so a plan view grid remembers which stroke owns each spot and a stroke
-    // stops when it runs into another one.
-    function hachure(C, V, cell, lines, z, dz, sea, put, cuts, occ) {
+    // stops when it runs into another one. Mesas only hachure the risers, as
+    // strokes on the gentle treads wander off like branching gullies.
+    function hachure(C, V, cell, lines, z, dz, sea, put, cuts, occ, minSlope) {
         const Z = V.Z, e = cell * 0.7;
         const grad = (x, y) => [(Z(x + e, y) - Z(x - e, y)) / (2 * e), (Z(x, y + e) - Z(x, y - e)) / (2 * e)];
         const floor = Math.max(sea, z - dz), scale = C.k * Math.sqrt(C.se);
@@ -717,7 +797,7 @@
                 while (t < seg) {
                     const x = a[0] + (b[0] - a[0]) * t / seg, y = a[1] + (b[1] - a[1]) * t / seg;
                     const [gx, gy] = grad(x, y), slope = Math.hypot(gx, gy), id = ++occ.id;
-                    if (slope > 0.08 && !occ.cells[slot(x, y)]) {
+                    if (slope > minSlope && !occ.cells[slot(x, y)]) {
                         const pts = [[x, y, z]], mine = [slot(x, y)];
                         let px = x, py = y;
                         for (let s = 0; s < 40; s++) {
@@ -753,7 +833,7 @@
         trace(strip, C, V, put(ROCK), true);
         // water in section: level lines from the bed up to the surface
         const cosX = Math.abs(C.rx) / Math.hypot(C.rx, C.fx * C.se), cosY = Math.abs(C.ry) / Math.hypot(C.ry, C.fy * C.se);
-        const wdz = Math.max(0.5, p.spacing * 1.2) / (C.k * C.ce * Math.min(cosX, cosY));
+        const wdz = Math.max(0.75, p.spacing * 1.6) / (C.k * C.ce * Math.min(cosX, cosY));
         for (const face of front) for (let z = sea - wdz; z > zlo; z -= wdz) split(face, z, false, run => trace(run, C, V, put(SECTION), true), z);
         // Strata, the same rocks in every study, stopping short of the surface.
         // Each bed gets a texture: dashes for shale, dots for sandstone, and the
@@ -815,6 +895,33 @@
             }
         }
         done();
+    }
+
+    // V, but also hiding anything within r mm of the page paths, bucketed so
+    // each test only looks at the segments close by
+    function clearing(V, C, paths, r) {
+        if (!paths.length) return V;
+        const grid = new Map(), key = (i, j) => i * 100003 + j;
+        for (const path of paths) for (let s = 1; s < path.length; s++) {
+            const a = path[s - 1], b = path[s];
+            for (let i = Math.floor((Math.min(a[0], b[0]) - r) / r); i <= Math.floor((Math.max(a[0], b[0]) + r) / r); i++) {
+                for (let j = Math.floor((Math.min(a[1], b[1]) - r) / r); j <= Math.floor((Math.max(a[1], b[1]) + r) / r); j++) {
+                    const list = grid.get(key(i, j));
+                    if (list) list.push(a, b); else grid.set(key(i, j), [a, b]);
+                }
+            }
+        }
+        const near = q => {
+            const list = grid.get(key(Math.floor(q[0] / r), Math.floor(q[1] / r)));
+            if (!list) return false;
+            for (let s = 0; s < list.length; s += 2) {
+                const a = list[s], b = list[s + 1], dx = b[0] - a[0], dy = b[1] - a[1], ll = dx * dx + dy * dy;
+                const t = ll > 0 ? geo.clamp(((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / ll, 0, 1) : 0;
+                if (Math.hypot(q[0] - a[0] - dx * t, q[1] - a[1] - dy * t) < r) return true;
+            }
+            return false;
+        };
+        return Object.assign({}, V, { see: (x, y, z) => V.see(x, y, z) && !near(C.P(x, y, z)) });
     }
 
     // ------------------------------------------------------------------
@@ -1058,18 +1165,19 @@
             { id: 'last', label: 'Flooded at last (%)', type: 'range', min: 10, max: 99, step: 1, value: 93, random: [85, 97], show: p => p.studies > 1 },
             { type: 'section', label: 'Land' },
             { id: 'land', label: 'Landform', type: 'select', value: 'alpine', random: true,
-                options: [['alpine', 'Alpine massif'], ['fjords', 'Fjord coast'], ['archipelago', 'Archipelago'], ['volcano', 'Volcanic island']] },
+                options: [['alpine', 'Alpine massif'], ['fjords', 'Fjord coast'], ['archipelago', 'Archipelago'], ['volcano', 'Volcanic island'], ['mesa', 'Canyon mesas']] },
             { id: 'relief', label: 'Relief (%)', type: 'range', min: 10, max: 60, step: 1, value: 38, random: [28, 44] },
             { id: 'rough', label: 'Rock texture', type: 'range', min: 0, max: 1, step: 0.01, value: 0.4, random: [0.2, 0.6] },
             { id: 'yaw', label: 'Turn (°)', type: 'range', min: 10, max: 80, step: 1, value: 45, random: [35, 55] },
             { id: 'elev', label: 'View height (°)', type: 'range', min: 20, max: 65, step: 1, value: 32, random: [28, 42] },
             { type: 'section', label: 'Linework' },
-            { id: 'style', label: 'Terrain lines', type: 'select', value: 'ridges', random: ['ridges', 'ridges', 'contours', 'wire', 'hachures'],
-                options: [['ridges', 'Fine ridges'], ['contours', 'Elevation contours'], ['hachures', 'Hachures'], ['wire', 'Wire mesh']] },
+            { id: 'style', label: 'Terrain lines', type: 'select', value: 'ridges', random: ['ridges', 'shaded', 'shaded', 'contours', 'wire', 'hachures'],
+                options: [['ridges', 'Fine ridges'], ['shaded', 'Shaded ridges'], ['contours', 'Elevation contours'], ['hachures', 'Hachures'], ['wire', 'Wire mesh']] },
             { id: 'spacing', label: 'Line spacing (mm)', type: 'range', min: 0.35, max: 1.5, step: 0.05, value: 0.45, random: false },
-            { id: 'sea', label: 'Water', type: 'select', value: 'ripples', random: ['ripples', 'ripples', 'ruled', 'both'],
-                options: [['ripples', 'Coastal ripples'], ['ruled', 'Ruled'], ['both', 'Ripples & ruled'], ['plain', 'Outline only']] },
-            { id: 'ripples', label: 'Ripple lines', type: 'range', min: 1, max: 14, step: 1, value: 7, random: [5, 9], show: p => p.sea === 'ripples' || p.sea === 'both' },
+            { id: 'rivers', label: 'Rivers', type: 'range', min: 0, max: 1, step: 0.05, value: 0.5, random: [0, 0.8] },
+            { id: 'sea', label: 'Water', type: 'select', value: 'ripples', random: ['ripples', 'fading', 'fading', 'ruled', 'both'],
+                options: [['ripples', 'Coastal ripples'], ['fading', 'Fading ripples'], ['ruled', 'Ruled'], ['both', 'Ripples & ruled'], ['plain', 'Outline only']] },
+            { id: 'ripples', label: 'Ripple lines', type: 'range', min: 1, max: 14, step: 1, value: 7, random: [5, 9], show: p => p.sea === 'ripples' || p.sea === 'both' || p.sea === 'fading' },
             { id: 'cutaway', label: 'Cutaway block', type: 'checkbox', value: true, random: 0.6 },
             { id: 'base', label: 'Block depth (%)', type: 'range', min: 5, max: 50, step: 1, value: 26, random: false, show: p => p.cutaway },
             { id: 'marks', label: 'Survey marks', type: 'checkbox', value: true },
@@ -1077,20 +1185,24 @@
         ],
         // Pairings that look right: wire and hachures get quiet water, the stack
         // doesn't want too many studies, and islands need a first tide high
-        // enough to cover the low ground between them. Without the block, half the time
-        // the water gets the flat ruled wash.
+        // enough to cover the low ground between them. Without the block, some of the
+        // time the water gets the flat ruled wash. Ridge profiles over mesa cliffs
+        // turn into a tangle, so mesas get contours or hachures.
         randomize(rng, p) {
             const q = {};
-            if (p.style === 'wire' || p.style === 'hachures') q.sea = rng.pick(['ripples', 'ripples', 'plain']);
+            if (p.land === 'mesa') q.style = rng.pick(['contours', 'hachures', 'hachures']);
+            const style = q.style || p.style;
+            if (style === 'wire' || style === 'hachures') q.sea = rng.pick(['ripples', 'fading', 'plain']);
+            if (rng.chance(0.25)) q.rivers = 0;
             if (p.layout === 'stack') q.studies = rng.int(3, 4);
             if (p.land === 'archipelago' || p.land === 'volcano') q.first = rng.int(20, 34);
-            if (!p.cutaway && q.sea === undefined && rng.chance(0.5)) q.sea = 'ruled';
+            if (!p.cutaway && q.sea === undefined && rng.chance(0.3)) q.sea = 'ruled';
             return q;
         },
         generate(p, ctx) {
             const { width: W, height: H } = ctx;
             // the spiky landforms get a little less height for the same setting
-            const n = p.studies, seed = ctx.seed | 0, rel = L * p.relief / 100 * { alpine: 1, fjords: 0.85, archipelago: 0.75, volcano: 0.9 }[p.land];
+            const n = p.studies, seed = ctx.seed | 0, rel = L * p.relief / 100 * { alpine: 1, fjords: 0.85, archipelago: 0.75, volcano: 0.9, mesa: 0.7 }[p.land];
             const th = geo.rad(p.yaw), el = geo.rad(p.elev);
             const c = { fx: Math.sin(th), fy: Math.cos(th), rx: Math.cos(th), ry: -Math.sin(th), se: Math.sin(el), ce: Math.cos(el) };
             // a coarse copy of the terrain for sizing the layout
@@ -1128,7 +1240,7 @@
             rn -= (rn - 1) % 8;
             const T = terrain(p.land, seed, rn, p.rough);
             const levels = levels0.map((_, i) => seaAt(T, i));
-            const groups = Array.from({ length: 9 }, () => []), footprints = [], q0 = Object.assign({ seedBase: seed }, p);
+            const groups = Array.from({ length: 10 }, () => []), footprints = [], q0 = Object.assign({ seedBase: seed }, p);
             let C0 = null;
             for (let i = 0; i < n; i++) {
                 const { ox, oy, side } = placed.pos[i], sea = levels[i], shift = shiftOf(sea);
@@ -1163,7 +1275,7 @@
                 if (bar) scaleBar(C0, bar[0] + 1.5, bar[1] + 1.5, groups[NOTES]);
             }
             // groups: surface water, coast, low, mid and high land, water in section,
-            // block outline, strata, survey marks. Their pens are in pens.js.
+            // block outline, strata, survey marks, rivers. Their pens are in pens.js.
             const out = PG.pens.partLayers('tidal', p);
             groups.forEach((paths, g) => { const into = out.of(g); for (const q of paths) into.push(q); });
             return out.done();

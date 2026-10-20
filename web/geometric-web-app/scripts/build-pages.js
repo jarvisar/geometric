@@ -68,6 +68,7 @@ ${body}
         <a href="${root}designs/">Designs</a>
         <a href="${root}about/">About</a>
         <a href="https://github.com/jarvisar/geometric">GitHub</a>
+        <a href="${root}about/#support">Support</a>
     </footer>
 </body>
 </html>

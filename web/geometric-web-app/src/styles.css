@@ -41,6 +41,14 @@
     --go-hover-1: #ff9b72;
     --go-hover-2: #f4683a;
 
+    /* Buy me a coffee button */
+    --coffee-1: #ffe066;
+    --coffee-2: #f0bf1a;
+    --coffee-border: #7a5c00;
+    --coffee-hover-1: #ffe985;
+    --coffee-hover-2: #f6ca33;
+    --coffee-ink: #2b2100;
+
     /* Section bars and dialog headers */
     --bar-1: #2a2f35;
     --bar-2: #212529;
@@ -162,6 +170,15 @@ kbd {
 .icon-btn { width: 30px; padding: 0; justify-content: center; color: var(--text-2); }
 #resetParams span { display: none; }
 .icon-btn:disabled { opacity: 0.35; box-shadow: none; pointer-events: none; }
+.icon-btn.coffee {
+    border-color: var(--coffee-border);
+    background: linear-gradient(var(--coffee-1), var(--coffee-2));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), var(--shadow-sm);
+    color: var(--coffee-ink);
+}
+.icon-btn.coffee .ic { filter: none; }
+.icon-btn.coffee:hover { background: linear-gradient(var(--coffee-hover-1), var(--coffee-hover-2)); color: var(--coffee-ink); }
+.icon-btn.coffee:active { background: var(--coffee-2); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3); }
 .btn.accent {
     border-color: var(--go-border);
     background: linear-gradient(var(--go-1), var(--go-2));
@@ -1070,6 +1087,7 @@ a.card .thumb { object-fit: cover; }
     /* touch keeps :hover after a tap, which would leave buttons looking lit */
     .btn:hover:not(:active), .icon-btn:hover:not(:active), .design-btn:hover:not(:active) { background: linear-gradient(var(--btn-1), var(--btn-2)); }
     .btn.accent:hover:not(:active) { background: linear-gradient(var(--go-1), var(--go-2)); }
+    .icon-btn.coffee:hover:not(:active) { background: linear-gradient(var(--coffee-1), var(--coffee-2)); }
     .seed-box .icon-btn:hover:not(:active) { background: linear-gradient(var(--btn-1), var(--btn-2)); }
 }
 @media (pointer: coarse) {

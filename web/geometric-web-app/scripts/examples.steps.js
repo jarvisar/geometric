@@ -54,6 +54,8 @@ for (const id of ids) {
 }
 await click('#designBtn');
 assert(await evaluate(`${JSON.stringify(ids)}.every(id => document.querySelector('#galleryBody').textContent.includes(PG.byId[id].name))`), 'New designs missing from gallery');
+// The gallery no longer focuses search on open (keeps the phone keyboard down), so focus it first like a user clicking in
+await evaluate(`document.querySelector('#gallerySearch').focus()`);
 await evaluate(`document.querySelector('#gallerySearch').value = 'cosmic'; document.querySelector('#gallerySearch').dispatchEvent(new Event('input', {bubbles: true}));`);
 await sleep(200);
 await key('Enter');

@@ -44,7 +44,7 @@ for (const id of ids) {
     if (id === 'stairwell') for (const section of ['round', 'square', 'octagon', 'hexagon']) for (const look of ['down', 'up']) {
         cases.push([`deep ${section} ${look}`, { ...defaults, section, look, steps: 40, turns: 16, pitch: 0.6, eye: 0.2, fov: 120, shift: 100, posts: 4 }, {}]);
     }
-    if (id === 'tidal') for (const style of ['ridges', 'contours', 'hachures', 'wire']) {
+    if (id === 'tidal') for (const style of ['ridges', 'shaded', 'contours', 'hachures', 'wire']) {
         cases.push([`high water ${style}`, { ...defaults, style, studies: 6, first: 90, last: 99, relief: 60, elev: 20, layout: 'grid', sea: 'both', ripples: 14, marks: false }, {}]);
         cases.push([`dense ${style} stack`, { ...defaults, style, studies: 6, first: 0, last: 99, relief: 60, spacing: 0.35, land: 'volcano', layout: 'stack', cutaway: false }, { paperW: 420, paperH: 594 }]);
     }
