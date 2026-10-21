@@ -1259,6 +1259,7 @@
     // most important first: main dome, control tower, the other domes, then
     // housing. `heart` is a spot the plan leaves open for a landmark.
     const SPACING = 27;
+    const REF_AREA = 180 * 267 / (1.55 * 1.1) ** 2;
     const PLANS = {
         // Loose constellation around the main dome
         gardens(n, rng, A, B) {
@@ -1329,8 +1330,11 @@
             const lot = { type, x, y, r, angle: rng.pick([0, Math.PI / 2]), index: lots.length };
             lots.push(lot); return lot;
         };
-        // A smaller page or a bigger scale leaves room for fewer buildings
-        const [ox, oy] = cam.ground(W * 0.5, H * 0.47), A = 0.36 * W / cam.k, B = 0.3 * H / (cam.k * cam.se);
+        // The core and the facilities are planned on a patch of ground the size of
+        // an A4 page at the default scale, shaped like the page. Zooming out shows
+        // more of the outskirts round it, and zooming in crops it, like Town.
+        const s = T.view, at = (sx, sy) => cam.ground(W / 2 + (sx - 0.5) * W * s, H / 2 + (sy - 0.5) * H * s);
+        const [ox, oy] = at(0.5, 0.47), A = 0.36 * W * s / cam.k, B = 0.3 * H * s / (cam.k * cam.se);
         const most = geo.clamp(Math.floor(Math.PI * A * B / 800), 5, 9);
         const specs = [['dome', rng.pick([12, 13, 14])], ['hub', 6]];
         for (let i = rng.int(1, 3); i > 0; i--) specs.push(['dome', rng.pick([8, 8.5, 9.5, 10.5])]);
@@ -1340,20 +1344,27 @@
         const world = ([a, b]) => [ox + a * cam.rx + b * cam.fx, oy + a * cam.ry + b * cam.fy];
         specs.forEach(([type, r], i) => put(type, ...world(core.pts[i]), r));
         const nodes = lots.slice();
-        // Each facility takes one of the roomiest spots left on the page, with
+        // Each facility takes one of the roomiest spots left on the patch, with
         // enough noise that it lands somewhere new in every colony. `top` keeps
-        // tall things far enough down the page to fit.
+        // tall things far enough down the page to fit. Zoomed in, the spots stay
+        // on the page and facilities that can't fit there are left out.
         const spots = [];
-        for (let i = 0; i < 7; i++) for (let j = 0; j < 9; j++) spots.push([0.07 + 0.86 * i / 6, 0.07 + 0.86 * j / 8]);
+        const spread = Math.min(s, 1);
+        for (let i = 0; i < 7; i++) for (let j = 0; j < 9; j++) {
+            spots.push([0.5 + (0.07 + 0.86 * i / 6 - 0.5) * spread, 0.5 + (0.07 + 0.86 * j / 8 - 0.5) * spread]);
+        }
         const place = (type, r, top = 0) => {
-            let best = null, score = -Infinity;
+            let best = null, score = -Infinity, roomiest = -Infinity;
             for (const [sx, sy] of spots) {
                 if (sy < top) continue;
                 const [x, y] = cam.ground(W * sx, H * sy);
                 const room = Math.min(...lots.map(l => Math.hypot(l.x - x, l.y - y) - l.r)) - r;
-                const s = Math.min(room, 12) + rng.range(0, 8);
-                if (s > score) { score = s; best = [x, y]; }
+                const v = Math.min(room, 12) + rng.range(0, 8);
+                if (v > score) { score = v; best = [x, y]; }
+                roomiest = Math.max(roomiest, room);
             }
+            // Only happens zoomed in. At the default scale every facility gets at least 4 m.
+            if (roomiest < 2) return null;
             return put(type, best[0] + rng.range(-2, 2), best[1] + rng.range(-2, 2), r);
         };
         const landmarks = [['pad', 12.5]];
@@ -1441,9 +1452,13 @@
         let added = 0;
         const supplementalStart = lots.length;
         for (const cell of grid) {
-            if (added >= 48) break;
+            if (added >= 48 * Math.max(1, T.area)) break;
             const { x, y, q } = cell;
             if (!clear(x, y, 9.5)) continue;
+            // Zoomed out, the outskirts past the planned patch are only half built up.
+            // Every free cell there packs them into a solid grid of blocks.
+            const outside = Math.abs(q[0] - W / 2) > W * s / 2 + 9 || q[1] < H / 2 - H * s / 2 - 5 || q[1] > H / 2 + H * s / 2 + 12;
+            if (outside && !rng.chance(0.5)) continue;
             const district = 0.5 + 1.25 * ((q[0] / W - 0.5) * Math.cos(lean) + (q[1] / H - 0.5) * Math.sin(lean));
             const type = rng.pick(district < 0.24 ? power : district > 0.73 ? ['cargo', 'workshop', 'utilities', 'workshop'] : middle);
             const lot = { type, x, y, r: size[type] || 9.5, small: true, angle: rng.chance(0.75) ? 0 : Math.PI / 2, index: lots.length };
@@ -1603,7 +1618,7 @@
         };
         for (const lot of site.lots.filter(l => l.type === 'crater')) addCrater(lot.x, lot.y, lot.r / 1.3);
         // Mars keeps fewer craters, the wind has filled most of them in
-        for (let i = 0; i < p.craters * (mars ? 3 : 7); i++) {
+        for (let i = 0; i < p.craters * (mars ? 3 : 7) * T.area; i++) {
             const [x, y] = cam.ground(rng.range(-0.05, 1.05) * W, rng.range(-0.05, 1.05) * H), r = rng.range(3.2, 8);
             if (empty(x, y, r * 1.4)) addCrater(x, y, r);
         }
@@ -1617,7 +1632,8 @@
                     dune(T, { x: q[0], y: q[1], r: s * lot.r, h: s * lot.r * rng.range(0.26, 0.36) }); made++;
                 }
             }
-            for (let i = 0; i < p.dunes * 8 && made < p.dunes; i++) {
+            const dunes = Math.round(p.dunes * T.area);
+            for (let i = 0; i < dunes * 8 && made < dunes; i++) {
                 const [x, y] = cam.ground(rng.range(0, 1) * W, rng.range(0, 1) * H), r = rng.range(3, 6.5);
                 if (!empty(x, y, r * 1.25)) continue;
                 take(x, y, r * 1.25); dune(T, { x, y, r, h: r * rng.range(0.26, 0.36) }); made++;
@@ -1643,7 +1659,7 @@
         // make the craters part of a landscape rather than isolated ellipses.
         // On Mars they are ripples, all lying across the wind.
         inKind(S, DUST, () => {
-            for (let i = 0; i < (p.detail ? 240 : 100); i++) {
+            for (let i = 0; i < (p.detail ? 240 : 100) * T.area; i++) {
                 const [x, y] = cam.ground(rng.range(-5, W + 5), rng.range(-5, H + 5));
                 const length = rng.range(0.4, 3.1);
                 if (!empty(x, y, length)) continue;
@@ -1660,7 +1676,7 @@
         });
         // Mars is rockier, and its rocks are the color of the ground
         inKind(S, mars ? DUST : INK, () => {
-            for (let i = 0; i < p.boulders * (mars ? 170 : 110); i++) {
+            for (let i = 0; i < p.boulders * (mars ? 170 : 110) * T.area; i++) {
                 const [x, y] = cam.ground(rng.range(0, W), rng.range(0, H)), r = rng.range(0.3, 1.4);
                 if (!empty(x, y, r + 0.3)) continue;
                 S.lathe(x, y, [[r, 0], [r * 0.85, r * 0.55], [r * 0.35, r * 1.1]], rng.int(4, 6), false, rng.range(0, TAU));
@@ -1675,18 +1691,19 @@
     }
 
     function activity(T, site, { empty, take }, seed) {
-        const { S, W, H, cam, p } = T, rng = new PG.RNG(hash(seed, 30));
+        const { S, W, H, cam, p } = T, rng = new PG.RNG(hash(seed, 30)), more = Math.max(1, T.area);
+        const rovers = Math.round(p.rovers * T.area), devils = Math.round(p.devils * T.area), crew = Math.round(p.crew * T.area);
         // Tracks share a curving center line with the rover heading. Every
         // sample is checked against both facilities and crater footprints.
         let made = 0;
         for (const road of site.roads.filter(e => e.d - e.a.r - e.b.r > 10).sort((a, b) => b.d - a.d)) {
-            if (made >= p.rovers) break;
+            if (made >= rovers) break;
             const t = (road.a.r + (road.d - road.a.r - road.b.r) * 0.5) / road.d;
             const x = geo.lerp(road.a.x, road.b.x, t), y = geo.lerp(road.a.y, road.b.y, t);
             rover(T, x, y, Math.atan2(road.b.y - road.a.y, road.b.x - road.a.x), made % 2 === 1);
             made++;
         }
-        for (let i = 0; i < 180 && made < p.rovers; i++) {
+        for (let i = 0; i < 180 * more && made < rovers; i++) {
             const [x, y] = cam.ground(rng.range(0.08, 0.92) * W, rng.range(0.18, 0.94) * H);
             if (!empty(x, y, 4)) continue;
             const angle = rng.range(0, TAU), F = turned(x, y, 0, angle);
@@ -1707,10 +1724,10 @@
             made++;
         }
         if (T.mars) {
-            for (let i = 0, devils = 0; i < 120 && devils < p.devils; i++) {
+            for (let i = 0, whirls = 0; i < 120 * more && whirls < devils; i++) {
                 const [x, y] = cam.ground(rng.range(0.1, 0.9) * W, rng.range(0.25, 0.92) * H);
                 if (!empty(x, y, 3.5)) continue;
-                dustDevil(T, x, y, rng, empty); take(x, y, 3.5); devils++;
+                dustDevil(T, x, y, rng, empty); take(x, y, 3.5); whirls++;
             }
             for (let i = 0; i < 120 && p.heli; i++) {
                 const [x, y] = cam.ground(rng.range(0.12, 0.88) * W, rng.range(0.2, 0.9) * H);
@@ -1720,7 +1737,7 @@
             }
         }
         let people = 0;
-        for (let i = 0; i < 150 && people < p.crew; i++) {
+        for (let i = 0; i < 150 * more && people < crew; i++) {
             const lot = rng.pick(site.lots), a = rng.range(0, TAU), r = lot.r + rng.range(2, 5);
             const x = lot.x + r * Math.cos(a), y = lot.y + r * Math.sin(a);
             const q = cam.project(x, y, 0);
@@ -1787,7 +1804,10 @@
             // Dunes, streaks and rotors all follow it. Square across the view a
             // rotor would be edge-on, and straight along it a dune hides one of its slopes.
             const gust = new PG.RNG(hash(ctx.seed, 50));
-            const T = { S, p, cam, W, H, k, mars, detail: p.detail, tones: p.hatching, hDark: p.hatchGap,
+            // Ground the page shows, as a share of an A4 page at the default scale.
+            // Counts like craters, rovers and crew are for that page and go up or down with it.
+            const area = W * H / (k * k) / REF_AREA;
+            const T = { S, p, cam, W, H, k, mars, area, view: 1 / Math.sqrt(area), detail: p.detail, tones: p.hatching, hDark: p.hatchGap,
                 wind: Math.atan2(cam.fy, cam.fx) + (gust.chance(0.5) ? Math.PI : 0) + gust.sign() * gust.range(0.55, 1),
                 segs: r => segments(r, k), sees: n => cam.facing(...n) };
             const site = plan(T, ctx.seed), ground = surface(T, site, ctx.seed);

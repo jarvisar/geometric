@@ -31,6 +31,8 @@
     const INK = 0, RED = 1, SHADOW = 2, GOLD = 3, GREEN = 4, FIGURE = 5, WATER = 6, SOIL = 7, BLOOM = 8;
     // Lines closer than this on paper (mm) run together under a 0.35 mm pen
     const FINE = 0.7;
+    // Ground an A4 page shows at the default view width (screen m²)
+    const REF_AREA = 190 * 190 * 267 / 180;
     const UP = [0, 0, 1];
     const smooth = geo.smoothstep;
     const person = withKind(FIGURE, kit.person);
@@ -845,7 +847,7 @@
     function planHoldings(T, plan, rng) {
         plan.holdings = [];
         if (!T.p.holdings) return;
-        const { P } = T, roads = plan.roads.slice(), want = T.p.size > 280 ? 2 : 1;
+        const { P } = T, roads = plan.roads.slice(), want = Math.max(1, Math.floor(P.area / 1.09));
         const nearest = (q, paths) => {
             let best = null, distance = Infinity;
             for (const r of paths) for (let i = 0; i + 1 < r.pts.length; i++) {
@@ -881,7 +883,9 @@
                 lot.drive = { pts: [from, gate], hw: 1.7, kind: 'gravel' };
                 lot.variant = n;
                 const front = lot.F.V(0, -1, 0), facing = -front[0] * T.cam.fx - front[1] * T.cam.fy;
-                candidates.push({ lot, score: length * 0.25 + Math.abs(u - 0.5) * 12 - facing * 12 + rng.range(0, 8) });
+                // From the third yard on, keep them apart so they don't line up along one road
+                const apart = n < 2 ? 0 : Math.max(0, 120 - Math.min(...plan.holdings.map(o => Math.hypot(o.F.P(0, 0, 0)[0] - x, o.F.P(0, 0, 0)[1] - y)))) * 0.4;
+                candidates.push({ lot, score: length * 0.25 + Math.abs(u - 0.5) * 12 - facing * 12 + rng.range(0, 8) + apart });
             }
             candidates.sort((a, b) => a.score - b.score);
             if (!candidates.length) break;
@@ -2809,25 +2813,28 @@
     function drawHoldings(T, plan, rng, claims) {
         const S = T.S;
         for (const lot of plan.holdings) {
-            const [x, y] = lot.F.P(0, 0, 0), F = turned(x, y, lot.z, lot.ang), xy = (a, b) => F.P(a, b, 0).slice(0, 2);
+            const [x, y] = lot.F.P(0, 0, 0), F = turned(x, y, lot.z, lot.ang);
+            // The third yard on is laid out the other way round, so wide views don't repeat one yard
+            const m = lot.variant >= 2 ? -1 : 1, xy = (a, b) => F.P(m * a, b, 0).slice(0, 2);
+            const R = ([a0, b0, a1, b1]) => m > 0 ? [a0, b0, a1, b1] : [-a1, b0, -a0, b1];
             T.casting = true;
             if (plan.country === 'tuscan') {
                 encloseYard(T, F, lot.W, lot.D);
-                if (lot.variant === 0) {
-                    casale(T, F, [-19, 6, -3, 16], rng);
-                    wineCellar(T, F, [4, 7, 19, 16], rng);
-                    loggiaWing(T, F, [-19, -9, -11, 3], rng);
-                    well(T, F, 2, -1);
-                    pergola(T, F, [8, -15, 19, -7]);
+                if (lot.variant % 2 === 0) {
+                    casale(T, F, R([-19, 6, -3, 16]), rng);
+                    wineCellar(T, F, R([4, 7, 19, 16]), rng);
+                    loggiaWing(T, F, R([-19, -9, -11, 3]), rng);
+                    well(T, F, m * 2, -1);
+                    pergola(T, F, R([8, -15, 19, -7]));
                 } else {
-                    fienile(T, F, [-18, 5, 1, 16], rng);
-                    garden(T, F, 6, 1, 19, 16);
+                    fienile(T, F, R([-18, 5, 1, 16]), rng);
+                    garden(T, F, ...R([6, 1, 19, 16]));
                     haystack(T, ...xy(-12, -4));
                     baleStack(T, ...xy(-5, -4), lot.ang, 4);
                 }
                 for (const a of [-20, 20]) cypress(T, ...xy(a, -15), rng, 11);
             } else if (plan.country === 'prairie') {
-                machineShed(T, F, [-22, 5, 1, 17], rng);
+                machineShed(T, F, R([-22, 5, 1, 17]), rng);
                 const tops = [];
                 for (const a of [8, 19]) {
                     const [bx, by] = xy(a, 10);
@@ -2840,22 +2847,22 @@
                     grainCart(T, tf);
                 }
                 baleStack(T, ...xy(-16, -2), lot.ang, 5);
-                boardFence(T, F.P(-25, -17, 0), F.P(-25, 17, 0));
+                boardFence(T, F.P(m * -25, -17, 0), F.P(m * -25, 17, 0));
                 shelterbelt(T, xy(-23, 19), xy(23, 19), F.V(0, -1, 0), rng, claims, 1);
             } else {
                 encloseYard(T, F, lot.W, lot.D, 0.8);
-                greenhouse(T, F, [-19, 7, 3, 16]);
-                greenhouse(T, F, [-19, -5, 3, 4]);
-                if (plan.country === 'hedgerows') stoneHouse(T, F, [8, 5, 19, 15], rng);
-                else machineShed(T, F, [7, 6, 20, 16], rng);
-                garden(T, F, 8, -12, 19, 1);
-                garden(T, F, -19, -16, -5, -8);
+                greenhouse(T, F, R([-19, 7, 3, 16]));
+                greenhouse(T, F, R([-19, -5, 3, 4]));
+                if (plan.country === 'hedgerows') stoneHouse(T, F, R([8, 5, 19, 15]), rng);
+                else machineShed(T, F, R([7, 6, 20, 16]), rng);
+                garden(T, F, ...R([8, -12, 19, 1]));
+                garden(T, F, ...R([-19, -16, -5, -8]));
             }
             S.kind = SOIL;
             const nursery = plan.country === 'hedgerows' || plan.country === 'polder';
-            for (const s of [-1, 1]) S.line([F.P(s * 1.3, -lot.D / 2, 0.08), F.P(nursery ? 5 + s : s * 2, -7, 0.08), F.P(nursery ? 5 + s : s * 5, 2, 0.08)]);
+            for (const s of [-1, 1]) S.line([F.P(s * 1.3, -lot.D / 2, 0.08), F.P(m * (nursery ? 5 + s : s * 2), -7, 0.08), F.P(m * (nursery ? 5 + s : s * 5), 2, 0.08)]);
             if (T.p.people > 0) {
-                person(T, ...F.P(3, -7, 0), rng);
+                person(T, ...F.P(m * 3, -7, 0), rng);
                 vehicle(T, ...xy(-5, -12), lot.ang, 'pickup', rng);
             }
             claims.poly(lot.poly);
@@ -2993,7 +3000,7 @@
     function scatterTrees(T, plan, rng, claims) {
         const { P, p } = T;
         T.casting = true;
-        for (let i = Math.round(10 * p.trees); i > 0; i--) {
+        for (let i = Math.round(10 * p.trees * P.area); i > 0; i--) {
             const f = rng.pick(plan.fields), c = geo.centroid(f.poly), e = f.poly[rng.int(0, f.poly.length - 1)];
             const x = geo.lerp(c[0], e[0], 0.92), y = geo.lerp(c[1], e[1], 0.92);
             if (!P.seen(x, y, 0, -10) || !T.keep(x, y) || !claims.free(x, y, 5)) continue;
@@ -3835,7 +3842,7 @@
         });
         for (const f of order) {
             const job = WORK[f.kind];
-            if (!job || f.far || machines >= 1 + Math.round(p.work * 2) || !frng.chance(p.work) || f.pond) continue;
+            if (!job || f.far || machines >= Math.round((1 + Math.round(p.work * 2)) * Math.max(1, P.area)) || !frng.chance(p.work) || f.pond) continue;
             const c = geo.centroid(f.poly);
             if (!P.seen(c[0], c[1], 0, 20) || Math.abs(geo.polygonArea(f.poly)) < 1800) continue;
             f.before = f.kind;
@@ -3903,7 +3910,7 @@
             { id: 'hills', label: 'Rolling hills', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.3, 1], show: p => p.country !== 'polder' },
             { id: 'fieldSize', label: 'Field size', type: 'range', min: 0.5, max: 1.6, step: 0.01, value: 1, random: [0.7, 1.3] },
             { id: 'holdings', label: 'Outlying farmyards', type: 'checkbox', value: true, random: 0.9,
-                hint: 'Connected cottages and a winery, a grain yard, or glasshouses and market gardens. Wider views can fit two' },
+                hint: 'Connected cottages and a winery, a grain yard, or glasshouses and market gardens. Wider views fit more' },
             { id: 'creek', label: 'Creek', type: 'checkbox', value: true, random: 0.75, show: p => p.country !== 'polder',
                 hint: 'The polder has ditches and a river behind the dike instead' },
             { id: 'pond', label: 'Pond', type: 'checkbox', value: true, random: 0.6 },
@@ -3950,7 +3957,9 @@
                 const q = cam.project(x, y, z), e = m * k;
                 return q[0] >= e && q[1] >= e && q[0] <= W - e && q[1] <= H - e;
             };
-            const P = { U, V, w, uv, seen, x0, y0, x1, y1 };
+            // how much ground is in view, 1 on A4 at the default width. Farmyards and the like go up with it.
+            const area = W * H / (k * k) / REF_AREA;
+            const P = { U, V, w, uv, seen, x0, y0, x1, y1, area };
             // the sun is high on the left and a little behind, so shadows fall to the right and towards us
             const cot = 1 / Math.tan(geo.rad(p.sun)), sd = unit([0.85 * r[0] - 0.4 * f[0], 0.85 * r[1] - 0.4 * f[1], 0]);
             const sun = [sd[0] * cot, sd[1] * cot], toSun = unit([-sun[0], -sun[1], 1]);
