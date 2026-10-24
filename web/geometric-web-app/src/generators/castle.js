@@ -12,7 +12,18 @@
  * bastide town: the gate streets meet at the market square, the church has
  * a block next to it, and the other blocks are rows of narrow houses round
  * a yard. Outside there are roads out of the gates with cottages along
- * them, a patchwork of fields and woods, a post mill and a tournament.
+ * them, a post mill, and a tournament among fields, hedges, and woods. A
+ * river runs in front of the town, where the roads cross it on stone
+ * bridges, or behind it, with a water mill on it, and out past the town
+ * there's an abbey in its walled grounds.
+ *
+ * The country is a grid of fields lined up on the roads. Woods are fields
+ * picked out by a smooth noise, so they come in blocks, and some fields run
+ * on into the next one. The river is a curve through points square to the
+ * roads, so the bridges cross it straight, and the fields stop at the
+ * meadows along it (see keepDry). The river and what's on it are placed by
+ * the view at a zoom of 1, so zooming doesn't move them. The field grid is
+ * cut to the view, though, so it does change with the zoom.
  *
  * The seed also picks what kind of town it is (see character): the shape
  * of the walls, round or square towers and how tall they are, and a hall
@@ -26,7 +37,7 @@
 (function () {
     'use strict';
     const { geo, TAU } = PG;
-    const { hash, makeCamera, frame, card, ring, Scene, segments, BOX } = PG.iso;
+    const { hash, makeCamera, frame, card, ring, Scene, segments, BOX, hull } = PG.iso;
     const kit = PG.isokit;
     const {
         FLOOR, wall, pane, door, windows, gableRoof, hipRoof, chimney, dormer, inKind, withKind, outward, shade,
@@ -975,13 +986,13 @@
         }
     }
 
-    // The way over the moat to a gate: a stone bridge out to a pier, then the
-    // drawbridge down from the gate, its chains up to the gatehouse
-    function approach(T, g, town) {
-        const S = T.S, p = T.p, t = WALL, e = g.e;
+    // Where the road out of a gate runs and where its bridge and drawbridge
+    // go. a runs along the road towards the gate and b across it from the
+    // side we see.
+    function gateRoad(g, p) {
+        const t = WALL, e = g.e;
         const r = [-e.n[0], -e.n[1]], across = e.n[1] !== 0 ? [1, 0] : [0, 1], wB = 4.4;
         const aC = g.x * r[0] + g.y * r[1], b0 = g.x * across[0] + g.y * across[1] - wB / 2;
-        // a runs along the road towards the gate and b across it from the side we see
         const F = {
             P: (a, b, c) => [r[0] * a + across[0] * (b0 + b), r[1] * a + across[1] * (b0 + b), c],
             V: (a, b, c) => [r[0] * a + across[0] * b, r[1] * a + across[1] * b, c],
@@ -989,17 +1000,24 @@
         const aGate = aC - t / 2 - 1.5, aBank = aC - t / 2 - p.moat, Ldb = 4.6;
         let aPier = aGate - Ldb, ramp = bridgeRamp(aPier - 3 - aBank);
         ramp = bridgeRamp(aPier - ramp - 0.3 - aBank);
-        const aArch = aPier - ramp - 0.3;
-        S.kind = INK;
-        if (aArch - aBank > 2.5) {
-            S.box(F, aArch, -0.25, 0, aPier, wB + 0.25, LAND - 0.05);
-            kit.bridge(T, F, aBank, aArch, wB, LAND, 0, true);
-        } else {
-            // a moat too narrow for the bridge, and the drawbridge comes down on the bank
+        const aArch = aPier - ramp - 0.3, arched = aArch - aBank > 2.5;
+        // a moat too narrow for the bridge, and the drawbridge comes down on the bank
+        if (!arched) {
             aPier = aBank;
             ramp = 0;
         }
-        g.road = { F, aBank, ramp, wB, r, across, b0 };
+        return { F, aBank, ramp, wB, r, across, b0, aGate, aPier, aArch, arched, Ldb };
+    }
+
+    // The way over the moat to a gate: a stone bridge out to a pier, then the
+    // drawbridge down from the gate, its chains up to the gatehouse
+    function approach(T, g) {
+        const S = T.S, { F, aBank, wB, aGate, aPier, aArch, arched, Ldb } = g.road;
+        S.kind = INK;
+        if (arched) {
+            S.box(F, aArch, -0.25, 0, aPier, wB + 0.25, LAND - 0.05);
+            kit.bridge(T, F, aBank, aArch, wB, LAND, 0, true);
+        }
         S.kind = WOOD;
         S.box(F, aPier, 0.55, LAND - 0.22, aGate, wB - 0.55, LAND + 0.04);
         if (T.detail) {
@@ -1020,9 +1038,10 @@
     // ------------------------------------------------------------------
 
     // The ground faces that hide the water's shadows under them, and the stone
-    // bank round the outside of the moat
+    // bank round the outside of the moat. The shadows are cut to the moat as
+    // well, so the faces only go as far as the glacis and leave the river open.
     function banks(T, town) {
-        const S = T.S, M = town.moat, n = M.length, far = offset(M, 600);
+        const S = T.S, M = town.moat, n = M.length, far = offset(M, 7);
         S.kind = INK;
         S.face(at3(town.wallIn, LAND), false);
         for (let i = 0; i < n; i++) {
@@ -1165,8 +1184,8 @@
     }
 
     // Swan side on, with a short wake behind it
-    function swan(T, x, y, dir) {
-        const S = T.S, P0 = card(T, x, y, 0, 0), P = (u, w) => P0(u * dir, w);
+    function swan(T, x, y, dir, z = 0) {
+        const S = T.S, P0 = card(T, x, y, z, 0), P = (u, w) => P0(u * dir, w);
         const body = [P(-0.8, 0.02), P(0.62, 0.02), P(0.72, 0.2), P(0.45, 0.42), P(-0.35, 0.5), P(-0.85, 0.32)];
         S.kind = INK;
         S.face(body);
@@ -1174,7 +1193,7 @@
         S.line([P(0.42, 0.38), P(0.58, 0.75), P(0.5, 1.1), P(0.56, 1.32), P(0.7, 1.36), P(0.9, 1.28)]);
         S.line([P(-0.4, 0.3), P(0.2, 0.36)]);
         S.kind = WATER;
-        for (const s of [-1, 1]) S.line([P0(-0.95 * dir, 0), [x - dir * 1.9 * T.cam.rx + s * 0.6 * T.cam.fx, y - dir * 1.9 * T.cam.ry + s * 0.6 * T.cam.fy, 0]]);
+        for (const s of [-1, 1]) S.line([P0(-0.95 * dir, 0), [x - dir * 1.9 * T.cam.rx + s * 0.6 * T.cam.fx, y - dir * 1.9 * T.cam.ry + s * 0.6 * T.cam.fy, z]]);
         S.kind = INK;
     }
 
@@ -1960,6 +1979,52 @@
         for (const u of [-0.42, -0.25, 0.3, 0.46]) S.line([P(u, 0.42), P(u, 0)]);
     }
 
+    // Ox or cow side on, facing dir: a heavy body, the head carried low, and
+    // horns on an ox
+    function beast(T, x, y, dir, horns) {
+        const S = T.S, P0 = card(T, x, y, LAND, 0), P = (u, w) => P0(u * dir, w);
+        S.kind = FIGURE;
+        const body = [P(-0.95, 0.72), P(0.78, 0.72), P(0.95, 1.02), P(0.86, 1.42), P(-0.86, 1.48), P(-1, 1.22)];
+        S.face(body);
+        S.loop(body);
+        const head = [P(0.82, 1.34), P(1.3, 1.16), P(1.34, 0.86), P(1.04, 0.82)];
+        S.face(head);
+        S.loop(head);
+        if (horns) S.line([P(0.98, 1.3), P(1.06, 1.62), P(1.24, 1.66)]);
+        for (const u of [-0.74, -0.52, 0.5, 0.72]) S.line([P(u, 0.74), P(u, 0)]);
+        S.line([P(-0.98, 1.38), P(-1.1, 0.86)]);
+        S.kind = INK;
+    }
+
+    // A plowman behind a pair of oxen, walking along w down the furrows
+    function plowTeam(T, x, y, w, rng) {
+        const S = T.S, dir = dot2(w, [T.cam.rx, T.cam.ry]) >= 0 ? 1 : -1, side = [-w[1] * 0.65, w[0] * 0.65];
+        const pair = [[x + side[0], y + side[1]], [x - side[0], y - side[1]]];
+        pair.sort((p, q) => (q[0] * T.cam.fx + q[1] * T.cam.fy) - (p[0] * T.cam.fx + p[1] * T.cam.fy));
+        for (const [u, v] of pair) beast(T, u, v, dir, true);
+        // the beam back from the yoke to the plow, its handles, and the plowman holding them
+        const [px, py] = [x - w[0] * 3, y - w[1] * 3];
+        S.kind = WOOD;
+        S.line([[x - w[0] * 0.6, y - w[1] * 0.6, LAND + 1.1], [px, py, LAND + 0.3]]);
+        S.line([[px, py, LAND + 0.1], [px - w[0] * 0.9, py - w[1] * 0.9, LAND + 1]]);
+        S.kind = INK;
+        person(T, px - w[0] * 1.4, py - w[1] * 1.4, LAND, rng);
+    }
+
+    // Someone with a staff: a shepherd's crook, or a hay rake
+    function worker(T, x, y, rng, tool) {
+        person(T, x, y, LAND, rng);
+        const P = card(T, x, y, LAND, 0), S = T.S;
+        S.kind = WOOD;
+        if (tool === 'crook') S.line([P(0.34, 0), P(0.34, 2.05), P(0.24, 2.3), P(0.08, 2.24)]);
+        else {
+            const s = rng.sign();
+            S.line([P(0.3 * s, 1.15), P(1.4 * s, 0.05)]);
+            S.line([P(1.15 * s, 0.05), P(1.65 * s, 0.05)]);
+        }
+        S.kind = INK;
+    }
+
     // Small fruit tree: a round crown on a short trunk
     function fruitTree(T, x, y, rng) {
         const S = T.S, P = card(T, x, y, LAND, 0.1), r = rng.range(1, 1.3), cz = 1.5 + r * 0.8;
@@ -2036,16 +2101,42 @@
         S.kind = INK;
     }
 
+    // A field's outline, less the stretches where a hedge stands in place of
+    // its edge. Each of skip is {x or y, lo, hi}: a stretch of the line at that x or y.
+    function outline(T, r, skip) {
+        const S = T.S, [x0, y0, x1, y1] = r;
+        if (!skip.length) return S.loop(at3(rectPoly(r), LAND));
+        const sides = [['y', y0, x0, x1], ['x', x1, y0, y1], ['y', y1, x0, x1], ['x', x0, y0, y1]];
+        for (const [k, c, lo, hi] of sides) {
+            const cut = skip.filter(s => s[k] !== undefined && Math.abs(s[k] - c) < 1e-6).map(s => [s.lo, s.hi]).sort((u, v) => u[0] - v[0]);
+            let from = lo;
+            const draw = (u, v) => { if (v - u > 0.05) S.line(k === 'y' ? [[u, c, LAND], [v, c, LAND]] : [[c, u, LAND], [c, v, LAND]]); };
+            for (const [u, v] of cut) {
+                draw(from, Math.min(u, hi));
+                from = Math.max(from, v);
+            }
+            draw(from, hi);
+        }
+    }
+
     // One field: an outline and furrows, strips, grass, an orchard, a hay
-    // harvest, sheep, or a copse
-    function field(T, r, kind, rng) {
+    // harvest, sheep, or a copse. ok(x, y, m) says where things can stand,
+    // m meters clear of whatever the field stops at, and skip is for outline().
+    function field(T, r, kind, rng, ok = () => true, skip = []) {
         const S = T.S, p = T.p, [x0, y0, x1, y1] = r, w = x1 - x0, d = y1 - y0;
         const gap = p.furrows, along = w >= d ? [1, 0, 0] : [0, 1, 0];
         const rect3 = q => at3(rectPoly(q), LAND);
         S.kind = GREEN;
-        if (kind !== 'wood') S.loop(rect3(r));
-        if (kind === 'furrows') S.hatch(rect3(r), rng.chance(0.7) ? along : [along[1], along[0], 0], gap);
-        else if (kind === 'strips') {
+        if (kind !== 'wood') outline(T, r, skip);
+        if (kind === 'furrows') {
+            const dir = rng.chance(0.7) ? along : [along[1], along[0], 0];
+            S.hatch(rect3(r), dir, gap);
+            // now and then a team out plowing, along the furrows
+            if (rng.chance(0.5 * p.people) && w > 12 && d > 12) {
+                const x = rng.range(x0 + 5, x1 - 5), y = rng.range(y0 + 5, y1 - 5), s = rng.sign();
+                if (ok(x, y, 4) && ok(x - dir[0] * s * 5, y - dir[1] * s * 5, 2)) plowTeam(T, x, y, [dir[0] * s, dir[1] * s], rng);
+            }
+        } else if (kind === 'strips') {
             const n = rng.int(3, 5), lw = w >= d;
             for (let i = 0; i < n; i++) {
                 const q = lw ? [x0, y0 + (d * i) / n, x1, y0 + (d * (i + 1)) / n] : [x0 + (w * i) / n, y0, x0 + (w * (i + 1)) / n, y1];
@@ -2054,19 +2145,47 @@
                 else if (rng.chance(0.5)) S.hatch(rect3(q), [along[1], along[0], 0], gap * 1.4);
             }
         } else if (kind === 'meadow' || kind === 'pasture') {
-            for (let i = Math.round((w * d) / 48); i > 0; i--) tuft(T, rng.range(x0 + 0.8, x1 - 0.8), rng.range(y0 + 0.8, y1 - 0.8));
+            for (let i = Math.round((w * d) / 48); i > 0; i--) {
+                const x = rng.range(x0 + 0.8, x1 - 0.8), y = rng.range(y0 + 0.8, y1 - 0.8);
+                if (ok(x, y, 0.6)) tuft(T, x, y);
+            }
             if (kind === 'pasture') {
                 S.kind = INK;
                 const flock = [];
                 for (let i = rng.int(4, 8); i > 0; i--) flock.push([rng.range(x0 + 2, x1 - 2), rng.range(y0 + 2, y1 - 2)]);
                 flock.sort((a, b) => (b[0] * T.cam.fx + b[1] * T.cam.fy) - (a[0] * T.cam.fx + a[1] * T.cam.fy));
-                for (const [x, y] of flock) sheep(T, x, y, rng.sign());
+                for (const [x, y] of flock) {
+                    const dir = rng.sign();
+                    if (ok(x, y, 1.2)) sheep(T, x, y, dir);
+                }
+                // and their shepherd, a little way off from the nearest of them
+                if (rng.chance(0.7 * p.people)) {
+                    const [fx, fy] = flock[flock.length - 1], x = geo.clamp(fx + rng.range(-3, 3), x0 + 1, x1 - 1), y = geo.clamp(fy - rng.range(2, 3.5), y0 + 1, y1 - 1);
+                    if (ok(x, y, 1) && !flock.some(([u, v]) => Math.hypot(u - x, v - y) < 1.8)) worker(T, x, y, rng, 'crook');
+                }
             }
         } else if (kind === 'orchard') {
-            for (let x = x0 + 2.5; x < x1 - 1.5; x += 5.5) for (let y = y0 + 2.5; y < y1 - 1.5; y += 5.5) fruitTree(T, x + rng.range(-0.4, 0.4), y + rng.range(-0.4, 0.4), rng);
+            for (let x = x0 + 2.5; x < x1 - 1.5; x += 5.5) {
+                for (let y = y0 + 2.5; y < y1 - 1.5; y += 5.5) {
+                    const u = x + rng.range(-0.4, 0.4), v = y + rng.range(-0.4, 0.4);
+                    if (ok(u, v, 1.4)) fruitTree(T, u, v, rng);
+                }
+            }
         } else if (kind === 'hay') {
             S.hatch(rect3(r), along, gap * 2.2);
-            for (let i = rng.int(2, 5); i > 0; i--) haystack(T, rng.range(x0 + 2, x1 - 2), rng.range(y0 + 2, y1 - 2));
+            const stacks = [];
+            for (let i = rng.int(2, 5); i > 0; i--) {
+                const x = rng.range(x0 + 2, x1 - 2), y = rng.range(y0 + 2, y1 - 2);
+                if (ok(x, y, 1.5)) {
+                    haystack(T, x, y);
+                    stacks.push([x, y]);
+                }
+            }
+            // haymakers with their rakes, clear of the stacks
+            for (let i = rng.chance(0.8 * p.people) ? rng.int(1, 3) : 0; i > 0; i--) {
+                const x = rng.range(x0 + 2, x1 - 2), y = rng.range(y0 + 2, y1 - 2);
+                if (ok(x, y, 1.5) && !stacks.some(([u, v]) => Math.hypot(u - x, v - y) < 3.2)) worker(T, x, y, rng, 'rake');
+            }
         } else if (kind === 'vineyard') {
             // rows of vines as dashes, every other row starting half a dash further along
             const lw = w >= d, L = lw ? w : d, D = lw ? d : w, per = Math.max(apart(T, along, [along[1], along[0], 0]), 1e-6);
@@ -2093,7 +2212,7 @@
             const spots = [];
             for (let i = Math.round((w * d) / 32); i > 0; i--) {
                 const x = rng.range(x0 + 1.5, x1 - 1.5), y = rng.range(y0 + 1.5, y1 - 1.5);
-                if (spots.some(([u, v]) => Math.hypot(u - x, v - y) < 3.4)) continue;
+                if (!ok(x, y, 1.5) || spots.some(([u, v]) => Math.hypot(u - x, v - y) < 3.4)) continue;
                 spots.push([x, y]);
             }
             spots.sort((a, b) => (b[0] * T.cam.fx + b[1] * T.cam.fy) - (a[0] * T.cam.fx + a[1] * T.cam.fy));
@@ -2105,33 +2224,160 @@
         S.kind = INK;
     }
 
+    // Length on paper (mm) of a meter of level ground along (dx, dy)
+    function onPaper(T, dx, dy) {
+        const c = T.cam;
+        return c.k * Math.hypot(dx * c.rx + dy * c.ry, (dx * c.fx + dy * c.fy) * c.se);
+    }
+
+    // The runs of polyline E inside rectangle r, where on[i] says the point's in view
+    function clipRun(E, on, [x0, y0, x1, y1]) {
+        const out = [];
+        let run = null;
+        for (let i = 0; i + 1 < E.length; i++) {
+            const A = E[i], B = E[i + 1], dx = B[0] - A[0], dy = B[1] - A[1];
+            let t0 = 0, t1 = 1, ok = on[i] || on[i + 1];
+            for (const [pp, q] of [[-dx, A[0] - x0], [dx, x1 - A[0]], [-dy, A[1] - y0], [dy, y1 - A[1]]]) {
+                if (!ok) break;
+                if (pp === 0) ok = q >= 0;
+                else if (pp < 0) t0 = Math.max(t0, q / pp);
+                else t1 = Math.min(t1, q / pp);
+            }
+            if (!ok || t1 - t0 < 1e-9) {
+                run = null;
+                continue;
+            }
+            const a = [A[0] + dx * t0, A[1] + dy * t0], b = [A[0] + dx * t1, A[1] + dy * t1];
+            if (!run || t0 > 1e-9) out.push((run = [a]));
+            run.push(b);
+            if (t1 < 1 - 1e-9) run = null;
+        }
+        return out;
+    }
+
+    // One bushy lump of hedge: a round cut-out a bit wider than tall
+    function bush(T, x, y, r, rng) {
+        const S = T.S, ce = T.cam.ce, flat = 0.78, cz = (r * flat) / ce, P = card(T, x, y, LAND, 0), ph = rng.range(0, TAU), pts = [];
+        for (let i = 0; i < 14; i++) {
+            const a = (TAU * i) / 14, b = 1 + 0.07 * Math.sin(a * 4 + ph);
+            pts.push([Math.cos(a) * r * b, cz + (Math.sin(a) * r * flat * b) / ce]);
+        }
+        S.face(hull(pts).map(([u, w]) => P(u, w)));
+        S.loop(pts.map(([u, w]) => P(u, w)));
+    }
+
+    // A hedge down a line on the ground, its lumps spaced so they show apart
+    // on paper, with an oak standing in it now and then. ok(x, y) says where it grows.
+    function hedge(T, [a, b], rng, ok) {
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]), d = [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
+        const step = Math.max(1.3, 1.2 / Math.max(0.05, onPaper(T, d[0], d[1]))), spots = [];
+        let oak = rng.range(6, 30);
+        for (let s = rng.range(0.3, 0.9); s < L - 0.3; s += step * rng.range(0.85, 1.15)) {
+            const x = a[0] + d[0] * s, y = a[1] + d[1] * s;
+            if (!ok(x, y)) continue;
+            const tall = s > oak && rng.chance(0.3 + 0.5 * T.p.trees);
+            if (tall) oak = s + rng.range(18, 45);
+            spots.push([x, y, tall]);
+        }
+        spots.sort((p, q) => (q[0] * T.cam.fx + q[1] * T.cam.fy) - (p[0] * T.cam.fx + p[1] * T.cam.fy));
+        T.S.kind = GREEN;
+        for (const [x, y, tall] of spots) {
+            if (tall) tree(T, x, y, LAND, rng);
+            else bush(T, x, y, rng.range(1.2, 1.5), rng);
+        }
+        T.S.kind = INK;
+    }
+
+    // The woods: their fields filled with trees, which run on over the gaps
+    // between neighboring ones so a wood is one piece and thin out raggedly
+    // at its edges. The noise that picked the fields also groups the firs
+    // into stands of their own.
+    function woodland(T, cells, N, rng, ok) {
+        const keys = new Set(cells.map(c => c.i * 4096 + c.j)), wood = (c, di, dj) => keys.has((c.i + di) * 4096 + c.j + dj);
+        // about as far apart as in the copses, or the crowns and their shading run together on paper
+        const step = 4.8, gap = 3.4, spots = [], near = new Map(), at = (x, y) => Math.floor(x / gap) * 8192 + Math.floor(y / gap);
+        const roomFor = (x, y) => {
+            for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+                for (const [u, v] of near.get(at(x + i * gap, y + j * gap)) || []) if (Math.hypot(u - x, v - y) < gap) return false;
+            }
+            return true;
+        };
+        for (const c of cells) {
+            const [x0, y0, x1, y1] = c.r, g = 0.95;
+            const grow = [wood(c, -1, 0), wood(c, 0, -1), wood(c, 1, 0), wood(c, 0, 1)];
+            const ex = [x0 - (grow[0] ? g : 0), y0 - (grow[1] ? g : 0), x1 + (grow[2] ? g : 0), y1 + (grow[3] ? g : 0)];
+            for (let x = ex[0] + step * rng.range(0.2, 0.6); x < ex[2]; x += step) {
+                for (let y = ex[1] + step * rng.range(0.2, 0.6); y < ex[3]; y += step) {
+                    const u = x + rng.range(-1.1, 1.1), v = y + rng.range(-1.1, 1.1);
+                    // how far in from an edge that isn't more wood
+                    const inside = Math.min(grow[0] ? 9 : u - x0, grow[1] ? 9 : v - y0, grow[2] ? 9 : x1 - u, grow[3] ? 9 : y1 - v);
+                    if (inside < rng.range(0.6, 3.2) || !ok(u, v) || !roomFor(u, v)) continue;
+                    spots.push([u, v]);
+                    const k = at(u, v);
+                    if (near.has(k)) near.get(k).push([u, v]);
+                    else near.set(k, [[u, v]]);
+                }
+            }
+        }
+        spots.sort((p, q) => (q[0] * T.cam.fx + q[1] * T.cam.fy) - (p[0] * T.cam.fx + p[1] * T.cam.fy));
+        for (const [x, y] of spots) {
+            if (N.noise2(x / 45, y / 45) > 0.1 + rng.range(-0.25, 0.25)) fir(T, x, y, LAND, rng.range(6, 9), rng);
+            else tree(T, x, y, LAND, rng);
+        }
+    }
+
     // Roads out of the gates, fields in a grid lined up on them, a mill, a
-    // tournament, trees and people on the roads
-    function country(T, town, rng) {
+    // tournament, trees and people on the roads, and the river with its bridges
+    function country(T, town, rng, view, roads, river) {
         const { S, p, cam } = T;
-        const tall = 16 * cam.ce * cam.k;
-        let view = [[0, -tall * 0.3], [S.W, -tall * 0.3], [S.W, S.H + tall], [0, S.H + tall]].map(([sx, sy]) => cam.ground(sx, sy, LAND));
-        if (geo.polygonArea(view) < 0) view.reverse();
         const [vx0, vy0, vx1, vy1] = bounds(view);
         const glacis = offset(town.moat, 7);
-        // the roads, as strips running out from the end of each bridge
-        const roads = [];
-        for (const g of town.gates) {
-            if (!g.road) continue;
-            const { r, across, b0, wB, aBank, ramp } = g.road, a1 = aBank - ramp, hw = 2.9, bc = b0 + wB / 2;
-            let a0 = a1;
-            while (a0 > -2000 && [0, 1].some(() => depth(view, r[0] * a0 + across[0] * bc, r[1] * a0 + across[1] * bc) > -30)) a0 -= 10;
-            const P = (a, b) => [r[0] * a + across[0] * (bc + b), r[1] * a + across[1] * (bc + b), LAND];
-            roads.push({ g, a0, a1, hw, P, bc, rect: bounds([P(a0, -hw), P(a1, hw)]) });
-        }
+        // the river and the meadows along it, which fields and the things in them keep out of
+        const zone = river ? SLOPE + river.meadow : 0, wet = (x, y, m = 0) => !!river && river.gap(x, y) < zone + m;
+        const onBank = (x, y) => !!river && river.gap(x, y) < SLOPE + 2;
+        const bridges = rd => (river ? river.crossings.filter(c => c.rd === rd).map(c => [c.a - c.hw - SLOPE - RAMP, c.a + c.hw + SLOPE + RAMP]) : []);
         for (const rd of roads) {
-            const { a0, a1, hw, P } = rd, half = rd.g.road.wB / 2;
+            const { a0, a1, hw, P } = rd, half = rd.g.road.wB / 2, gaps = bridges(rd).sort((u, v) => u[0] - v[0]);
             S.kind = INK;
-            // the road is wider than the bridge, and narrows to meet the ends of its parapets
-            for (const b of [-1, 1]) S.line([P(a0, b * hw), P(a1 - 3, b * hw), P(a1, b * half)]);
+            // the road is wider than the bridges, and narrows to meet the ends of their parapets
+            const piece = (u, v, nu) => {
+                for (const b of [-1, 1]) S.line([P(u, b * (nu ? half : hw)), ...(nu ? [P(u + 3, b * hw)] : []), P(v - 3, b * hw), P(v, b * half)]);
+            };
+            let from = a0;
+            for (const [lo, hi] of gaps) {
+                piece(from, lo, from !== a0);
+                from = hi;
+            }
+            piece(from, a1, from !== a0);
             if (T.detail) {
                 S.kind = WOOD;
-                for (const b of [-0.8, 0.8]) for (let a = a1 - 1; a > a0; a -= 3.2) S.line([P(a, b), P(a - 1.8, b)], true);
+                for (const b of [-0.8, 0.8]) {
+                    for (let a = a1 - 1; a > a0; a -= 3.2) if (!gaps.some(([lo, hi]) => a > lo - 1 && a - 1.8 < hi + 1)) S.line([P(a, b), P(a - 1.8, b)], true);
+                }
+            }
+        }
+        if (river) {
+            riverBanks(T, river);
+            // One bridge is guarded at its far end: the main road's, or the
+            // other one when the main one's tower would be off the page
+            const towerAt = c => c.a - c.hw - SLOPE - RAMP + 0.3, shows = c => {
+                const F = c.rd.g.road.F, w = c.rd.g.road.wB;
+                return [F.P(towerAt(c), w / 2, LAND), F.P(towerAt(c), w / 2, LAND + 16)].every(q => (([x, y]) => x > 4 && x < S.W - 4 && y > 4 && y < S.H - 4)(T.home.project(...q)));
+            };
+            const guarded = p.bridgeGate && river.crossings.slice().sort((u, v) => (v.rd.g === town.gates[0]) - (u.rd.g === town.gates[0])).find(shows);
+            for (const c of river.crossings) {
+                const { F, wB, r, across, b0 } = c.rd.g.road;
+                riverBridge(T, F, c.a - c.hw, c.a + c.hw, wB);
+                if (c === guarded) bridgeGate(T, F, towerAt(c), wB, rng);
+                // no ripples under it
+                river.dry.push((x, y, m = 0) => Math.abs(x * across[0] + y * across[1] - b0 - wB / 2) < wB / 2 + 1.8 + m && Math.abs(x * r[0] + y * r[1] - c.a) < c.hw + 1 + m);
+            }
+            const mrng = new PG.RNG(rng.int(1, 1e9)), mill = p.watermill && millSite(T, river, town, mrng);
+            if (mill) {
+                waterMill(T, river, mill, mrng);
+                // the fields and hedges keep clear of it the way they do of the water
+                const base = river.gap, foot = mill.foot;
+                river.gap = (x, y) => Math.min(base(x, y), (depth(foot, x, y) > 0 ? -depth(foot, x, y) : distOut(foot, x, y)) - 2.5 + zone);
             }
         }
         // field grid, with lines either side of each road so no field crosses one
@@ -2154,16 +2400,26 @@
                 if (r[2] - r[0] < 8 || r[3] - r[1] < 8) continue;
                 const P = rectPoly(r);
                 if (!overlap(P, view) || overlap(P, glacis) || roads.some(rd => overlap(P, rectPoly(rd.rect)))) continue;
-                const q = cam.project((r[0] + r[2]) / 2, (r[1] + r[3]) / 2, LAND);
+                // A field the river runs by is cut off along its meadows, and one
+                // that's mostly meadow is left to them
+                let damp = false;
+                if (river && river.gap((r[0] + r[2]) / 2, (r[1] + r[3]) / 2) - Math.hypot(r[2] - r[0], r[3] - r[1]) / 2 < zone + 1) {
+                    let n = 0;
+                    for (let u = 0; u < 6; u++) for (let v = 0; v < 6; v++) if (wet(geo.lerp(r[0], r[2], (u + 0.5) / 6), geo.lerp(r[1], r[3], (v + 0.5) / 6))) n++;
+                    if (n > 18) continue;
+                    damp = true;
+                }
+                const q = T.home.project((r[0] + r[2]) / 2, (r[1] + r[3]) / 2, LAND);
                 const road = roads.find(rd => overlap(rectPoly([r[0] - 3, r[1] - 3, r[2] + 3, r[3] + 3]), rectPoly(rd.rect)));
                 const far = distOut(town.moat, (r[0] + r[2]) / 2, (r[1] + r[3]) / 2);
-                cells.push({ r, q, road, near: !!road, far });
+                cells.push({ i, j, r, q, road, near: !!road, far, damp, skip: [] });
             }
         }
+        const at = new Map(cells.map(c => [c.i * 4096 + c.j, c])), next = (c, di, dj) => at.get((c.i + di) * 4096 + c.j + dj);
         // the mill and the tournament go on fields we can see well, below the town
         const below = c => c.q[1] > S.H * 0.55 && c.q[1] < S.H * 0.95 && c.q[0] > S.W * 0.08 && c.q[0] < S.W * 0.92;
         const take = test => {
-            const options = cells.filter(c => !c.kind && test(c));
+            const options = cells.filter(c => !c.kind && !c.damp && test(c));
             return options.length ? rng.pick(options) : null;
         };
         if (p.fair) {
@@ -2183,36 +2439,131 @@
         }
         // cottages along the roads just out of the gates
         for (let i = Math.round(p.cottages * 3); i > 0; i--) {
-            const options = cells.filter(c => !c.kind && c.road && c.far < 45 && c.r[2] - c.r[0] > 12 && c.r[3] - c.r[1] > 12 && !beside(c, 'mill'));
+            const options = cells.filter(c => !c.kind && !c.damp && c.road && c.far < 45 && c.r[2] - c.r[0] > 12 && c.r[3] - c.r[1] > 12 && !beside(c, 'mill'));
             if (!options.length) break;
             options.sort((a, b) => a.far - b.far);
             options[rng.int(0, Math.min(1, options.length - 1))].kind = 'hamlet';
         }
+        // The abbey takes a block of four or six fields out past the town,
+        // where the town doesn't stand in front of it on the page. Its gate is
+        // in the front wall on the line between the block's two columns, and a
+        // lane runs off from it along the gap in front of the block.
+        const arng = new PG.RNG(rng.int(1, 1e9));
+        let lane = null;
+        if (p.abbey) {
+            const front = hull(town.moat.map(([x, y]) => T.home.project(x, y, LAND)).concat(town.towers.map(t => T.home.project(t.x, t.y, t.top))).map(q => [q[0], q[1]]));
+            const middle = T.home.project(0, 0, LAND), plain = c => c && !c.kind && !c.damp && c.far > 18;
+            const options = [];
+            for (const c of cells) {
+                // two fields across, and two or three deep when two aren't deep enough for the church
+                let block = [c, next(c, 1, 0), next(c, 0, 1), next(c, 1, 1)];
+                if (!block.every(plain)) continue;
+                if (block[3].r[3] - c.r[1] < 46) block = block.concat([next(c, 0, 2), next(c, 1, 2)]);
+                if (!block.every(plain)) continue;
+                const plot = [c.r[0], c.r[1], block[block.length - 1].r[2], block[block.length - 1].r[3]], W = plot[2] - plot[0], D = plot[3] - plot[1];
+                if (D < 46 || W < 38 || D > 80 || W > 66) continue;
+                const q = rectPoly(plot).map(([x, y]) => T.home.project(x, y, LAND)), top = T.home.project((plot[0] + plot[2]) / 2, (plot[1] + plot[3]) / 2, LAND + 42);
+                if (q.some(([x, y]) => x < 5 || x > S.W - 5 || y > S.H - 5) || top[1] < 3 || q.some(([x, y]) => y > middle[1])) continue;
+                if (q.some(([x, y]) => geo.pointInPolygon(x, y, front)) || geo.pointInPolygon(top[0], top[1], front)) continue;
+                options.push({ block, plot, gate: xs[c.i + 1], score: Math.abs(top[1] - S.H * 0.06) + arng.range(0, 30) });
+            }
+            const best = options.sort((u, v) => u.score - v.score)[0];
+            if (best) {
+                const [c] = best.block;
+                for (const o of best.block) {
+                    o.kind = 'abbey';
+                    o.parcel = c;
+                }
+                c.plot = best.plot;
+                c.gate = best.gate;
+                lane = { y: ys[c.j], x: best.gate, i: c.i, j: c.j };
+            }
+        }
         // Every town has its own country: more plowland round one, more woods
-        // or pasture round another. The farther from town, the more of it is
-        // woodland.
+        // or pasture round another.
         const lean = () => rng.range(0.5, 1.7), plow = lean(), grass = lean(), woods = lean(), vines = rng.chance(0.5) ? lean() : 0;
-        const kinds = c => [[3 * p.fields * plow, 'furrows'], [2 * p.fields * plow, 'strips'], [1.4 * grass, 'meadow'], [0.9 * grass, 'pasture'], [0.8, 'orchard'],
-            [0.8 * p.fields, 'hay'], [1.2 * p.fields * vines, 'vineyard'], [0.3, 'pond'], [1.6 * p.trees * woods * (0.25 + c.far / 45), 'wood']];
+        const kinds = () => [[3 * p.fields * plow, 'furrows'], [2 * p.fields * plow, 'strips'], [1.4 * grass, 'meadow'], [0.9 * grass, 'pasture'], [0.8, 'orchard'],
+            [0.8 * p.fields, 'hay'], [1.2 * p.fields * vines, 'vineyard'], [0.3, 'pond'], [0.35 * p.trees * woods, 'wood']];
+        // Woods are fields picked out by a smooth noise, so they come in blocks
+        // of several, and the farther from town the more of them there are
+        const N = PG.makeNoise(new PG.RNG(rng.int(1, 1e9))), wide = rng.range(110, 170);
+        for (const c of cells) {
+            if (c.kind || c.far < 22) continue;
+            const v = N.fbm2((c.r[0] + c.r[2]) / 2 / wide, (c.r[1] + c.r[3]) / 2 / wide, 3, 2, 0.5);
+            if (v + 0.5 * (p.trees * woods - 0.6) + Math.min(c.far, 170) / 400 > 0.62) c.kind = 'forest';
+        }
         // far fields first, so nearer trees and haystacks stack over them in order
         cells.sort((a, b) => a.q[1] - b.q[1]);
-        const outside = S.shadow;
         let ponds = 0;
         for (const c of cells) {
+            c.parcel = c.parcel || c;
+            if (c.kind) continue;
+            c.kind = rng.weighted(kinds());
+            if (c.kind === 'pond' && (c.damp || ++ponds > 2)) c.kind = 'meadow';
+        }
+        // some fields run on into the next one, so they aren't all one size
+        const big = ['furrows', 'strips', 'meadow', 'pasture', 'hay'];
+        for (const c of cells) {
+            if (c.parcel !== c || c.merged || c.damp || !big.includes(c.kind) || !rng.chance(0.45)) continue;
+            const o = rng.chance(0.5) ? next(c, 1, 0) : next(c, 0, 1);
+            if (!o || o.parcel !== o || o.merged || o.damp || !big.includes(o.kind)) continue;
+            o.parcel = c;
+            c.merged = o;
+            c.r = [Math.min(c.r[0], o.r[0]), Math.min(c.r[1], o.r[1]), Math.max(c.r[2], o.r[2]), Math.max(c.r[3], o.r[3])];
+        }
+        // Hedges along some of the edges between fields, most of them in the
+        // closes near town. A hedge stands in place of the two fields' edges.
+        const hedges = [], hedgeable = c => c.kind !== 'forest' && c.kind !== 'fair' && c.kind !== 'abbey';
+        const onLane = (c, dj) => lane && dj && c.j === lane.j - 1 && c.i <= lane.i;
+        for (const c of cells) {
+            for (const [di, dj] of [[1, 0], [0, 1]]) {
+                const o = next(c, di, dj);
+                if (!o || o.parcel === c.parcel || !hedgeable(c) || !hedgeable(o) || onLane(c, dj)) continue;
+                if (!rng.chance(p.hedges * geo.clamp(1.15 - Math.min(c.far, o.far) / 150, 0.2, 1))) continue;
+                const X = xs[c.i + 1], Y = ys[c.j + 1];
+                hedges.push(di ? [[X, ys[c.j]], [X, Y]] : [[xs[c.i], Y], [X, Y]]);
+                for (const [f, s] of [[c, 1], [o, -1]]) f.parcel.skip.push(di ? { x: X - s * 0.9, lo: ys[c.j], hi: Y } : { y: Y - s * 0.9, lo: xs[c.i], hi: X });
+            }
+        }
+        const outside = S.shadow, edges = river && [1, -1].map(sg => river.off(sg, zone));
+        for (const c of cells) {
+            if (c.parcel !== c) continue;
             S.shadow = outside;
             if (c.kind === 'fair') tournament(T, c.r, rng);
             else if (c.kind === 'mill') {
-                field(T, c.r, 'meadow', rng);
+                field(T, c.r, 'meadow', rng, undefined, c.skip);
                 postMill(T, (c.r[0] + c.r[2]) / 2, (c.r[1] + c.r[3]) / 2, rng);
             } else if (c.kind === 'hamlet') hamlet(T, c, rng);
-            else {
-                let kind = rng.weighted(kinds(c));
-                if (kind === 'pond' && ++ponds > 2) kind = 'meadow';
-                field(T, c.r, kind, rng);
-            }
+            else if (c.kind === 'abbey') abbey(T, c.plot, c.gate, arng);
+            else if (c.kind === 'forest') continue;
+            else if (c.damp) {
+                keepDry(T, river, zone, () => field(T, c.r, c.kind, rng, (x, y, m) => !wet(x, y, m), c.skip));
+                // the field closed off along the edge of the meadows
+                S.kind = GREEN;
+                for (const E of edges) for (const run of clipRun(E, river.on, c.r)) S.line(run.map(([x, y]) => [x, y, LAND]));
+                S.kind = INK;
+            } else field(T, c.r, c.kind, rng, undefined, c.skip);
         }
+        // the lane out of the abbey gate, two ruts down the gap between the fields as far as it goes
+        const lanes = [];
+        if (lane) {
+            const blocked = x => wet(x, lane.y, -zone + SLOPE + 1) || roads.some(rd => inRect(rd.rect, x, lane.y, 1)) || depth(glacis, x, lane.y) > -1;
+            // it's a farm track, so it ends after a few fields
+            let x1 = lane.x;
+            const end = lane.x - rng.range(55, 85);
+            while (x1 > Math.max(vx0 - 20, end) && !blocked(x1 - 1.8)) x1 -= 3.2;
+            lanes.push([x1, lane.x]);
+            S.kind = WOOD;
+            if (T.detail) for (let x = lane.x; x - 1.8 >= x1; x -= 3.2) for (const b of [-0.45, 0.45]) S.line([[x, lane.y + b, LAND], [x - 1.8, lane.y + b, LAND]], true);
+            S.kind = INK;
+        }
+        const free = (x, y) => !wet(x, y, 0.5) && !roads.some(rd => inRect(rd.rect, x, y, 1.2)) && depth(glacis, x, y) < -2
+            && !lanes.some(([u0, u1]) => x > u0 - 1 && x < u1 + 1 && Math.abs(y - lane.y) < 1.8);
+        for (const h of hedges) hedge(T, h, rng, free);
+        woodland(T, cells.filter(c => c.kind === 'forest'), N, rng, (x, y) => free(x, y) && depth(view, x, y) > -12);
+        if (river) riverLife(T, river, rng);
         // fields with something built on them, which loose trees keep off
-        const builtOn = (x, y) => cells.some(c => (c.kind === 'hamlet' || c.kind === 'fair' || c.kind === 'mill') && inRect(c.r, x, y, 3));
+        const builtOn = (x, y) => cells.some(c => ['hamlet', 'fair', 'mill', 'abbey'].includes(c.kind) && inRect(c.plot || c.r, x, y, 3));
         // trees along the roads, people and wagons on them
         for (const rd of roads) {
             const { a0, a1, P } = rd;
@@ -2221,15 +2572,16 @@
                 side = -side;
                 if (!rng.chance(0.4 + 0.5 * p.trees)) continue;
                 const [x, y] = P(a, side * 4.6);
-                // the cottages have their own trees, and these would stand on their fences or in the lists
-                if (builtOn(x, y)) continue;
+                // the cottages have their own trees, and these would stand on their fences, in the
+                // lists, or in front of a bridge's gate tower
+                if (builtOn(x, y) || onBank(x, y) || bridges(rd).some(([lo]) => a > lo - 7 && a < lo + 5)) continue;
                 tree(T, x, y, LAND, rng);
             }
             const sx = rd.g.road.r, dirOut = -(sx[0] * cam.rx + sx[1] * cam.ry) >= 0 ? 1 : -1;
             // starting back from where the road narrows to the bridge
             for (let a = a1 - 7; a > a0; a -= rng.range(14, 26)) {
                 const [x, y] = P(a, rng.range(-1.6, 1.6));
-                if (depth(view, x, y) < 0) continue;
+                if (depth(view, x, y) < 0 || bridges(rd).some(([lo, hi]) => a > lo - 4 && a < hi + 4)) continue;
                 const roll = rng.random() / Math.max(0.05, p.people);
                 if (roll < 0.25) wagon(T, x, y, rd.g.e.n[1] !== 0 ? (rng.chance(0.5) ? 1 : 3) : (rng.chance(0.5) ? 0 : 2), rng);
                 else if (roll < 0.45) horse(T, x, y, LAND, rng.chance(0.5) ? dirOut : -dirOut, rng, true);
@@ -2240,9 +2592,940 @@
         for (let i = Math.round(14 * p.trees); i > 0; i--) {
             const x = rng.range(vx0, vx1), y = rng.range(vy0, vy1);
             const g = depth(glacis, x, y);
-            if (g > 0 || g < -8 || depth(view, x, y) < 0 || roads.some(rd => inRect(rd.rect, x, y, 2.5)) || builtOn(x, y)) continue;
+            if (g > 0 || g < -8 || depth(view, x, y) < 0 || roads.some(rd => inRect(rd.rect, x, y, 2.5)) || builtOn(x, y) || onBank(x, y)) continue;
             tree(T, x, y, LAND, rng);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // The abbey
+    // ------------------------------------------------------------------
+
+    // Pointed windows in a row along a wall from s0 to s1, h tall from c, at
+    // least gap apart. Like panes(), they're kept FINE wide and apart on
+    // paper, fewer and wider on a wall turned away from us, and left out
+    // once that would make them twice as wide as they are.
+    function lancets(T, at, s0, s1, c, h, w0, gap) {
+        const { pu, pz } = wallScale(T, at), w = Math.max(w0, (1.1 * FINE) / pu);
+        if (w > 2 * w0 || h * pz < 2 * FINE) return;
+        const step = Math.max(gap, w + (1.5 * FINE) / pu), n = Math.floor((s1 - s0 - w) / step) + 1;
+        for (let i = 0; i < n; i++) {
+            const s = (s0 + s1) / 2 + (i - (n - 1) / 2) * step;
+            T.S.line(pointed(at, s, c, w / 2, c + h - w * 0.69).pts);
+        }
+    }
+
+    // Eight-sided spire on a square tower top centered on (x, y) at height z
+    function spire(T, x, y, z, rs, hs) {
+        const S = T.S, rim = Array.from({ length: 8 }, (_, i) => {
+            const a = Math.PI / 8 + (TAU * i) / 8;
+            return [x + rs * Math.cos(a), y + rs * Math.sin(a), z];
+        });
+        const apex = [x, y, z + hs];
+        S.solid(rim.concat([apex]), [rim.map((_, i) => i), ...rim.map((_, i) => [i, (i + 1) % 8, 8])]);
+        for (let i = 0; i < 8; i++) {
+            const tri = [rim[i], rim[(i + 1) % 8], apex];
+            shade(T, tri, outward(tri, [x, y, z + hs * 0.2]));
+        }
+        const P = card(T, x, y, apex[2], 0);
+        S.line([P(0, 0), P(0, 1.5)]);
+        S.line([P(-0.45, 1.05), P(0.45, 1.05)]);
+    }
+
+    // The abbey church: nave and choir along u with the transepts across
+    // them, a tower over the crossing with a spire, a great window in the
+    // west front and lancets along the sides we see. c is its layout from abbey().
+    function abbeyChurch(T, F, c, rng) {
+        const S = T.S, P = F.P, { u0, u1, x0, x1, v0, nw, tw } = c, pitch = geo.rad(rng.range(52, 56));
+        const nave = [u0, v0, x0, v0 + nw], choir = [x1, v0 + 0.6, u1, v0 + nw - 0.6], tr = [x0, v0 - tw, x1, v0 + nw + tw];
+        const he = c.he, hc = he - 1.2;
+        S.kind = INK;
+        S.box(F, nave[0], nave[1], 0, nave[2], nave[3], he);
+        S.box(F, choir[0], choir[1], 0, choir[2], choir[3], hc);
+        S.box(F, tr[0], tr[1], 0, tr[2], tr[3], he);
+        for (const [fp, z, along] of [[nave, he, true], [choir, hc, true], [tr, he, false]]) shadeGable(T, F, gableRoof(T, F, fp, z, along, pitch, rng, { attic: false }));
+        // buttresses down the choir, and lancets between them
+        const Wc = wall(F, 0, choir), nb = Math.max(2, Math.round(Wc.len / 3.6));
+        for (let i = 1; i < nb; i++) S.box(F, choir[0] + (Wc.len * i) / nb - 0.3, choir[1] - 0.7, 0, choir[0] + (Wc.len * i) / nb + 0.3, choir[1], hc - 1.2);
+        if (T.detail && T.sees(Wc.n)) for (let i = 0; i < nb; i++) lancets(T, Wc.at, (Wc.len * i) / nb + 0.6, (Wc.len * (i + 1)) / nb - 0.6, 2.2, hc - 4, 1, 4);
+        // clerestory over the cloister roof, and up the transept above the east walk
+        const Wn = wall(F, 0, nave);
+        if (T.detail && T.sees(Wn.n)) lancets(T, Wn.at, 1, Wn.len - 1, c.walk + 1.4, he - c.walk - 2.4, 1, 3.2);
+        const Wt = wall(F, 3, tr);
+        if (T.detail && T.sees(Wt.n)) {
+            lancets(T, Wt.at, 0.8, tw - 0.8, 2.4, he - 4.4, 1, 2.6);
+            lancets(T, Wt.at, tw + nw + 0.8, Wt.len - 0.8, c.walk + 1.4, he - c.walk - 2.4, 1, 2.6);
+        }
+        const Wte = wall(F, 0, tr);
+        if (T.sees(Wte.n) && !c.range) lancets(T, Wte.at, 1, Wte.len - 1, 2.4, he - 4.2, 1.2, 2.6);
+        // the west front: a door and the great window over it
+        const Ww = wall(F, 3, nave);
+        if (T.sees(Ww.n)) {
+            S.line(pointed(Ww.at, nw / 2, 0, 1, 2.3).pts);
+            const hw = Math.min(1.8, nw * 0.22);
+            S.line(pointed(Ww.at, nw / 2, 3.6, hw, he - 1.2 - hw * 1.38).pts);
+            if (T.detail && hw * wallScale(T, Ww.at).pu > 2.4 * FINE) S.line([Ww.at(nw / 2, 3.65), Ww.at(nw / 2, he - 1.3)]);
+        }
+        // the crossing tower, with paired openings at the top and a spire
+        const tf = [x0 - 0.3, v0 - 0.3, x1 + 0.3, v0 + nw + 0.3], ht = he + rng.range(8, 11);
+        S.box(F, tf[0], tf[1], he, tf[2], tf[3], ht);
+        S.box(F, tf[0] - 0.2, tf[1] - 0.2, ht, tf[2] + 0.2, tf[3] + 0.2, ht + 0.4);
+        for (const side of [0, 3]) {
+            const W = wall(F, side, tf);
+            if (!T.sees(W.n)) continue;
+            for (const f of [0.32, 0.68]) S.line(pointed(W.at, W.len * f, ht - 4.2, 0.55, ht - 1.8).pts);
+        }
+        if (T.tones) {
+            // hatched down the face out of the sun, the one towards -y
+            const W = [0, 1, 2, 3].map(side => wall(F, side, tf)).find(w => w.n[1] < -0.5);
+            if (T.sees(W.n)) {
+                const { pu } = wallScale(T, W.at), n = Math.max(1, Math.floor((W.len * pu) / T.hLit));
+                for (let i = 1; i < n; i++) S.line([W.at((W.len * i) / n, he + 0.1), W.at((W.len * i) / n, ht - 4.5)]);
+            }
+        }
+        const [sx, sy] = P((tf[0] + tf[2]) / 2, (tf[1] + tf[3]) / 2, 0);
+        spire(T, sx, sy, LAND + ht + 0.4, (tf[2] - tf[0]) / 2 - 0.2, rng.range(11, 15));
+    }
+
+    // The walks round the cloister garth, each a lean-to against the wall
+    // behind it with an arcade on the garth side
+    function cloisterWalks(T, F, q, walk) {
+        const S = T.S, P = F.P, [qx0, qy0, qx1, qy1] = q, w = 3, lo = walk - 1.2, hi = walk;
+        // [the line of the wall behind, the way into the garth, the run along it]
+        const walks = [
+            [[qx0, qy1], [0, -1], [1, 0], qx1 - qx0],
+            [[qx1, qy0], [-1, 0], [0, 1], qy1 - qy0],
+            [[qx0, qy0], [0, 1], [1, 0], qx1 - qx0],
+            [[qx0, qy0], [1, 0], [0, 1], qy1 - qy0],
+        ];
+        S.kind = INK;
+        for (const [[a, b], [ia, ib], [ua, ub], L] of walks) {
+            const at = (s, d, c) => P(a + ua * s + ia * d, b + ub * s + ib * d, c);
+            S.prism([at(0, 0, 0), at(0, w, 0), at(0, w, lo), at(0, 0, hi)], F.V(ua * L, ub * L, 0));
+            const n = F.V(ia * (hi - lo), ib * (hi - lo), w);
+            shade(T, [at(0, 0, hi), at(L, 0, hi), at(L, w, lo), at(0, w, lo)], n);
+            // the arcade, round arches far enough apart on paper to stay open
+            const face = (s, c) => at(s, w + 0.01, c), { pu } = wallScale(T, face);
+            if (!T.detail || !T.sees(F.V(ia, ib, 0)) || 0.9 * pu < FINE) continue;
+            const step = Math.max(1.7, (2.2 * FINE) / pu), k = Math.floor((L - 2 * w) / step);
+            for (let i = 0; i < k; i++) arch(T, face, w + (L - 2 * w - (k - 1) * step) / 2 + i * step, 0.4, Math.min(1, step * 0.6), lo - 0.9);
+        }
+    }
+
+    // The abbey in its walled precinct, plot [x0, y0, x1, y1], with the gate
+    // in the front wall at x = gate: the church down the far side, the
+    // cloister in front of it with the dormitory and the refectory round it,
+    // fishponds, an orchard and a barn. It's laid out in a frame with u along
+    // y and v along x, so the church's ridge runs along y and the slopes we
+    // see are in the sun, the way the town turns its roofs.
+    function abbey(T, plot, gate, rng) {
+        const S = T.S, [X0, Y0, X1, Y1] = plot, W = Y1 - Y0, D = X1 - X0;
+        const F = { P: (a, b, c) => [X0 + b, Y0 + a, LAND + c], V: (a, b, c) => [b, a, c] }, P = F.P;
+        const nw = rng.range(8, 9), tw = rng.range(6, 7.5), Lc = Math.min(W - 13, rng.range(38, 46));
+        // a forecourt between the gatehouse and the west front
+        const u0 = 8, u1 = u0 + Lc, x0 = u0 + Lc * rng.range(0.5, 0.56), x1 = x0 + nw;
+        const v0 = Math.min(D - nw - tw - 2.5, Math.max(22, D * 0.5)), walk = 4.4;
+        const he = rng.range(10, 11.5), rw = 8, qy0 = Math.max(rw + 2.5, v0 - (x0 - u0));
+        const q = [u0, qy0, x0, v0];
+        abbeyChurch(T, F, { u0, u1, x0, x1, v0, nw, tw, he, walk, range: true }, rng);
+        cloisterWalks(T, F, q, walk);
+        // the dormitory down from the south transept, the refectory along the south walk
+        const dorm = [x0, qy0 - rw, x1, v0 - tw], refec = [u0, qy0 - rw, x0, qy0];
+        S.kind = INK;
+        S.box(F, dorm[0], dorm[1], 0, dorm[2], dorm[3], 7);
+        shadeGable(T, F, gableRoof(T, F, dorm, 7, false, geo.rad(52), rng, { attic: false }));
+        S.box(F, refec[0], refec[1], 0, refec[2], refec[3], 6.6);
+        shadeGable(T, F, gableRoof(T, F, refec, 6.6, true, geo.rad(50), rng, { attic: false }));
+        const Wd = wall(F, 3, dorm), Wr = wall(F, 0, refec), We = wall(F, 3, refec);
+        if (T.detail) {
+            if (T.sees(Wd.n)) panes(T, { ...Wd, len: Wd.len - rw }, { base: walk + 0.5, floors: 1, style: 'frame', winW: 0.7, winH: 1, gap: 1.5 });
+            if (T.sees(Wr.n)) lancets(T, Wr.at, 1.2, Wr.len - 1.2, 1.8, 3.4, 1, 3);
+            if (T.sees(We.n)) lancets(T, We.at, rw / 2 - 1.4, rw / 2 + 1.4, 1.8, 3.4, 1, 2.8);
+            const Ws = wall(F, 0, dorm);
+            if (T.sees(Ws.n)) lancets(T, Ws.at, 1, Ws.len - 1, 3, 2.4, 0.8, 2.2);
+        }
+        // the garth: paths across it and a well in the middle
+        const [gx, gy] = [(q[0] + q[2]) / 2, (q[1] + q[3]) / 2];
+        S.line([P(q[0] + 3, gy, 0), P(q[2] - 3, gy, 0)]);
+        S.line([P(gx, q[1] + 3, 0), P(gx, q[3] - 3, 0)]);
+        well(T, ...P(gx, gy, 0).slice(0, 2), rng);
+        // fishponds in the corner past the dormitory, an orchard behind the choir
+        const pond = [x1 + 4, 3, W - 3, v0 - tw - 3];
+        if (pond[2] - pond[0] > 7 && pond[3] - pond[1] > 6) {
+            const n = Math.max(1, Math.min(3, Math.floor((pond[3] - pond[1] + 2) / 7.5))), ph = (pond[3] - pond[1] - (n - 1) * 2) / n;
+            const box = ([a0, b0, a1, b1]) => [P(a0, b0, 0), P(a1, b0, 0), P(a1, b1, 0), P(a0, b1, 0)];
+            for (let i = 0; i < n; i++) {
+                const r = [pond[0], pond[1] + i * (ph + 2), pond[2], pond[1] + i * (ph + 2) + ph];
+                S.kind = INK;
+                S.loop(box(r));
+                S.kind = WATER;
+                if (Math.min(r[2] - r[0], r[3] - r[1]) * T.k > 3.8) S.loop(box([r[0] + 0.7, r[1] + 0.7, r[2] - 0.7, r[3] - 0.7]));
+                S.kind = INK;
+            }
+        }
+        const orch = [u1 + 3, v0 - 2, W - 2.5, D - 2.5];
+        for (let u = orch[0]; u < orch[2]; u += 5) for (let v = orch[1]; v < orch[3]; v += 5) fruitTree(T, ...P(u + rng.range(-0.4, 0.4), v + rng.range(-0.4, 0.4), 0).slice(0, 2), rng);
+        // a tithe barn in the yard inside the gate, if there's room past the refectory
+        const barn = [2.5, 2, Math.min(x0 - 2, 22), qy0 - rw - 3];
+        if (barn[2] - barn[0] > 12 && barn[3] - barn[1] > 6) {
+            barn[3] = barn[1] + Math.min(barn[3] - barn[1], 8);
+            S.box(F, barn[0], barn[1], 0, barn[2], barn[3], 4.2);
+            shadeGable(T, F, gableRoof(T, F, barn, 4.2, true, geo.rad(52), rng, { attic: false }));
+            const Wb = wall(F, 0, barn);
+            if (T.sees(Wb.n)) door(T, Wb.at, Wb.len / 2, 0, 2.8, 3.4, true);
+        }
+        // the precinct wall, open at the gatehouse
+        const t = 0.5, h = 2.4, g = gate - X0;
+        const run = (a0, b0, a1, b1) => { if (a1 - a0 > 0.3 && b1 - b0 > 0.3) S.box(F, a0, b0, 0, a1, b1, h); };
+        S.kind = INK;
+        run(0, 0, W, t);
+        run(0, D - t, W, D);
+        run(W - t, t, W, D - t);
+        run(0, t, t, g - 2.5);
+        run(0, g + 2.5, t, D - t);
+        // the gatehouse over the way in, its arch to the lane
+        const gh = [-1.2, g - 2.5, 3.2, g + 2.5];
+        S.box(F, gh[0], gh[1], 0, gh[2], gh[3], 6.2);
+        shadeGable(T, F, gableRoof(T, F, gh, 6.2, false, geo.rad(50), rng, { attic: false }));
+        const Wg = wall(F, 3, gh);
+        if (T.sees(Wg.n)) {
+            S.line(pointed(Wg.at, 2.5, 0, 1.3, 2.4).pts);
+            if (T.detail) arch(T, Wg.at, 2.5, 4.1, 0.8, 1.3);
+        }
+        // a few of the brothers about the place
+        for (let i = qy0 - rw > 5 ? Math.round(2 + 4 * T.p.people) : 0; i > 0; i--) {
+            const u = rng.range(u0, W - 3), v = rng.range(2, qy0 - rw - 1);
+            if (u > barn[0] - 1 && u < barn[2] + 1 && v < barn[3] + 1) continue;
+            person(T, ...P(u, v, 0).slice(0, 2), LAND, rng);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // The river
+    // ------------------------------------------------------------------
+
+    // The river lies lower than the moat, its banks slope out SLOPE from the
+    // water's edge to the top, and a bridge runs on RAMP over the land each end (m)
+    const ZR = -0.6, SLOPE = 1.8, RAMP = 3.6;
+    const unit2 = v => { const l = Math.hypot(v[0], v[1]) || 1; return [v[0] / l, v[1] / l]; };
+    const dot2 = (a, b) => a[0] * b[0] + a[1] * b[1];
+
+    // The ground the page shows at the height of the land, and a way past
+    // the top of the page for tall things standing beyond it
+    function groundView(T) {
+        const { S, cam } = T, tall = 16 * cam.ce * cam.k;
+        const view = [[0, -tall * 0.3], [S.W, -tall * 0.3], [S.W, S.H + tall], [0, S.H + tall]].map(([sx, sy]) => cam.ground(sx, sy, LAND));
+        return geo.polygonArea(view) < 0 ? view.reverse() : view;
+    }
+
+    // The roads, as strips running out from the end of each bridge to off the page
+    function gateRoads(town, view) {
+        const roads = [];
+        for (const g of town.gates) {
+            const { r, across, b0, wB, aBank, ramp } = g.road, a1 = aBank - ramp, hw = 2.9, bc = b0 + wB / 2;
+            let a0 = a1;
+            while (a0 > -2000 && depth(view, r[0] * a0 + across[0] * bc, r[1] * a0 + across[1] * bc) > -30) a0 -= 10;
+            const P = (a, b) => [r[0] * a + across[0] * (bc + b), r[1] * a + across[1] * (bc + b), LAND];
+            roads.push({ g, a0, a1, hw, P, bc, rect: bounds([P(a0, -hw), P(a1, hw)]) });
+        }
+        return roads;
+    }
+
+    // Points about `step` apart along cubic curves through nodes {x, y, t},
+    // each curve's tangents scaled by its chord
+    function hermite(nodes, step) {
+        const out = [];
+        for (let i = 0; i + 1 < nodes.length; i++) {
+            const A = nodes[i], B = nodes[i + 1], L = Math.hypot(B.x - A.x, B.y - A.y), n = Math.max(2, Math.ceil((1.5 * L) / step));
+            for (let j = i ? 1 : 0; j <= n; j++) {
+                const u = j / n, u2 = u * u, u3 = u2 * u;
+                const h00 = 2 * u3 - 3 * u2 + 1, h10 = (u3 - 2 * u2 + u) * L, h01 = 3 * u2 - 2 * u3, h11 = (u3 - u2) * L;
+                out.push([h00 * A.x + h10 * A.t[0] + h01 * B.x + h11 * B.t[0], h00 * A.y + h10 * A.t[1] + h01 * B.y + h11 * B.t[1]]);
+            }
+        }
+        return geo.resample(out, step);
+    }
+
+    function lengths(pts) {
+        const s = [0];
+        for (let i = 1; i < pts.length; i++) s.push(s[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+        return s;
+    }
+
+    // Left-hand normals along a polyline
+    function normals(pts) {
+        return pts.map((_, i) => {
+            const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], t = unit2([b[0] - a[0], b[1] - a[1]]);
+            return [-t[1], t[0]];
+        });
+    }
+
+    // How far a point is from the edge of the water of a river with center
+    // line pts and half widths hw, negative in the water. The nearest segment
+    // comes from a grid of `cell` meter squares that each list the segments
+    // within `reach` of them. Anything further comes back as about reach.
+    function edgeDistance(pts, hw, cell, reach) {
+        const grid = new Map(), key = (i, j) => (i + 2048) * 4096 + j + 2048;
+        for (let s = 0; s + 1 < pts.length; s++) {
+            const [ax, ay] = pts[s], [bx, by] = pts[s + 1];
+            for (let i = Math.floor((Math.min(ax, bx) - reach) / cell); i <= Math.floor((Math.max(ax, bx) + reach) / cell); i++) {
+                for (let j = Math.floor((Math.min(ay, by) - reach) / cell); j <= Math.floor((Math.max(ay, by) + reach) / cell); j++) {
+                    const list = grid.get(key(i, j));
+                    if (list) list.push(s);
+                    else grid.set(key(i, j), [s]);
+                }
+            }
+        }
+        return (x, y) => {
+            const list = grid.get(key(Math.floor(x / cell), Math.floor(y / cell)));
+            let best = reach, h = hw[0];
+            if (list) {
+                for (const s of list) {
+                    const [ax, ay] = pts[s], ex = pts[s + 1][0] - ax, ey = pts[s + 1][1] - ay;
+                    const t = geo.clamp(((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey || 1), 0, 1), d = Math.hypot(x - ax - ex * t, y - ay - ey * t);
+                    if (d < best) {
+                        best = d;
+                        h = hw[s] + (hw[s + 1] - hw[s]) * t;
+                    }
+                }
+            }
+            return best - h;
+        };
+    }
+
+    // Where the river runs, as nodes for hermite(). In front of the town it
+    // passes both walls that face us and the corner between them, and runs
+    // on off the page both ways. Where a wall has a gate the river crosses
+    // its road square to it, for the bridge. Behind, it crosses the page past
+    // the far walls. Either way it runs left to right.
+    function riverNodes(T, town, roads, edge, rng) {
+        const { p, cam, S } = T, right = [cam.rx, cam.ry], into = [cam.fx, cam.fy], far = 420;
+        if (p.river === 'front') {
+            const [gx0, gy0, gx1, gy1] = bounds(offset(town.moat, 7));
+            const xs = [[-1, 0], [0, -1]].map(out => {
+                // the flow along this wall, left to right on the page
+                const t = [-out[1], out[0]];
+                const i = roads.findIndex(rd => Math.abs(rd.g.e.n[0] - out[0]) + Math.abs(rd.g.e.n[1] - out[1]) < 1e-6);
+                // Well out from the moat, so the river doesn't read as a second one. The
+                // main gate's bridge comes back towards the town until it's on the page,
+                // and the other one can be off it.
+                let d = rng.range(36, 58);
+                const rd = roads[i];
+                if (!rd) {
+                    const f = rng.range(0.3, 0.7), x = out[0] ? gx0 - d + 7 : geo.lerp(gx0, gx1, f), y = out[1] ? gy0 - d + 7 : geo.lerp(gy0, gy1, f);
+                    return { x, y, t, out };
+                }
+                while (i === 0 && d > 26) {
+                    const q = T.home.project(...rd.P(rd.a1 - d - edge - 8, 0));
+                    if (q[0] > 8 && q[0] < S.W - 8 && q[1] < S.H - 8) break;
+                    d -= 2;
+                }
+                const [x, y] = rd.P(rd.a1 - d, 0);
+                return { x, y, t, out, rd, a: rd.a1 - d, hold: true };
+            });
+            // round the corner well clear of it
+            const [L, F] = xs, f = rng.range(0.22, 0.4);
+            const corner = { x: geo.lerp(L.x, (L.x + F.x) / 2, f), y: geo.lerp(F.y, (L.y + F.y) / 2, f), t: unit2([F.x - L.x, F.y - L.y]) };
+            const end = (c, s) => {
+                const D = rng.range(-30, 70);
+                return { x: c.x + s * c.t[0] * far + c.out[0] * D, y: c.y + s * c.t[1] * far + c.out[1] * D };
+            };
+            return [end(L, -1), L, corner, F, end(F, 1)];
+        }
+        let w0 = -Infinity, u0 = Infinity, u1 = -Infinity;
+        for (const q of offset(town.moat, 7)) {
+            w0 = Math.max(w0, dot2(q, into));
+            u0 = Math.min(u0, dot2(q, right));
+            u1 = Math.max(u1, dot2(q, right));
+        }
+        const at = (u, w) => ({ x: right[0] * u + into[0] * w, y: right[1] * u + into[1] * w });
+        const w = w0 + edge + rng.range(8, 30);
+        return [at(u0 - far, w + rng.range(-40, 60)), at(geo.lerp(u0, u1, rng.range(0.3, 0.7)), w), at(u1 + far, w + rng.range(-40, 60))];
+    }
+
+    // The river: its center line every 2 m with the normals, half widths and
+    // distance along it, where it crosses the roads, and the pieces of water
+    // and of bank on the page that the shadows get cut to
+    function riverPlan(T, town, roads, view, rng) {
+        if (T.p.river === 'none') return null;
+        const hw0 = T.p.riverWidth / 2, edge = hw0 + SLOPE, step = 2;
+        const nodes = riverNodes(T, town, roads, edge, rng);
+        nodes.forEach((n, i) => {
+            if (n.t) return;
+            const a = nodes[Math.max(0, i - 1)], b = nodes[Math.min(nodes.length - 1, i + 1)];
+            n.t = unit2([b.x - a.x, b.y - a.y]);
+        });
+        const holds = nodes.filter(n => n.hold);
+        const nearest = (pts, n) => {
+            let k = 0, b = Infinity;
+            pts.forEach((q, i) => {
+                const d = (q[0] - n.x) ** 2 + (q[1] - n.y) ** 2;
+                if (d < b) { b = d; k = i; }
+            });
+            return k;
+        };
+        let pts = hermite(nodes, step), s = lengths(pts), N = normals(pts);
+        // The river runs dead straight through each crossing for the bridge,
+        // then eases into its bends. Crossings close together share the room.
+        const sh = holds.map(n => s[nearest(pts, n)]), H1 = edge + 8;
+        const H2 = Math.max(H1 + 6, Math.min(H1 + 30, ...sh.slice(1).map((v, i) => (v - sh[i]) / 2)));
+        const freedom = (pts, s) => {
+            const at = holds.map(n => s[nearest(pts, n)]);
+            return s.map(v => at.reduce((m, h) => Math.min(m, geo.smoothstep(H1, H2, Math.abs(v - h))), 1));
+        };
+        let free = freedom(pts, s);
+        // meanders, a long wave and a short one on top
+        const waves = [[rng.range(5, 10) + hw0 * 0.3, rng.range(110, 170)], [rng.range(1.5, 4), rng.range(40, 65)]].map(([A, L]) => [A, L, rng.range(0, TAU)]);
+        pts = pts.map((q, i) => {
+            const m = free[i] * waves.reduce((sum, [A, L, ph]) => sum + A * Math.sin((TAU * s[i]) / L + ph), 0);
+            return [q[0] + N[i][0] * m, q[1] + N[i][1] * m];
+        });
+        holds.forEach((n, j) => {
+            pts = pts.map((q, i) => {
+                const d = s[i] - sh[j], f = geo.smoothstep(H1, H2, Math.abs(d));
+                return f >= 1 ? q : [geo.lerp(n.x + n.t[0] * d, q[0], f), geo.lerp(n.y + n.t[1] * d, q[1], f)];
+            });
+        });
+        // pushed out where a bend comes too close to the moat
+        const glacis = offset(town.moat, 7), need = edge + 5;
+        const room = (x, y) => (depth(glacis, x, y) > 0 ? -depth(glacis, x, y) : distOut(glacis, x, y));
+        for (let it = 0; it < 6; it++) {
+            let moved = false;
+            pts = pts.map((q, i) => {
+                const c = room(q[0], q[1]);
+                if (c >= need || free[i] <= 0) return q;
+                moved = true;
+                const l = Math.hypot(q[0], q[1]) || 1, m = need - c + 1;
+                return [q[0] + (q[0] / l) * m, q[1] + (q[1] / l) * m];
+            });
+            if (!moved) break;
+            pts = pts.map((q, i) => (i && i < pts.length - 1 && free[i] > 0 ? [(pts[i - 1][0] + 2 * q[0] + pts[i + 1][0]) / 4, (pts[i - 1][1] + 2 * q[1] + pts[i + 1][1]) / 4] : q));
+        }
+        pts = geo.resample(pts, step);
+        s = lengths(pts);
+        N = normals(pts);
+        free = freedom(pts, s);
+        // a little wider in some reaches than others
+        const [wa, wl, wp] = [rng.range(0.05, 0.12), rng.range(70, 120), rng.range(0, TAU)];
+        const hw = s.map((v, i) => hw0 * (1 + free[i] * wa * Math.sin((TAU * v) / wl + wp)));
+        const off = (sg, d) => pts.map((q, i) => [q[0] + N[i][0] * sg * (hw[i] + d), q[1] + N[i][1] * sg * (hw[i] + d)]);
+        const on = pts.map(([x, y]) => depth(view, x, y) > -30);
+        const L = off(1, 0), R = off(-1, 0), LT = off(1, SLOPE), RT = off(-1, SLOPE), water = [], bank = [];
+        for (let i = 0; i + 1 < pts.length; i++) {
+            if (!on[i] && !on[i + 1]) continue;
+            water.push([R[i], R[i + 1], L[i + 1], L[i]]);
+            bank.push([RT[i], RT[i + 1], LT[i + 1], LT[i]]);
+        }
+        if (!bank.length) return null;
+        const crossings = holds.map(n => {
+            const k = nearest(pts, n);
+            return { ...n, k, s: s[k], hw: hw[k] };
+        });
+        // meadows along both banks, which the fields stop short of
+        const meadow = rng.range(3, 7);
+        return { pts, s, N, hw, on, off, crossings, water, bank, meadow, area: bounds(bank.flat()), gap: edgeDistance(pts, hw, 16, edge + 40), dry: [] };
+    }
+
+    // The parts of a polyline that keep at least r from the water's edge, as
+    // polylines. Segments that come near it are walked in short steps and each
+    // crossing found by halving.
+    function offRiver(R, pts, r) {
+        const out = [], at = (A, B, t) => A.map((v, i) => v + (B[i] - v) * t), keep = q => R.gap(q[0], q[1]) >= r;
+        let cur = null;
+        for (let i = 1; i < pts.length; i++) {
+            const A = pts[i - 1], B = pts[i], L = Math.hypot(B[0] - A[0], B[1] - A[1]), m = at(A, B, 0.5);
+            let k0 = R.gap(m[0], m[1]) - L / 2 > r + 0.5 || keep(A);
+            if (!k0) cur = null;
+            else if (!cur) out.push((cur = [A]));
+            if (R.gap(m[0], m[1]) - L / 2 > r + 0.5) {
+                cur.push(B);
+                continue;
+            }
+            const n = Math.max(1, Math.ceil(L / 0.6));
+            for (let j = 1; j <= n; j++) {
+                const t1 = j / n, k1 = keep(at(A, B, t1));
+                if (k1 !== k0) {
+                    let lo = (j - 1) / n, hi = t1;
+                    for (let b = 0; b < 12; b++) {
+                        const mid = (lo + hi) / 2;
+                        if (keep(at(A, B, mid)) === k0) lo = mid;
+                        else hi = mid;
+                    }
+                    const X = at(A, B, (lo + hi) / 2);
+                    if (k0) {
+                        cur.push(X);
+                        cur = null;
+                    } else out.push((cur = [X]));
+                    k0 = k1;
+                }
+            }
+            if (k0) cur.push(B);
+        }
+        return out.filter(q => q.length > 1);
+    }
+
+    // Run fn with every line it lays flat on the land cut where it comes
+    // within r of the water's edge. Lines that stand up, like trees and
+    // tufts, go through as they are, so fn has to keep those off itself.
+    function keepDry(T, R, r, fn) {
+        if (!R) return fn();
+        const S = T.S, draw = Scene.prototype.line;
+        S.line = function (pts, whole) {
+            if (pts.some(q => Math.abs(q[2] - LAND) > 1e-6)) return draw.call(this, pts, whole);
+            for (const part of offRiver(R, pts, r)) draw.call(this, part, whole);
+        };
+        try {
+            fn();
+        } finally {
+            delete S.line;
+        }
+    }
+
+    // The banks: slopes down to the water as faces, with a strip of the land
+    // along the top of each, so the near bank hides the water under it. The
+    // top and the foot of each slope are drawn, and grass down the ones we see.
+    function riverBanks(T, R) {
+        const S = T.S, { pts, on } = R;
+        for (const sg of [1, -1]) {
+            const W = R.off(sg, 0), E = R.off(sg, SLOPE), O = R.off(sg, SLOPE + 4.5);
+            S.kind = INK;
+            let foot = [], top = [];
+            const flush = () => {
+                if (foot.length > 1) S.line(foot);
+                if (top.length > 1) S.line(top);
+                foot = [];
+                top = [];
+            };
+            for (let i = 0; i < pts.length; i++) {
+                if (!on[i]) {
+                    flush();
+                    continue;
+                }
+                foot.push([...W[i], ZR]);
+                top.push([...E[i], LAND]);
+                if (i + 1 < pts.length) {
+                    const w0 = [...W[i], ZR], w1 = [...W[i + 1], ZR], e0 = [...E[i], LAND], e1 = [...E[i + 1], LAND];
+                    S.face([w0, w1, e1], false);
+                    S.face([w0, e1, e0], false);
+                    S.face([e0, e1, [...O[i + 1], LAND], [...O[i], LAND]], false);
+                }
+            }
+            flush();
+            if (!T.detail) continue;
+            // grass in strokes down the slope, far enough apart on paper to stay apart
+            S.kind = GREEN;
+            for (let i = 1, next = 0; i + 1 < pts.length; i++) {
+                if (!on[i] || R.s[i] < next) continue;
+                const n = R.N[i], t = [n[1], -n[0], 0], drop = LAND - ZR;
+                if (!T.sees([-sg * n[0] * drop, -sg * n[1] * drop, SLOPE])) continue;
+                const f0 = 0.12, f1 = 0.5 + 0.15 * Math.sin(i * 2.7), e = E[i], w = W[i];
+                S.line([[geo.lerp(e[0], w[0], f0), geo.lerp(e[1], w[1], f0), LAND - drop * f0], [geo.lerp(e[0], w[0], f1), geo.lerp(e[1], w[1], f1), LAND - drop * f1]], true);
+                next = R.s[i] + Math.max(1.6, 1.4 / Math.max(apart(T, UP, t), 0.05));
+            }
+            S.kind = INK;
+        }
+    }
+
+    // Stone bridge over the river on round arches, with cutwaters on the
+    // piers between them and a hump in the road. F is the road's frame from
+    // gateRoad. The water runs from a0 to a1 along the road and the banks
+    // slope up SLOPE further each side. The arches are dark under the side we see.
+    function riverBridge(T, F, a0, a1, w) {
+        const S = T.S, P = F.P, e0 = a0 - SLOPE, e1 = a1 + SLOPE, A0 = e0 - RAMP, A1 = e1 + RAMP, hump = 1.4, pw = 0.3, ph = 0.85;
+        const top = a => LAND + 0.08 + hump * Math.pow(Math.max(0, Math.sin((Math.PI * (a - A0)) / (A1 - A0))), 0.7);
+        const ground = a => (a <= e0 || a >= e1 ? LAND : a < a0 ? ZR + ((LAND - ZR) * (a0 - a)) / SLOPE : a > a1 ? ZR + ((LAND - ZR) * (a - a1)) / SLOPE : ZR);
+        // Arches across the water, the outer ones springing from the foot of the
+        // banks. Each is round on its piers where there's the height, and
+        // flattened where there isn't.
+        const z0 = a0 - 0.4, z1 = a1 + 0.4, n = Math.max(2, Math.round((z1 - z0 + 0.2) / 5.2)), pier = 1.4;
+        const sp = (z1 - z0 - (n - 1) * pier) / n;
+        const arches = Array.from({ length: n }, (_, i) => {
+            const s0 = z0 + i * (sp + pier), m = s0 + sp / 2, crown = top(m) - 0.6;
+            const spring = Math.max(ZR + 0.25, crown - sp / 2), rise = crown - spring, R = (sp * sp) / (8 * rise) + rise / 2;
+            return { s0, s1: s0 + sp, m, R, spring, zc: crown - R };
+        });
+        const under = a => {
+            for (const A of arches) if (a >= A.s0 - 1e-6 && a <= A.s1 + 1e-6) return A.zc + Math.sqrt(Math.max(0, A.R * A.R - (a - A.m) ** 2));
+            return a > z0 && a < z1 ? ZR : Math.max(ZR, ground(a) - 0.05);
+        };
+        const as = [];
+        const run = (u, v, k) => { for (let i = 0; i < k; i++) as.push(u + ((v - u) * i) / k); };
+        run(A0, e0, 3);
+        run(e0, z0, 2);
+        arches.forEach((A, i) => {
+            run(A.s0, A.s1, 14);
+            if (i + 1 < n) run(A.s1, arches[i + 1].s0, 1);
+        });
+        run(z1, e1, 2);
+        run(e1, A1, 3);
+        as.push(A1);
+        S.kind = INK;
+        for (let i = 0; i + 1 < as.length; i++) {
+            const a = as[i], b = as[i + 1], ta = top(a), tb = top(b), ba = under(a + 1e-4), bb = under(b - 1e-4);
+            S.prism([P(a, 0, ba), P(b, 0, bb), P(b, 0, tb), P(a, 0, ta)], F.V(0, w, 0), false, true);
+            for (const pb of [0, w - pw]) S.prism([P(a, pb, ta), P(b, pb, tb), P(b, pb, tb + ph), P(a, pb, ta + ph)], F.V(0, pw, 0), false, true);
+        }
+        const along = (b, dz) => as.map(a => P(a, b, top(a) + dz));
+        S.line(along(0, ph));
+        S.line(along(pw, ph));
+        S.line(along(w - pw, ph));
+        S.line(along(w - pw, 0));
+        S.line(along(w, ph));
+        if (T.detail) S.line(along(0, 0));
+        for (const [a, s] of [[A0, 1], [A1, -1]]) {
+            const t = top(a);
+            S.line([P(a, 0, LAND), P(a, 0, t + ph), P(a, pw, t + ph), P(a, pw, t), P(a, w - pw, t), P(a, w - pw, t + ph), P(a, w, t + ph), P(a, w, LAND)]);
+            // where the bridge meets the bank, down to the first arch
+            const g = s > 0 ? as.filter(u => u <= z0) : as.filter(u => u >= z1);
+            S.line(g.map(u => P(u, 0, ground(u))));
+        }
+        const ring = Math.max(0.45, FINE / T.k), stone = Math.max(0.55, (1.2 * FINE) / T.k);
+        arches.forEach((A, i) => {
+            const f0 = Math.atan2(A.spring - A.zc, A.s0 - A.m), f1 = Math.atan2(A.spring - A.zc, A.s1 - A.m);
+            const on = (f, r, b = 0) => P(A.m + r * Math.cos(f), b, A.zc + r * Math.sin(f));
+            const curve = (r, b) => Array.from({ length: 25 }, (_, j) => on(geo.lerp(f0, f1, j / 24), r, b));
+            // the arch and the piers down to the water, the opening a face so the
+            // water doesn't show through it, hatched dark
+            const hole = [P(A.s0, 0, ZR), ...curve(A.R), P(A.s1, 0, ZR)];
+            S.face(hole, false);
+            S.line([P(A.s0, 0, under(A.s0 - 0.01)), ...curve(A.R), P(A.s1, 0, under(A.s1 + 0.01))]);
+            if (T.tones) inKind(S, T.tones.dark, () => S.hatch(hole, UP, T.hDark));
+            // the voussoirs only once the arch is big enough on paper to keep them apart
+            if (T.detail && A.R * T.k > 3.2) {
+                S.line(curve(A.R + ring));
+                const k = Math.max(5, Math.round((A.R * (f0 - f1)) / stone));
+                for (let j = 1; j < k; j++) S.line([on(geo.lerp(f0, f1, j / k), A.R), on(geo.lerp(f0, f1, j / k), A.R + ring)]);
+            }
+            if (i + 1 < n) {
+                // the cutwaters, a pointed buttress on each face of the pier, capped with a slope
+                const B = arches[i + 1], u0 = A.s1, u1 = B.s0, um = (u0 + u1) / 2, zt = Math.min(A.spring, B.spring) + 0.45;
+                for (const [b, d] of [[0, -1.1], [w, 1.1]]) {
+                    S.prism([P(u0, b, ZR), P(u1, b, ZR), P(um, b + d, ZR)], [0, 0, zt - ZR]);
+                    S.solid([P(u0, b, zt), P(u1, b, zt), P(um, b + d, zt), P(um, b, zt + 0.9)], [[0, 1, 2], [0, 1, 3], [1, 2, 3], [2, 0, 3]]);
+                }
+            }
+        });
+    }
+
+    // Gate tower over the road at the outer end of a bridge: a square tower
+    // the road runs through under a pointed arch, with arrow loops up the
+    // side in the sun, the side out of it hatched like the town's square
+    // towers, and a pyramid roof or battlements. F is the road's frame, a the
+    // middle of the tower along the road and w the road's width.
+    function bridgeGate(T, F, a, w, rng) {
+        const S = T.S, P = F.P, hw = w / 2 + 1, bm = w / 2, h = LAND + rng.range(8.5, 10), fp = [a - 2.9, bm - hw, a + 2.9, bm + hw];
+        S.kind = INK;
+        S.box(F, fp[0], fp[1], LAND, fp[2], fp[3], h);
+        const zs = geo.lerp(LAND, h, 0.62), band = Math.max(0.3, FINE / (T.k * T.cam.ce));
+        S.box(F, fp[0] - 0.14, fp[1] - 0.14, zs, fp[2] + 0.14, fp[3] + 0.14, zs + band);
+        for (let side = 0; side < 4; side++) {
+            const W = wall(F, side, fp);
+            if (!T.sees(W.n)) continue;
+            // the way through, on the two ends the road comes out of
+            const end = side === 1 || side === 3, A = end && pointed(W.at, W.len / 2, LAND, 1.7, LAND + 2.9);
+            if (A) S.line(A.pts);
+            if (W.n[1] < -0.5 && T.tones) {
+                const n = Math.max(1, Math.floor((W.len * wallScale(T, W.at).pu) / T.hLit));
+                for (let i = 1; i < n; i++) {
+                    const s = (W.len * i) / n, c0 = A && Math.abs(s - W.len / 2) < 1.7 ? A.under(s) + 0.05 : LAND;
+                    S.line([W.at(s, c0), W.at(s, zs - 0.05)]);
+                    S.line([W.at(s, zs + band + 0.05), W.at(s, h)]);
+                }
+            } else if (T.detail && !A) {
+                for (const c of [LAND + 2.2, zs + band + 1]) {
+                    S.line([W.at(W.len / 2, c), W.at(W.len / 2, c + 1.3)]);
+                    S.line([W.at(W.len / 2 - 0.25, c + 0.75), W.at(W.len / 2 + 0.25, c + 0.75)]);
+                }
+            }
+        }
+        const style = T.p.towerRoofs === 'crenels' || (T.p.towerRoofs === 'mixed' && rng.chance(0.5)) ? 'crenel' : 'roof';
+        if (style === 'crenel') {
+            const g = 0.45, top = h + 1.05, mw = T.merlon, mh = mw * 0.85, q = [fp[0] - g, fp[1] - g, fp[2] + g, fp[3] + g];
+            S.box(F, q[0], q[1], h - 0.4, q[2], q[3], top);
+            for (const u of [q[0], q[2] - mw]) for (const v of [q[1], q[3] - mw]) S.box(F, u, v, top, u + mw, v + mw, top + mh);
+            for (const [u0, u1, v0, v1, along] of [[q[0], q[2], q[1], q[1] + 0.55, true], [q[0], q[2], q[3] - 0.55, q[3], true], [q[0], q[0] + 0.55, q[1], q[3], false], [q[2] - 0.55, q[2], q[1], q[3], false]]) {
+                const L = along ? u1 - u0 : v1 - v0, k = Math.floor((L - mw) / (2 * mw)) - 1;
+                for (let i = 1; i <= k; i++) {
+                    const s = ((L - mw) * i) / (k + 1);
+                    if (along) S.box(F, u0 + s, v0, top, u0 + s + mw, v1, top + mh);
+                    else S.box(F, u0, v0 + s, top, u1, v0 + s + mw, top + mh);
+                }
+            }
+            if (T.p.banners) flag(T, ...P(a, bm, 0).slice(0, 2), top, 3.2);
+            return;
+        }
+        const g = 0.4, zb = h - 0.25, rim = [P(fp[0] - g, fp[1] - g, zb), P(fp[2] + g, fp[1] - g, zb), P(fp[2] + g, fp[3] + g, zb), P(fp[0] - g, fp[3] + g, zb)];
+        const apex = P(a, bm, zb + (fp[2] - fp[0] + 2 * g) * 0.9);
+        S.solid(rim.concat([apex]), [[0, 3, 2, 1], [0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4]]);
+        for (let i = 0; i < 4; i++) {
+            const tri = [rim[i], rim[(i + 1) % 4], apex], n = outward(tri, [apex[0], apex[1], zb + 1]);
+            shade(T, tri, n, n[0] < -Math.abs(n[1]) ? 'lit' : 'roof');
+        }
+        if (T.p.banners) flag(T, apex[0], apex[1], apex[2] - 0.1, 2.6);
+        else S.line([apex, [apex[0], apex[1], apex[2] + 1]]);
+    }
+
+    // Where the water mill goes, in a frame F with a along the bank and b out
+    // from its top. In front of the town it's on the far bank beside the main
+    // road's bridge, a little way along on the side away from the arches we
+    // see, so it hides neither them nor its own wheel. Behind the town it
+    // takes a reach that isn't behind the walls. Null when there's no room.
+    // It's placed by the view at a zoom of 1, so zooming doesn't move it.
+    function millSite(T, R, town, rng) {
+        const { cam, S } = T, f = [cam.fx, cam.fy], L = rng.range(9, 11.5), D = rng.range(6, 7.2);
+        const site = (i, s) => {
+            if (i < 2 || i > R.pts.length - 3) return null;
+            const n = R.N[i], sg = dot2(n, f) > 0 ? 1 : -1, t = [n[1], -n[0]], u = sg > 0 ? t : [-t[0], -t[1]], o = R.hw[i] + SLOPE;
+            const F = turned(R.pts[i][0] + n[0] * sg * o, R.pts[i][1] + n[1] * sg * o, LAND, Math.atan2(u[1], u[0]));
+            const foot = [F.P(-L / 2, 0.4, 0), F.P(L / 2, 0.4, 0), F.P(L / 2, D + 0.4, 0), F.P(-L / 2, D + 0.4, 0)].map(q => [q[0], q[1]]);
+            const q = [F.P(-L / 2, 0, 0), F.P(L / 2, 0, 0), F.P(0, D, 10)].map(v => T.home.project(...v));
+            if (q.some(([x, y]) => x < 6 || x > S.W - 6 || y < 6 || y > S.H - 6)) return null;
+            return { F, L, D, i, s, sg, t, foot };
+        };
+        const at = s => R.s.findIndex(v => v >= s);
+        if (R.crossings.length) {
+            // the main gate's bridge first, then the other, then the side of each we see the arches from
+            const order = R.crossings.slice().sort((u, v) => (v.rd.g === town.gates[0]) - (u.rd.g === town.gates[0])), gap = rng.range(5, 8);
+            for (const back of [1, -1]) {
+                for (const c of order) {
+                    const n = R.N[c.k], along = back * (dot2([n[1], -n[0]], c.rd.g.road.across) > 0 ? 1 : -1);
+                    const s = c.s + along * (c.rd.g.road.wB / 2 + gap + L / 2), m = site(at(s), s);
+                    if (m) return m;
+                }
+            }
+            return null;
+        }
+        // behind the town, somewhere its walls and towers don't stand in front of
+        const tall = town.towers.map(tw => [T.home.project(tw.x, tw.y, tw.top), T.home.project(tw.x, tw.y, 0)]);
+        const clear = i => {
+            const [x, y] = T.home.project(...R.pts[i], LAND);
+            return !tall.some(([a, b]) => Math.abs(a[0] - x) < 22 && y > a[1] - 10 && y < b[1]);
+        };
+        const shown = i => (([x, y]) => x > 6 && x < S.W - 6 && y > 6 && y < S.H - 6)(T.home.project(...R.pts[i], LAND));
+        const options = R.pts.map((_, i) => i).filter(i => i % 5 === 0 && shown(i) && clear(i));
+        for (let k = 0; k < 6 && options.length; k++) {
+            const i = rng.pick(options), m = site(i, R.s[i]);
+            if (m) return m;
+        }
+        return null;
+    }
+
+    // Water mill: a stone ground floor, a timber-framed floor above under a
+    // long roof with a hoist in the gable, and an undershot wheel in the
+    // river in front of it, with a weir across the river just upstream
+    function waterMill(T, R, m, rng) {
+        const S = T.S, { F, L, D } = m, P = F.P, fp = [-L / 2, 0.4, L / 2, D + 0.4], g0 = 3.4, z1 = g0 + FLOOR;
+        S.kind = INK;
+        S.box(F, fp[0], fp[1], 0, fp[2], fp[3], g0);
+        S.box(F, fp[0] - 0.2, fp[1] - 0.25, g0, fp[2] + 0.2, fp[3] + 0.25, z1);
+        const up = [fp[0] - 0.2, fp[1] - 0.25, fp[2] + 0.2, fp[3] + 0.25];
+        const roof = gableRoof(T, F, up, z1 + 0.25, true, geo.rad(rng.range(48, 54)), rng, { attic: false });
+        shadeGable(T, F, roof);
+        for (const side of [0, 1, 2, 3]) timbered(T, wall(F, side, up), g0, z1);
+        // the hoist under the gable that faces the road
+        for (const [ga, gn] of [[up[0] - roof.oh, -1], [up[2] + roof.oh, 1]]) {
+            if (T.sees(F.V(gn, 0, 0))) kit.hoist(T, { P: (u, v, c) => P(ga + gn * (1 - v), u, c), V: F.V }, roof.mid, 1, roof.zb + roof.rise * 0.45);
+        }
+        const W0 = wall(F, 0, fp);
+        if (T.sees(W0.n)) {
+            door(T, W0.at, L * 0.22, 0, 1.1, 2.3);
+            for (const f of [0.55, 0.8]) pane(T, W0.at, L * f - 0.45, 1.2, 0.9, 1, 'cross');
+        }
+        for (const side of [1, 3]) {
+            const W = wall(F, side, fp);
+            if (T.sees(W.n)) door(T, W.at, W.len * 0.5, 0, 1.3, 2.4, true);
+        }
+        // the wheel, its floats round the rim, turning in the water off the bank
+        const r = Math.min(3, L * 0.28), bw = -SLOPE - 0.55, zc = ZR + r * 0.72, n = Math.max(24, T.segs(r));
+        const at = (a, c, b = bw) => P(a, b, c - LAND);
+        const rim = (rr, b) => Array.from({ length: n + 1 }, (_, j) => [rr * Math.cos((TAU * j) / n), zc + rr * Math.sin((TAU * j) / n)]).map(([a, c]) => [a, Math.max(c, ZR + 0.02), b]);
+        S.kind = WOOD;
+        const disc = rim(r, bw).slice(0, n).filter(([, c]) => c > ZR + 0.02).map(([a, c]) => at(a, c));
+        if (disc.length > 2) S.face(disc);
+        for (const b of [bw, bw + 0.7]) {
+            const pts = rim(r, b);
+            let run = [];
+            for (const [a, c, bb] of pts) {
+                if (c > ZR + 0.03) run.push(at(a, c, bb));
+                else if (run.length) { S.line(run); run = []; }
+            }
+            if (run.length > 1) S.line(run);
+        }
+        S.loop(ring(T.segs(r * 0.25), (cs, sn) => at(r * 0.25 * cs, zc + r * 0.25 * sn)));
+        const floats = Math.max(8, Math.min(16, Math.round((TAU * r * T.k) / (2.2 * FINE))));
+        for (let j = 0; j < floats; j++) {
+            const a = (TAU * (j + 0.5)) / floats, cs = Math.cos(a), sn = Math.sin(a);
+            if (zc + r * sn < ZR + 0.1) continue;
+            if (j % 2 === 0) S.line([at(r * 0.25 * cs, zc + r * 0.25 * sn), at(r * cs, zc + r * sn)]);
+            S.line([at(r * cs, zc + r * sn), at((r + 0.4) * cs, zc + (r + 0.4) * sn)]);
+        }
+        // the axle into the bank
+        S.line([at(0, zc, bw + 0.7), at(0, zc, -0.6)]);
+        S.kind = INK;
+        // the weir, slanting upstream across the river from just above the wheel
+        const k0 = R.s.findIndex(v => v >= m.s - r - 0.8), k1 = R.s.findIndex(v => v >= m.s - r - 0.8 - R.hw[m.i] * 0.9);
+        if (k0 > 0 && k1 > 0) {
+            const side = (k, sg) => [R.pts[k][0] + R.N[k][0] * sg * (R.hw[k] + 0.3), R.pts[k][1] + R.N[k][1] * sg * (R.hw[k] + 0.3)];
+            const A = side(k0, m.sg), B = side(k1, -m.sg), d = unit2([B[0] - A[0], B[1] - A[1]]), nn = [-d[1] * 0.35, d[0] * 0.35];
+            const len = Math.hypot(B[0] - A[0], B[1] - A[1]);
+            S.prism([[A[0] - nn[0], A[1] - nn[1], ZR], [A[0] + nn[0], A[1] + nn[1], ZR], [A[0] + nn[0], A[1] + nn[1], ZR + 0.35], [A[0] - nn[0], A[1] - nn[1], ZR + 0.35]], [B[0] - A[0], B[1] - A[1], 0]);
+            // white water below it, in short strokes
+            const fall = m.t;
+            S.kind = WATER;
+            for (let u = 1; u < len - 0.6; u += Math.max(1.1, 1.4 / T.k)) {
+                const x = A[0] + d[0] * u + fall[0] * rng.range(0.7, 1.4), y = A[1] + d[1] * u + fall[1] * rng.range(0.7, 1.4);
+                S.line([[x, y, ZR], [x + fall[0] * rng.range(0.6, 1.2), y + fall[1] * rng.range(0.6, 1.2), ZR]]);
+            }
+            S.kind = INK;
+            const mid = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2];
+            R.dry.push((x, y, e = 0) => Math.hypot(x - mid[0], y - mid[1]) < len / 2 + 3 + e);
+        }
+        const wc = at(0, ZR);
+        R.dry.push((x, y, e = 0) => Math.hypot(x - wc[0], y - wc[1]) < r + 2 + e);
+        R.dry.push((x, y, e = 0) => (depth(m.foot, x, y) > 0 ? 0 : distOut(m.foot, x, y)) < 2 + e);
+    }
+
+    // Pollard willow by the water: a stubby trunk with a ball of thin shoots on top
+    function willow(T, x, y, rng) {
+        const S = T.S, P = card(T, x, y, LAND, 0.1), th = rng.range(1.9, 2.6), r = rng.range(1.6, 2.1), ce = T.cam.ce;
+        S.kind = GREEN;
+        const crown = ring(18, (c, s) => P(r * c * (1 + 0.08 * Math.sin(c * 9 + s * 3)), th + r * 0.85 + (r * 0.85 * s) / ce));
+        S.face(crown);
+        S.loop(crown);
+        if (T.detail && r * T.k > 1.6) for (const a of [-0.55, 0, 0.55]) S.line([P(a * 0.3, th + 0.15), P(a * r * 1.15, th + r * 1.45)]);
+        const tw = 0.32, trunk = [P(-tw, 0), P(tw, 0), P(tw * 1.35, th), P(-tw * 1.35, th)];
+        S.face(trunk);
+        S.loop(trunk);
+        S.kind = INK;
+    }
+
+    // A clump of reeds standing in the water at the edge
+    function reeds(T, x, y, rng) {
+        const P = card(T, x, y, ZR, 0), w = Math.max(0.45, FINE / T.k), h = rng.range(1, 1.5);
+        T.S.kind = GREEN;
+        for (const u of [-1, 0, 1]) T.S.line([P(u * w * 0.25, 0), P(u * w, h * (1 - 0.15 * Math.abs(u)))], true);
+        T.S.kind = INK;
+    }
+
+    // Willows and reeds along the banks, and swans and a boat on the water.
+    // The patches of water they take go in R.dry for the ripples.
+    function riverLife(T, R, rng) {
+        const { S, p } = T, { pts, on, s } = R;
+        const busy = i => R.crossings.some(c => Math.abs(s[i] - c.s) < 11) || R.dry.some(f => f(...pts[i], 6)), stood = [];
+        // a point on side sg of the river, d out from the edge of the water
+        const bank = (i, sg, d) => [pts[i][0] + R.N[i][0] * sg * (R.hw[i] + d), pts[i][1] + R.N[i][1] * sg * (R.hw[i] + d)];
+        for (const sg of [1, -1]) {
+            const W = R.off(sg, 0);
+            for (let i = rng.int(0, 6); i < pts.length; i += rng.int(3, 8)) {
+                if (!on[i] || busy(i) || !rng.chance(0.3 + 0.6 * p.trees)) continue;
+                const [x, y] = bank(i, sg, SLOPE + rng.range(1, 2.2));
+                if (rng.chance(0.75)) willow(T, x, y, rng);
+                else tree(T, x, y, LAND, rng);
+                stood.push([x, y]);
+            }
+            // reeds where the water's edge shows, in twos and threes
+            for (let i = rng.int(0, 5); i < pts.length; i += rng.int(4, 12)) {
+                if (!on[i] || busy(i)) continue;
+                for (let j = rng.int(1, 3); j > 0; j--) {
+                    const k = Math.min(pts.length - 1, i + j), n = R.N[k], d = -rng.range(0.3, 0.9);
+                    const [x, y] = [W[k][0] + n[0] * sg * d, W[k][1] + n[1] * sg * d];
+                    reeds(T, x, y, rng);
+                    R.dry.push(((u, v) => (q, w, m = 0) => Math.hypot(q - u, w - v) < 1.3 + m)(x, y));
+                }
+            }
+        }
+        // somewhere on the open water, clear of the bridges and of what's there already
+        const spot = (m, side) => {
+            for (let t = 0; t < 40; t++) {
+                const i = rng.int(0, pts.length - 1), n = R.N[i], o = side != null ? side * (R.hw[i] - m) : rng.range(-1, 1) * (R.hw[i] - m - 0.5);
+                if (!on[i] || R.hw[i] < m + 1 || R.crossings.some(c => Math.abs(s[i] - c.s) < 14 + m)) continue;
+                const x = pts[i][0] + n[0] * o, y = pts[i][1] + n[1] * o;
+                if (R.dry.some(f => f(x, y, m)) || T.cam.project(x, y, 0)[1] < 0) continue;
+                return [x, y, i];
+            }
+            return null;
+        };
+        const patch = (x, y, r) => R.dry.push((u, v, m = 0) => Math.hypot(u - x, v - y) < r + m);
+        for (let j = Math.round(p.moatLife * 4 + rng.range(-0.5, 0.5)); j > 0; j--) {
+            const at = spot(2.4);
+            if (!at) continue;
+            swan(T, at[0], at[1], rng.sign(), ZR);
+            patch(at[0], at[1], 2.6);
+        }
+        if (rng.chance(0.4 + 0.5 * p.people)) {
+            const at = spot(1.2, rng.sign());
+            if (at) {
+                const t = unit2([pts[Math.min(at[2] + 1, pts.length - 1)][0] - pts[Math.max(at[2] - 1, 0)][0], pts[Math.min(at[2] + 1, pts.length - 1)][1] - pts[Math.max(at[2] - 1, 0)][1]]);
+                S.kind = WOOD;
+                kit.boat(T, turned(at[0], at[1], ZR, Math.atan2(t[1], t[0])), 'row', rng);
+                S.kind = FIGURE;
+                kit.person(T, at[0], at[1], ZR + 0.35, rng);
+                S.kind = INK;
+                patch(at[0], at[1], 3.4);
+            }
+        }
+        // cattle grazing the meadows, where they're wide enough
+        const roomy = (x, y, m) => !stood.some(([u, v]) => Math.hypot(u - x, v - y) < m) && !R.dry.some(f => f(x, y, m - 1.5));
+        for (let g = R.meadow > 3.6 ? Math.round(p.people * 3 + rng.range(-0.5, 0.5)) : 0; g > 0; g--) {
+            const i = rng.int(0, pts.length - 1), sg = rng.sign();
+            if (!on[i] || busy(i)) continue;
+            for (let j = rng.int(2, 4); j > 0; j--) {
+                const k = geo.clamp(i + rng.int(-3, 3), 0, pts.length - 1), [x, y] = bank(k, sg, SLOPE + rng.range(1.6, R.meadow - 0.8));
+                const dir = rng.sign();
+                if (!on[k] || !roomy(x, y, 2.6)) continue;
+                beast(T, x, y, dir, false);
+                stood.push([x, y]);
+            }
+        }
+        // and someone fishing off the bank, the line out from the rod's tip to the water
+        for (let t = rng.chance(0.3 + 0.6 * p.people) ? 20 : 0; t > 0; t--) {
+            const i = rng.int(0, pts.length - 1), sg = rng.sign();
+            if (!on[i] || busy(i)) continue;
+            const [x, y] = bank(i, sg, SLOPE + 0.7);
+            if (!roomy(x, y, 2)) continue;
+            person(T, x, y, LAND, rng);
+            const o = [-R.N[i][0] * sg, -R.N[i][1] * sg], tip = [x + o[0] * 3.4, y + o[1] * 3.4, LAND + 2.4], bob = [x + o[0] * 4.8, y + o[1] * 4.8, ZR];
+            S.kind = WOOD;
+            S.line([[x + o[0] * 0.3, y + o[1] * 0.3, LAND + 1.1], tip]);
+            S.line([tip, bob]);
+            S.kind = INK;
+            patch(bob[0], bob[1], 1.5);
+            break;
+        }
+    }
+
+    // Ripple lines along both banks of the river, as far out from the bank as
+    // round the moat, solid and then dashed. Bits shorter than 2.5 mm are dropped.
+    function riverRipples(T, R, clear) {
+        const { S, k } = T, { pts, on, hw, N } = R, step = 0.3 / k;
+        S.kind = WATER;
+        for (const [mm, dash, gap] of [[1.9, Infinity, 0], [4.3, 9, 2.4]]) {
+            // the lines off the two banks keep 1.8 mm apart in the middle
+            const period = (dash + gap) / k, room = mm + 0.9;
+            for (const sg of [1, -1]) {
+                let run = [], t = sg > 0 ? 0.7 : 2.1;
+                const flush = () => {
+                    if (run.length * step * k >= 2.5) S.line(run.map(([x, y]) => [x, y, ZR]));
+                    run = [];
+                };
+                for (let i = 0; i + 1 < pts.length; i++) {
+                    const d0 = hw[i] - mm / k, d1 = hw[i + 1] - mm / k;
+                    if (!on[i] || hw[i] * k < room) {
+                        flush();
+                        continue;
+                    }
+                    const a = [pts[i][0] + N[i][0] * sg * d0, pts[i][1] + N[i][1] * sg * d0], b = [pts[i + 1][0] + N[i + 1][0] * sg * d1, pts[i + 1][1] + N[i + 1][1] * sg * d1];
+                    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+                    for (let u = 0; u < len; u += step, t += step) {
+                        const x = a[0] + ((b[0] - a[0]) * u) / len, y = a[1] + ((b[1] - a[1]) * u) / len;
+                        if ((t % period) * k < dash && clear(x, y)) run.push([x, y]);
+                        else flush();
+                    }
+                }
+                flush();
+            }
+        }
+        S.kind = INK;
     }
 
     // ------------------------------------------------------------------
@@ -2308,10 +3591,14 @@
         const { S, cam, p } = T;
         const rng = new PG.RNG(hash(seed, 2));
         const C = town.castle;
+        // the roads out and the river are laid out first, so the town's shadows can fall on the river too
+        for (const g of town.gates) g.road = gateRoad(g, p);
+        const view = groundView(T), roads = gateRoads(town, view);
+        const river = riverPlan(T, town, roads, view, new PG.RNG(hash(seed, 6)));
         // Shadows on the moat are hatched level across the page like Harbor's
         // water. Each piece of ground gets its own group, trimmed to it at the end.
-        const water = S.shadowGroup(0, null, Math.atan2(cam.ry, cam.rx));
-        const trims = [];
+        const level = Math.atan2(cam.ry, cam.rx), water = S.shadowGroup(0, null, level);
+        const trims = water ? [{ g: water, keep: town.moat, minus: [] }] : [];
         const group = (keep, minus = []) => {
             const g = S.shadowGroup(LAND, null, 0);
             if (g) {
@@ -2322,10 +3609,15 @@
         };
         const corner = C ? rectPoly(C.zone) : null;
         const lane = group(town.wallIn, [town.inner].concat(corner ? [corner] : []));
-        const outside = group(null, [town.moat]);
+        const outside = group(null, [town.moat].concat(river ? river.bank : []));
         for (const c of town.cells) if (!c.castle) c.group = group(c.poly);
         const yard = C ? group(rectPoly(C.ward)) : null;
-        const everywhere = [water, lane, outside, yard, ...town.cells.map(c => c.group)].filter(Boolean);
+        const stream = river ? S.shadowGroup(ZR, null, level) : null;
+        if (stream) {
+            stream.area = river.area;
+            trims.push({ g: stream, pieces: river.water, minus: [] });
+        }
+        const everywhere = [water, lane, outside, yard, stream, ...town.cells.map(c => c.group)].filter(Boolean);
 
         S.shadow = null;
         banks(T, town);
@@ -2342,7 +3634,7 @@
             }
         });
         S.shadow = water;
-        for (const g of town.gates) approach(T, g, town);
+        for (const g of town.gates) approach(T, g);
         for (const c of town.cells) {
             if (c.castle) continue;
             S.shadow = c.group;
@@ -2362,27 +3654,38 @@
             S.shadow = yard;
             ward(T, town, rng);
         }
-        S.shadow = outside;
-        country(T, town, new PG.RNG(hash(seed, 3)));
+        // things out in the country throw their shadows on the river as well as the land
+        castAll(S, [outside, stream].filter(Boolean), () => country(T, town, new PG.RNG(hash(seed, 3)), view, roads, river));
         S.shadow = water;
         const life = moatLife(T, town, new PG.RNG(hash(seed, 4)));
         S.shadow = null;
 
-        for (const { g, keep: k0, minus } of trims) {
+        // A piece of ground keeps the parts of its shadows inside keep, or inside
+        // any of pieces, and outside every one of minus
+        const hit = (a, b) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+        for (const { g, keep: k0, minus, pieces } of trims) {
+            const out = minus.map(M => ({ M, b: bounds(M) })), parts0 = pieces && pieces.map(Q => ({ Q, b: bounds(Q) }));
             g.polys = g.polys.flatMap(P => {
-                let parts = k0 ? [clipConvex(P, k0)] : [P];
-                for (const M of minus) parts = parts.flatMap(Q => (Q.length >= 3 ? minusConvex(Q, M) : []));
+                const b = bounds(P);
+                let parts = parts0 ? parts0.filter(q => hit(q.b, b)).map(q => clipConvex(P, q.Q)) : k0 ? [clipConvex(P, k0)] : [P];
+                for (const { M, b: mb } of out) if (hit(mb, b)) parts = parts.flatMap(Q => (Q.length >= 3 ? minusConvex(Q, M) : []));
                 return parts.filter(Q => Q.length >= 3);
             });
         }
         if (p.water) {
             // ripples keep a millimeter clear of the shadows, so they don't run
             // along the edges of the hatching or through narrow gaps in it
-            const shaded = water ? water.polys.map(P => ({ P, b: bounds(P) })) : [], seen = inFront(T, town), m = 1 / T.k;
-            const dark = (x, y) => shaded.some(({ P, b }) => inRect(b, x, y) && geo.pointInPolygon(x, y, P));
-            const clear = (x, y) => seen(x, y) && !life.some(([u, v, r]) => Math.hypot(u - x, v - y) < r)
-                && ![[0, 0], [m, 0], [-m, 0], [0, m], [0, -m]].some(([dx, dy]) => dark(x + dx, y + dy));
-            ripples(T, town, clear);
+            const m = 1 / T.k, test = g => {
+                const shaded = g ? g.polys.map(P => ({ P, b: bounds(P) })) : [];
+                const dark = (x, y) => shaded.some(({ P, b }) => inRect(b, x, y) && geo.pointInPolygon(x, y, P));
+                return (x, y) => ![[0, 0], [m, 0], [-m, 0], [0, m], [0, -m]].some(([dx, dy]) => dark(x + dx, y + dy));
+            };
+            const seen = inFront(T, town), light = test(water);
+            ripples(T, town, (x, y) => seen(x, y) && !life.some(([u, v, r]) => Math.hypot(u - x, v - y) < r) && light(x, y));
+            if (river) {
+                const lit = test(stream);
+                riverRipples(T, river, (x, y) => !river.dry.some(f => f(x, y)) && lit(x, y));
+            }
         }
         if (p.shadows) {
             S.kind = BLUE;
@@ -2434,7 +3737,7 @@
         id: 'castle',
         name: 'Castle Town',
         category: 'Scenes',
-        description: 'A walled town in its moat with round or square towers, gatehouses, a castle keep, a market square and the fields round it, in isometric ink. Every seed builds a different one.',
+        description: 'A walled town in its moat with round or square towers, gatehouses, a castle keep, a market square, and the country round it with a river, stone bridges, a water mill, and an abbey, in isometric ink. Every seed builds a different one.',
         fit: false,
         params: [
             { type: 'section', label: 'View' },
@@ -2479,14 +3782,26 @@
             { type: 'section', label: 'Country' },
             { id: 'fields', label: 'Plowed fields', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.3, 0.9] },
             { id: 'furrows', label: 'Furrow spacing (mm)', type: 'range', min: 0.8, max: 4, step: 0.05, value: 1.8, random: false },
+            { id: 'hedges', label: 'Hedgerows', type: 'range', min: 0, max: 1, step: 0.01, value: 0.5, random: [0.2, 0.8],
+                hint: 'Hedges between the fields, most of them in the small closes near the town' },
             { id: 'trees', label: 'Trees & woods', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.3, 0.9] },
+            { id: 'river', label: 'River', type: 'select', value: 'front', random: ['front', 'front', 'front', 'back', 'back', 'none'],
+                options: [['front', 'In front of the town'], ['back', 'Behind the town'], ['none', 'None']],
+                hint: 'In front, the roads out of the gates cross it on stone bridges' },
+            { id: 'riverWidth', label: 'River width (m)', type: 'range', min: 8, max: 24, step: 0.5, value: 14, random: [10, 18], show: p => p.river !== 'none' },
+            { id: 'watermill', label: 'Water mill', type: 'checkbox', value: true, random: 0.8, show: p => p.river !== 'none' },
+            { id: 'bridgeGate', label: 'Gate on the bridge', type: 'checkbox', value: true, random: 0.6, show: p => p.river === 'front',
+                hint: 'A gate tower at the far end of the main road\'s bridge' },
             { id: 'mill', label: 'Windmill', type: 'checkbox', value: true, random: 0.7 },
+            { id: 'abbey', label: 'Abbey', type: 'checkbox', value: true, random: 0.7,
+                hint: 'An abbey in its walled grounds out past the town, with a lane to its gate' },
             { id: 'fair', label: 'Tournament', type: 'checkbox', value: true, random: 0.6 },
             { id: 'cottages', label: 'Cottages', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0, 1],
                 hint: 'Thatched cottages along the roads out of the gates' },
-            { id: 'moatLife', label: 'Swans & lilies', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.2, 1] },
+            { id: 'moatLife', label: 'Swans & lilies', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.2, 1],
+                hint: 'On the moat, and swans on the river too' },
             { id: 'detail', label: 'Fine details', type: 'checkbox', value: true,
-                hint: 'Timber framing, arrow loops, stones, portcullis bars and other small line work' },
+                hint: 'Timber framing, arrow loops, stones, portcullis bars, and other small line work' },
             { type: 'section', label: 'Shading' },
             { id: 'roofHatch', label: 'Roof hatching', type: 'checkbox', value: true },
             { id: 'roofGap', label: 'Roof hatch spacing (mm)', type: 'range', min: 0.4, max: 3, step: 0.05, value: 0.9, random: false,
@@ -2513,6 +3828,9 @@
             const toSun = kit.unit([-sun[0], -sun[1], 1]);
             const T = {
                 S, cam, p, k,
+                // the camera at a zoom of 1, which the river, its bridges, and the landmarks are placed
+                // by, so zooming crops or widens the same country instead of moving them
+                home: makeCamera(p.yaw, p.elev, k / p.zoom, W, H, view.cx, view.cy),
                 detail: p.detail,
                 sees: n => cam.facing(n[0], n[1], n[2]),
                 segs: r => segments(r, k),

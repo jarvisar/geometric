@@ -54,8 +54,9 @@ const first = run();
 assert.deepEqual(run().layers, first.layers, 'Same seed must reproduce the town');
 assert.notDeepEqual(run({}, { seed: 2 }).layers, first.layers, 'Seeds should vary the town');
 assert.ok(first.stats.draw < 60000, 'Default drawing is too dense to plot');
-// Measured on one kind of town, so the number means the same from one change to the next. About 850 as it
-// stands. It was over 2000 when the timber framing, battlements and gates filled in.
+// Measured on one kind of town, so the number means the same from one change to the next. About 900 as it
+// stands, with the river, the bridges, and the abbey. It was over 2000 when the timber framing, battlements
+// and gates filled in.
 const solid = blobs(run({ shape: 'ragged', towers: 'round', castleAt: 'back' }));
 assert.ok(solid < 1200, `Drawing has ${solid} solid patches of black ink`);
 // the walls that run straight away from the camera are the ones with no width on paper
@@ -74,6 +75,15 @@ for (const shape of menus.shape) for (const towers of menus.towers) for (const c
 assert.ok(heaviest < 1700, `A square town has ${heaviest} solid patches of black ink`);
 run({ shape: 'long', towers: 'square', castle: false, size: 70 });
 run({ shape: 'long', towers: 'mixed', castleAt: 'right', size: 150 });
+// The river in front, behind, or left out, with the castle in either corner and at the camera limits, where
+// the bends have the least room round the moat. Then the rest of the country's parts off and on.
+for (const river of ['front', 'back', 'none']) {
+    for (const castleAt of ['back', 'right']) run({ river, castleAt }, { seed: 4 });
+    for (const [yaw, elev] of [[20, 25], [70, 60]]) raw({ river, yaw, elev });
+}
+run({ river: 'front', gate2: false, riverWidth: 24, towerRoofs: 'crenels' }, { seed: 6 });
+run({ river: 'back', riverWidth: 8, hedges: 1, trees: 1 }, { seed: 7 });
+run({ abbey: false, hedges: 0, watermill: false, bridgeGate: false }, { seed: 8 });
 // Randomize picks a plan, a build of tower and a corner for the castle, not the seed. They shouldn't all
 // come out alike.
 const picked = { shape: new Set(), towers: new Set(), castleAt: new Set() };
@@ -103,4 +113,4 @@ const eight = run({ pens: 8 });
 assert.equal(eight.layers.filter(l => l.paths.length).length, 8);
 const svg = PG.exporters.svg(eight, { w: 210, h: 297 }, [], { title: def.name });
 assert.ok(svg.includes('inkscape:groupmode="layer"') && !/NaN|Infinity/.test(svg));
-console.log(`Castle Town: ${cases} cases passed (plans, towers, keeps, camera limits, paper sizes, parameter limits, random towns, grid, clipping and SVG). ${solid} solid patches of black ink, ${heaviest} in a square town. Slowest ${slowest.toFixed(0)} ms`);
+console.log(`Castle Town: ${cases} cases passed (plans, towers, keeps, rivers, camera limits, paper sizes, parameter limits, random towns, grid, clipping, and SVG). ${solid} solid patches of black ink, ${heaviest} in a square town. Slowest ${slowest.toFixed(0)} ms`);
