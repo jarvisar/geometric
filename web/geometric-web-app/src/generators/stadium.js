@@ -20,12 +20,15 @@
  *
  * The camera is fitted round the stadium once it's planned. The rest of
  * the page is the block it stands in, with the crowd on it, and a grid of
- * streets beyond: terraces, car parks, parks, training pitches and courts.
+ * streets beyond: terraces, shops, flats, car parks, parks, pitches, and
+ * the odd gasholder or church. A railway or river can take the place of a
+ * row of blocks. Anything tall in front of the stadium is kept low enough
+ * not to hide it.
  */
 (function () {
     'use strict';
     const { geo, TAU } = PG;
-    const { hash, makeCamera, frame, card, ring, Scene, segments, newell } = PG.iso;
+    const { hash, makeCamera, frame, card, ring, Scene, segments, newell, hull } = PG.iso;
     const kit = PG.isokit;
     const { inKind, withKind, lerp3, unit } = kit;
 
@@ -1257,11 +1260,11 @@
     // A parked car, with as much to it as shows at its size on paper: the
     // whole thing, two boxes, or one box with the line of its windscreen.
     // Any more than that and a full car park plots as a row of black lumps.
-    function parked(T, x, y, dir, rng) {
+    function parked(T, x, y, dir, rng, z = 0) {
         const S = T.S;
         S.kind = INK;
-        if (T.k >= 1.7) return kit.car(T, x, y, 0, dir, rng);
-        const F = frame(x, y, 0, dir), L = rng.range(3.9, 4.6), w = 0.85;
+        if (T.k >= 1.7) return kit.car(T, x, y, z, dir, rng);
+        const F = frame(x, y, z, dir), L = rng.range(3.9, 4.6), w = 0.85;
         if (T.k < 1.05) {
             S.box(F, -L / 2, -w, 0.2, L / 2, w, 1.3);
             return S.line([F.P(L * 0.12, -w, 1.3), F.P(L * 0.12, w, 1.3)]);
@@ -1456,6 +1459,291 @@
         S.loop([[r[0], r[1], 0], [r[2], r[1], 0], [r[2], r[3], 0], [r[0], r[3], 0]]);
     }
 
+    // How tall something on footprint `foot` (flat world points) can stand
+    // without hiding the stadium, when it's between the stadium and the camera
+    function headroom(T, foot, h) {
+        const cam = T.cam, depth = foot.reduce((s, q) => s + cam.project(q[0], q[1], 0)[2], 0) / foot.length;
+        if (!T.bowl || depth > cam.project(0, 0, 0)[2]) return h;
+        const hits = z => clipConvex(hull(foot.flatMap(([x, y]) => [cam.project(x, y, 0), cam.project(x, y, z)]).map(q => [q[0], q[1]])), T.bowl).length >= 3;
+        if (!hits(h)) return h;
+        let lo = 0, hi = h;
+        for (let i = 0; i < 12; i++) {
+            const m = (lo + hi) / 2;
+            if (hits(m)) hi = m;
+            else lo = m;
+        }
+        return lo;
+    }
+
+    const footprint = (F, [a0, b0, a1, b1]) => [F.P(a0, b0, 0), F.P(a1, b0, 0), F.P(a1, b1, 0), F.P(a0, b1, 0)];
+
+    // Which of the four street directions a frame's u runs along
+    const dirOf = F => {
+        const u = F.V(1, 0, 0);
+        return PG.iso.DIRS.findIndex(d => Math.abs(d[0] - u[0]) + Math.abs(d[1] - u[1]) < 1e-6);
+    };
+
+    // Trees wherever there's room for them in a block of size L by B
+    function plant(T, F, L, B, occ, perArea, rng) {
+        for (let i = Math.round(((L * B) / perArea) * T.p.trees), tries = 0; i > 0 && tries < 300; tries++) {
+            const a = rng.range(3, L - 3), b = rng.range(3, B - 3);
+            if (!occ.free(a - 2.6, b - 2.6, a + 2.6, b + 2.6, 0.4)) continue;
+            occ.add(a - 2.6, b - 2.6, a + 2.6, b + 2.6);
+            tree(T, ...F.P(a, b, 0).slice(0, 2), 0, rng);
+            i--;
+        }
+    }
+
+    // A block of flats on fp in frame F: the floors as bands and the bays
+    // as uprights, each as often as stays apart on paper
+    function flatBlock(T, F, fp, floors, rng) {
+        const S = T.S, FL = kit.FLOOR, base = 0.6, h = base + floors * FL, look = rng.weighted([[2, 'grid'], [2, 'decks'], [1, 'strips']]);
+        S.kind = INK;
+        S.box(F, fp[0], fp[1], 0, fp[2], fp[3], h);
+        const z = kit.flatRoof(T, F, fp, h, 0.2, 0.5), cu = (fp[0] + fp[2]) / 2, cv = (fp[1] + fp[3]) / 2;
+        S.box(F, cu - 2.2, cv - 2.6, z, cu + 2.2, cv + 2.6, z + 2.8);
+        for (let side = 0; side < 4; side++) {
+            const W = kit.wall(F, side, fp);
+            if (!T.sees(W.n)) continue;
+            const run3 = unit(sub(W.at(1, 0), W.at(0, 0))), pz = apart(T, run3, UP), pu = apart(T, UP, run3);
+            let e = 1, m = 1;
+            while (e * FL * pz < 1.6 * FINE && e < 8) e *= 2;
+            while (m * 3.6 * pu < 1.8 * FINE && m < 8) m++;
+            const bays = Math.max(1, Math.round(W.len / (3.6 * m)));
+            if (look !== 'strips') for (let f = e; f < floors; f += e) S.line([W.at(0, base + f * FL), W.at(W.len, base + f * FL)]);
+            // a railing along each deck
+            if (look === 'decks' && e === 1 && 1.1 * pz > 1.3 * FINE) for (let f = 1; f < floors; f++) S.line([W.at(0, base + f * FL + 1.1), W.at(W.len, base + f * FL + 1.1)]);
+            if (look !== 'decks') inKind(S, GLASS, () => {
+                for (let q = 1; q < bays; q++) S.line([W.at((W.len * q) / bays, base + FL), W.at((W.len * q) / bays, h - 0.6)]);
+            });
+            if (side === 0 && 2.6 * pz > 2 * FINE) kit.door(T, W.at, W.len / 2, 0, 2.4, 2.6, true);
+        }
+    }
+
+    // Flats on a lawn: a long slab or two, or towers when the block is
+    // squarer. Kept low in front of the stadium.
+    function flats(T, r, rng) {
+        const { S } = T, { F, L, B } = blockFrame(r), FL = kit.FLOOR, occ = new kit.Occupancy(L, B), plots = [];
+        if (L < B * 1.6 || rng.chance(0.3)) {
+            const n = Math.max(1, Math.min(3, Math.floor((L - 6) / 32)));
+            for (let i = 0; i < n; i++) {
+                const w = Math.min(rng.range(15, 20), B - 14), a = ((i + 0.5) * L) / n + rng.range(-3, 3), b = B / 2 + rng.range(-3, 3);
+                if (w > 10) plots.push([[a - w / 2, b - w / 2, a + w / 2, b + w / 2], rng.int(11, 19)]);
+            }
+        } else {
+            const n = B > 58 ? 2 : 1, len = Math.min(L - 14, rng.range(48, 96)), d = rng.range(11, 13.5);
+            for (let i = 0; i < n; i++) {
+                const b = (B * (i + 0.5)) / n, a = (L - len) / 2 + rng.range(-4, 4);
+                if (len > 20 && B / n > d + 10) plots.push([[a, b - d / 2, a + len, b + d / 2], rng.int(5, 10)]);
+            }
+        }
+        if (!plots.length) return park(T, r, rng);
+        for (const [fp, floors] of plots) {
+            const n = Math.floor((headroom(T, footprint(F, fp), floors * FL + 1.6) - 1.6) / FL);
+            if (n < 3) continue;
+            occ.add(fp[0] - 1, fp[1] - 1, fp[2] + 1, fp[3] + 1);
+            flatBlock(T, F, fp, n, rng);
+        }
+        plant(T, F, L, B, occ, 240, rng);
+        S.kind = PAVE;
+        S.loop(footprint(F, [0, 0, L, B]));
+    }
+
+    // Shops along the street with flats over them, each with its awning in
+    // the club's colors, and often a pub on the corner. Fronts on v = 0.
+    function shopRow(T, F, L, D, rng) {
+        const S = T.S, FL = kit.FLOOR, units = [];
+        for (let a = 0; a < L - 3; ) {
+            let w = rng.range(5.5, 9);
+            if (L - a - w < 4) w = L - a;
+            units.push([a, a + w]);
+            a += w;
+        }
+        units.forEach(([a0, a1], i) => {
+            const pub = i === 0 && units.length > 2 && rng.chance(0.6), floors = pub ? 2 : rng.int(2, 4), top = floors * FL + 0.3, fp = [a0, 0, a1, D];
+            S.kind = INK;
+            S.box(F, a0, 0, 0, a1, D, top);
+            if (pub) kit.hipRoof(T, F, fp, top, geo.rad(32));
+            else if (rng.chance(0.3)) kit.shadeGable(T, F, kit.gableRoof(T, F, fp, top, true, geo.rad(rng.range(30, 40)), rng, { attic: false }));
+            else S.box(F, a0, 0, top, a1, D, top + 0.7);
+            const front = kit.wall(F, 0, fp), w = a1 - a0;
+            if (T.sees(front.n)) {
+                kit.pane(T, front.at, 0.5, 0.5, w - 2.1, 2.1, 'wide');
+                kit.door(T, front.at, w - 0.85, 0, 0.95, 2.3);
+                if (T.k > 1.3) kit.windows(T, front, { base: FL + 0.3, floors: floors - 1, style: 'sash', winW: 1, winH: 1.4, gap: 1.2 });
+            }
+            if (pub) {
+                // the sign hung out over the pavement
+                const [x, y, z] = F.P(a0 + 0.1, -0.6, 4.4), P = card(T, x, y, 0, 0);
+                S.line([F.P(a0, 0, 4.7), F.P(a0, -1.2, 4.7)]);
+                inKind(S, GOLD, () => S.loop([P(-0.45, z - 1.1), P(0.45, z - 1.1), P(0.45, z + 0.2), P(-0.45, z + 0.2)]));
+            } else if (rng.chance(0.75)) {
+                kit.awning(T, F, a0 + 0.3, a1 - 0.3, 0, 2.95, 1.3, rng.pick(T.club));
+            }
+        });
+    }
+
+    // A high street: shops along each long side of the block, yards behind
+    function shops(T, r, rng) {
+        const { S } = T, D = 10, need = D + 9;
+        for (const flip of [false, true]) {
+            const { F, L, B } = blockFrame(r, flip);
+            if (flip && B < 2 * need + 2) break;
+            if (B < need + 1 || L < 14) return park(T, r, rng);
+            const len = L - 2, parts = len > 70 ? 2 : 1, each = (len - (parts - 1) * 7) / parts;
+            for (let k = 0; k < parts; k++) {
+                const a0 = 1 + k * (each + 7);
+                shopRow(T, { P: (a, b, c) => F.P(a0 + a, b + 1.6, c), V: F.V }, each, D, rng);
+                S.kind = INK;
+                S.box(F, a0, D + 1.6 + 6.5, 0, a0 + each, D + 1.6 + 6.8, 1.8);
+            }
+        }
+        S.kind = PAVE;
+        S.loop([[r[0], r[1], 0], [r[2], r[1], 0], [r[2], r[3], 0], [r[0], r[3], 0]]);
+    }
+
+    // Gasholder: the bell in its ring of lattice columns, braced between
+    // them on the side the camera sees
+    function gasholder(T, x, y, R, H, rng) {
+        const S = T.S, n = R > 22 ? 20 : 16, tiers = Math.max(2, Math.round(H / 9)), Rb = R - 1.2, hb = Math.max(4, H * rng.range(0.2, 0.9));
+        S.kind = INK;
+        S.lathe(x, y, [[R + 1, 0], [R + 1, 1.4]], T.segs(R + 1));
+        S.lathe(x, y, [[Rb, 1.4], [Rb, hb], [Rb * 0.93, hb + Rb * 0.05], [0, hb + Rb * 0.12]], T.segs(Rb));
+        if (T.tones) inKind(S, T.tones.dark, () => kit.shadeRound(T, x, y, 1.4, hb, Rb, Rb));
+        const at = (i, z) => {
+            const a = (TAU * i) / n;
+            return [x + R * Math.cos(a), y + R * Math.sin(a), z];
+        };
+        for (let i = 0; i < n; i++) tube(T, at(i, 0), at(i, H), 0.4, 6);
+        for (let t = 1; t <= tiers; t++) S.line(Array.from({ length: 4 * n + 1 }, (_, k) => at(k / 4, (H * t) / tiers)));
+        for (let i = 0; i < n; i++) {
+            const a = (TAU * (i + 0.5)) / n;
+            if (!T.sees([Math.cos(a), Math.sin(a), 0])) continue;
+            for (let t = 0; t < tiers; t++) {
+                const z0 = (H * t) / tiers, z1 = (H * (t + 1)) / tiers;
+                S.line([at(i, z0), at(i + 1, z1)]);
+                S.line([at(i + 1, z0), at(i, z1)]);
+            }
+        }
+    }
+
+    // Old gasworks: one gasholder, or two side by side on a long block
+    function gasworks(T, r, rng) {
+        const { S } = T, { F, L, B } = blockFrame(r), R0 = Math.min(30, B / 2 - 6);
+        if (R0 < 12) return sheds(T, r, rng);
+        const two = L > 4 * R0 + 14, holders = two ? [[L * 0.27, R0 * rng.range(0.8, 1)], [L * 0.72, R0 * rng.range(0.55, 0.8)]] : [[L / 2, R0]];
+        for (const [a, R] of holders) {
+            const [x, y] = F.P(a, B / 2, 0), foot = circle(R + 1, 16, x, y), want = R * rng.range(0.9, 1.15);
+            const H = Math.min(want, headroom(T, foot, want + R * 0.15) - R * 0.15);
+            if (H > 12) gasholder(T, x, y, R, H, rng);
+        }
+        S.kind = PAVE;
+        S.loop(footprint(F, [0, 0, L, B]));
+    }
+
+    // Multi-storey car park: open decks between bands of concrete, a ramp
+    // tower at one corner and cars on the roof
+    function multiStorey(T, r, rng) {
+        const { S, p } = T, { F, L, B } = blockFrame(r), deck = 3.1;
+        const a0 = 4, a1 = Math.min(L - 15, a0 + rng.range(55, 95)), b0 = 4, b1 = Math.min(B - 4, b0 + rng.range(32, 46)), fp = [a0, b0, a1, b1];
+        if (a1 - a0 < 30 || b1 - b0 < 22) return carPark(T, r, rng);
+        const want = rng.int(3, 6), n = Math.min(want, Math.floor((headroom(T, footprint(F, fp), want * deck + 1.1) - 1.1) / deck));
+        if (n < 2) return carPark(T, r, rng);
+        const zt = n * deck;
+        S.kind = INK;
+        S.box(F, a0, b0, 0, a1, b1, zt);
+        for (const [u0, v0, u1, v1] of [[a0, b0, a1, b0 + 0.3], [a0, b1 - 0.3, a1, b1], [a0, b0, a0 + 0.3, b1], [a1 - 0.3, b0, a1, b1]]) S.box(F, u0, v0, zt, u1, v1, zt + 1.1);
+        // a band of concrete at each deck, and the dark gap over it
+        for (let side = 0; side < 4; side++) {
+            const W = kit.wall(F, side, fp);
+            if (!T.sees(W.n)) continue;
+            const pz = apart(T, unit(sub(W.at(1, 0), W.at(0, 0))), UP), open = (deck - 1.55) * pz > 1.6 * FINE;
+            for (let d = 0; d < n; d++) {
+                const lo = d * deck + 1.1, hi = (d + 1) * deck - 0.45;
+                S.line([W.at(0, lo), W.at(W.len, lo)]);
+                // the underside of the deck above only when the gap stays open on paper
+                if (!open) continue;
+                S.line([W.at(0, hi), W.at(W.len, hi)]);
+                if (T.tones && (hi - lo) * pz > 2.5 * FINE) inKind(S, T.tones.dark, () => S.hatch([W.at(0, lo), W.at(W.len, lo), W.at(W.len, hi), W.at(0, hi)], UP, T.hDark * 1.3));
+            }
+        }
+        S.box(F, a0 + 1, b1 - 5, zt, a0 + 5, b1 - 1, zt + 3.2);
+        rampTower(T, ...F.P(a1 + 7, b0 + 7, 0).slice(0, 2), 6.2, zt + 0.6);
+        // cars on the roof, nose in, in rows back to back with an aisle between each pair
+        const du = dirOf(F);
+        for (let m = b0 + 3; m < b1 - 2.5; m += 16.5) {
+            for (const b of [m, m + 5.2]) {
+                if (b > b1 - 2.5) continue;
+                for (let a = a0 + 2.5; a < a1 - 2.5; a += bay(T)) {
+                    if (b > b1 - 7 && a < a0 + 7) continue;
+                    if (rng.chance(p.cars * 0.75)) parked(T, ...F.P(a, b, 0).slice(0, 2), (du + 1) & 3, rng, zt);
+                }
+            }
+        }
+        S.kind = PAVE;
+        S.loop(footprint(F, [0, 0, L, B]));
+    }
+
+    // Allotments: plots either side of a path, with sheds, greenhouses, and
+    // rows of veg as far apart as they need to be on paper
+    function allotments(T, r, rng) {
+        const { S, p } = T, { F, L, B } = blockFrame(r), P = (a, b, c = 0) => F.P(a, b, c);
+        if (B < 24 || L < 30) return park(T, r, rng);
+        const pw = rng.range(8, 11), n = Math.floor((L - 4) / pw), u0 = (L - n * pw) / 2, mid = B / 2;
+        const gap = Math.max(1.1, (1.6 * FINE) / apart(T, F.V(0, 1, 0), F.V(1, 0, 0)));
+        S.kind = PAVE;
+        S.line([P(2, mid - 1.2), P(L - 2, mid - 1.2)]);
+        S.line([P(2, mid + 1.2), P(L - 2, mid + 1.2)]);
+        for (const side of [-1, 1]) {
+            const near = t => mid + side * (1.2 + t), deep = mid - 3.2;
+            for (let i = 0; i < n; i++) {
+                const pa = u0 + i * pw, pb = pa + pw, roll = rng.random();
+                S.kind = GREEN;
+                if (i) S.line([P(pa, near(0)), P(pa, near(deep))]);
+                // a shed or a greenhouse by the path
+                const a = pa + rng.range(0.8, pw - 3.2), b0 = Math.min(near(0.8), near(3.4)), b1 = Math.max(near(0.8), near(3.4));
+                if (roll < 0.5) {
+                    S.kind = INK;
+                    S.box(F, a, b0, 0, a + 2.2, b1, 1.9);
+                    kit.gableRoof(T, F, [a, b0, a + 2.2, b1], 1.9, false, geo.rad(25), rng, { attic: false });
+                } else if (roll < 0.66) {
+                    inKind(S, GLASS, () => {
+                        S.box(F, a, b0, 0, a + 2.4, b1, 1.7);
+                        kit.gableRoof(T, F, [a, b0, a + 2.4, b1], 1.7, false, geo.rad(32), rng, { attic: false });
+                    });
+                }
+                // a bed or two of veg in rows, with grass between
+                S.kind = GREEN;
+                for (let t = 4.4; t < deep - 3; ) {
+                    const t1 = Math.min(deep - 1, t + rng.range(3.5, 8));
+                    if (rng.chance(0.6)) for (let u = pa + 0.9; u < pb - 0.7; u += gap) S.line([P(u, near(t)), P(u, near(t1))]);
+                    t = t1 + rng.range(1.5, 4);
+                }
+            }
+        }
+        for (let i = Math.round(((L * B) / 1200) * p.people); i > 0; i--) {
+            const [x, y] = F.P(rng.range(4, L - 4), mid + rng.range(-1, 1) * rng.range(1.5, mid - 4), 0);
+            person(T, x, y, 0, rng);
+        }
+        S.kind = PAVE;
+        S.loop(footprint(F, [0, 0, L, B]));
+    }
+
+    // A church in its yard, the tower to the street
+    function churchyard(T, r, rng) {
+        const { S } = T, { F, L, B } = blockFrame(r, rng.chance(0.5)), w = rng.range(10, 12.5), len = Math.min(B - 12, rng.range(24, 32));
+        if (len < 18 || L < w + 16) return park(T, r, rng);
+        const a0 = L / 2 - w / 2 + rng.range(-0.15, 0.15) * (L - w - 16), b0 = 6, fp = [a0, b0, a0 + w, b0 + len];
+        if (headroom(T, footprint(F, fp), 30) < 29) return park(T, r, rng);
+        const occ = new kit.Occupancy(L, B);
+        occ.add(a0 - 2, 0, a0 + w + 2, b0 + len + 2);
+        S.kind = INK;
+        kit.church(T, F, fp, rng);
+        plant(T, F, L, B, occ, 160, rng);
+        S.kind = PAVE;
+        S.loop(footprint(F, [0, 0, L, B]));
+    }
+
     // Tent with a pointed top on four poles
     function tent(T, x, y, r, rng) {
         const S = T.S, z0 = 2.3, cs = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [x + a * r, y + b * r, z0]), apex = [x, y, z0 + r * 0.95];
@@ -1465,6 +1753,86 @@
         for (let i = 0; i < 4; i++) {
             const tri = [cs[i], cs[(i + 1) % 4], apex];
             kit.shade(T, tri, kit.outward(tri, [x, y, z0 + 0.3]), 'canopy');
+        }
+    }
+
+    // Food kiosk in frame F, its front on v = 0 under a striped awning
+    function kiosk(T, F, stripe) {
+        const S = T.S;
+        S.kind = INK;
+        S.box(F, -1.6, 0, 0, 1.6, 2.4, 2.5);
+        S.box(F, -1.8, -0.1, 2.5, 1.8, 2.6, 2.75);
+        kit.awning(T, F, -1.5, 1.5, 0, 2.4, 1, stripe);
+    }
+
+    // A club legend on a plinth, holding the cup up. Returns its radius.
+    function statue(T, x, y) {
+        const S = T.S, F = frame(x, y, 0, 0);
+        S.kind = INK;
+        S.box(F, -1.5, -1.5, 0, 1.5, 1.5, 0.4);
+        S.box(F, -1.05, -1.05, 0.4, 1.05, 1.05, 2.8);
+        S.box(F, -1.2, -1.2, 2.8, 1.2, 1.2, 3.05);
+        const P = card(T, x, y, 3.05, 0), hr = 0.27, ce = T.cam.ce;
+        const body = [P(-0.36, 1.7), P(0.36, 1.7), P(0.46, 2.75), P(0.3, 2.95), P(-0.3, 2.95), P(-0.46, 2.75)];
+        for (const s of [-1, 1]) {
+            const leg = [P(s * 0.06, 1.75), P(s * 0.34, 1.75), P(s * 0.36, 0), P(s * 0.12, 0)];
+            S.face(leg);
+            S.loop(leg);
+            S.line([P(s * 0.4, 2.8), P(s * 0.62, 3.5), P(s * 0.2, 3.95)]);
+        }
+        S.face(body);
+        S.loop(body);
+        const head = ring(T.segs(hr), (c, s) => P(hr * c, 3.2 + (hr * s) / ce));
+        S.face(head);
+        S.loop(head);
+        inKind(S, GOLD, () => S.loop([P(-0.3, 4.6), P(0.3, 4.6), P(0.12, 4.15), P(0.16, 3.95), P(-0.16, 3.95), P(-0.12, 4.15)]));
+        return 1.7;
+    }
+
+    // The fan zone's screen: a scoreboard on legs, with the picture hatched
+    // in when the score is too small to draw
+    function bigScreen(T, x, y, aim) {
+        const w = 11, h = 6.4, legs = 2.8, m = Math.min(0.9, h * 0.12), F = kit.turned(x, y, 0, Math.atan2(aim[0], -aim[1]));
+        scoreboard(T, x, y, 0, aim, w, h, legs, T.score);
+        const P = (s, c) => F.P(s, -0.62, legs + c);
+        if (!T.sees([aim[0], aim[1], 0]) || paper(T, P(0, 0), P(0, h - 4 * m)) >= 4 * FINE) return;
+        inKind(T.S, GLASS, () => T.S.hatch([P(-w / 2 + m, m), P(w / 2 - m, m), P(w / 2 - m, h - m), P(-w / 2 + m, h - m)], F.V(1, 0, 0), 1.4 * FINE));
+    }
+
+    // Dish on a short stand at p, aimed up at the same bit of sky as every other one
+    function satDish(T, p, r) {
+        const S = T.S, d = unit([-0.5, 0.42, 0.75]), e1 = unit([-d[1], d[0], 0]), e2 = [d[1] * e1[2] - d[2] * e1[1], d[2] * e1[0] - d[0] * e1[2], d[0] * e1[1] - d[1] * e1[0]];
+        const c = [p[0], p[1], p[2] + 0.5 + r * 0.7];
+        const pts = ring(T.segs(r), (cs, sn) => [0, 1, 2].map(k => c[k] + r * (e1[k] * cs + e2[k] * sn)));
+        S.line([p, c]);
+        S.face(pts);
+        S.loop(pts);
+        const low = pts.reduce((u, v) => (v[2] < u[2] ? v : u));
+        S.line([low, [c[0] + d[0] * r * 0.8, c[1] + d[1] * r * 0.8, c[2] + d[2] * r * 0.8]]);
+    }
+
+    // Outside broadcast truck, with a dish on the roof if asked
+    function obTruck(T, x, y, dir, dish) {
+        const S = T.S, F = frame(x, y, 0, dir);
+        S.kind = INK;
+        S.box(F, -4.6, -1.25, 0.5, 2.4, 1.25, 3.8);
+        S.box(F, 2.5, -1.2, 0.5, 4.6, 1.2, 2.9);
+        if (dish) satDish(T, F.P(-2.2, 0, 3.8), 1.15);
+    }
+
+    // People walking from a to b (flat world points), in ones, twos and
+    // threes, about `dens` to the meter, spread `spread` either side
+    function walkers(T, a, b, dens, rng, z = 0, spread = 0.35) {
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 1 || dens <= 0) return;
+        // people closer than this on paper run together into a black lump
+        const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L, gap = Math.max(0.95, 1.15 / T.k);
+        for (let s = rng.range(0, 2); s < L; s += gap + rng.range(1, 2)) {
+            if (!rng.chance(Math.min(1, dens * 1.6))) continue;
+            for (let k = rng.int(1, 3); k > 0 && s < L; k--, s += gap * rng.range(1, 1.25)) {
+                const o = rng.range(-spread, spread);
+                person(T, a[0] + ux * s - uy * o, a[1] + uy * s + ux * o, z, rng);
+            }
         }
     }
 
@@ -1500,7 +1868,31 @@
         } else if (what === 'statue' && s > 12) {
             const [tx, ty] = P(s * 0.38, s * 0.38);
             S.kind = INK;
-            if (taken.free(tx, ty, 3.5)) taken.add(tx, ty, kit.obelisk(T, tx, ty, 0, rng) + 1.5);
+            if (taken.free(tx, ty, 3.5)) taken.add(tx, ty, (p.matchday && rng.chance(0.7) ? statue(T, tx, ty) : kit.obelisk(T, tx, ty, 0, rng)) + 1.5);
+        } else if (what === 'screen' && s > 22) {
+            // a big screen turned more or less to the camera, and the crowd watching it
+            const [tx, ty] = P(s * 0.4, s * 0.4), ang = Math.atan2(-T.cam.fy, -T.cam.fx) + rng.range(-0.45, 0.45), aim = [Math.cos(ang), Math.sin(ang)];
+            if (taken.free(tx, ty, 6)) {
+                bigScreen(T, tx, ty, aim);
+                taken.add(tx, ty, 6);
+                for (let i = Math.round(s * s * 0.06 * p.people), tries = 0; i > 0 && tries < 1500; tries++) {
+                    const d = rng.range(4.5, s * 0.55), q = rng.range(-1, 1) * (2.5 + d * 0.45), px = tx + aim[0] * d - aim[1] * q, py = ty + aim[1] * d + aim[0] * q;
+                    const a = (px - x) * sx, b = (py - y) * sy;
+                    if (a < 2 || b < 2 || a + b > s * 1.12 || !taken.free(px, py, Math.max(0.42, 0.55 / T.k))) continue;
+                    taken.add(px, py, Math.max(0.42, 0.55 / T.k));
+                    person(T, px, py, 0, rng);
+                    i--;
+                }
+            }
+        } else if (what === 'trucks' && s > 22) {
+            // the TV compound: outside broadcast trucks side by side, dishes up
+            const n = Math.min(5, Math.floor((s * 0.7 - 4) / 3.8));
+            for (let i = 0; i < n; i++) {
+                const [tx, ty] = P(9, 4 + i * 3.8);
+                if (![-4, 0, 4].every(a => taken.free(tx + a, ty, 2.5))) break;
+                obTruck(T, tx, ty, 0, i % 2 === 0 || rng.chance(0.4));
+                for (const a of [-4, 0, 4]) taken.add(tx + a, ty, 2.5);
+            }
         }
         // trees in what's left
         for (let i = Math.round(((s * s) / 120) * p.trees * (what === 'trees' ? 2 : 0.7)), tries = 0; i > 0 && tries < 80; tries++) {
@@ -1525,6 +1917,379 @@
         return out.sort((u, v) => u - v);
     }
 
+    // ------------------------------------------------------------------
+    // Railway and river
+    // ------------------------------------------------------------------
+
+    // Stretches of [a, b] left once the gaps [g0, g1] are taken out
+    function spans(a, b, gaps) {
+        const out = [];
+        let x = a;
+        for (const [g0, g1] of gaps.slice().sort((u, v) => u[0] - v[0])) {
+            if (g0 > x) out.push([x, Math.min(g0, b)]);
+            x = Math.max(x, g1);
+            if (x >= b) break;
+        }
+        if (x < b) out.push([x, b]);
+        return out.filter(([u, v]) => v - u > 0.05);
+    }
+
+    // Plain wall h tall from u0 to u1 along v in frame F
+    function wallRun(T, F, u0, u1, v, h) {
+        const S = T.S, q = [F.P(u0, v, 0), F.P(u1, v, 0), F.P(u1, v, h), F.P(u0, v, h)];
+        S.face(q);
+        S.loop(q);
+    }
+
+    // Is the ground at (x, y) in shadow? Only once everything has cast its shadow.
+    function shadeTest(T) {
+        const g = T.S.shadowGroups[0], polys = (g ? g.polys : []).map(P => {
+            let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+            for (const q of P) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); }
+            return { P, x0, y0, x1, y1 };
+        });
+        return (x, y) => polys.some(h => x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1 && geo.pointInPolygon(x, y, h.P));
+    }
+
+    // Across the railway from the stadium side: a wall, a strip wide enough
+    // for the station building, a platform, the tracks 4.5 m apart, the other
+    // platform and another wall
+    function railLayout(rng) {
+        const n = rng.chance(0.4) ? 4 : 2, tracks = Array.from({ length: n }, (_, i) => 12 + i * 4.5), last = tracks[n - 1];
+        return { tracks, W: last + 8.25, pA: [6.5, 10.25], pB: [last + 1.75, last + 6.75] };
+    }
+
+    // Train along the track at v from u0 to u1, in cars about 20 m long with
+    // a cab at each end. Windows and doors on the side the camera sees.
+    function train(T, F, v, u0, u1, kind) {
+        const S = T.S, P = F.P, n = Math.max(2, Math.round((u1 - u0) / 20.8)), cl = (u1 - u0 - (n - 1) * 0.8) / n, hw = 1.4, z0 = 0.9, z1 = 3.9, nose = 2.6;
+        const G = { P: (a, b, c) => P(a, v + b, c), V: F.V }, side = T.sees(F.V(0, -1, 0)) ? -hw : hw, band = apart(T, F.V(1, 0, 0), UP) > 1.5 * FINE;
+        for (let i = 0; i < n; i++) {
+            const a0 = u0 + i * (cl + 0.8), a1 = a0 + cl, b0 = i ? a0 : a0 + nose, b1 = i < n - 1 ? a1 : a1 - nose;
+            S.kind = INK;
+            S.box(G, b0, -hw, z0, b1, hw, z1);
+            if (!i) kit.cabin(T, G, a0, b0, b0 - nose * 0.35, b0, hw, z0, z1);
+            if (i === n - 1) kit.cabin(T, G, b1, a1, b1, b1 + nose * 0.35, hw, z0, z1);
+            S.line([P(b0 + 0.3, v + side * 0.7, z1), P(b1 - 0.3, v + side * 0.7, z1)]);
+            const at = (s, c) => P(s, v + side, c), doors = [b0 + (b1 - b0) * 0.22, b1 - (b1 - b0) * 0.22];
+            inKind(S, GLASS, () => {
+                // a band of windows between the doors, or just a line along it when that's all there's room for
+                for (const [s0, s1] of spans(b0 + 0.8, b1 - 0.8, doors.map(d => [d - 0.9, d + 0.9]))) {
+                    for (const c of band ? [2.1, 3.1] : [2.6]) S.line([at(s0, c), at(s1, c)]);
+                }
+                if (band) for (const d of doors) kit.rect(T, at, d - 0.7, 1.05, 1.4, 2.35);
+            });
+            inKind(S, kind, () => S.line([at(b0, 1.45), at(b1, 1.45)]));
+        }
+    }
+
+    // The station on its stretch of the railway: platforms under canopies, a
+    // footbridge between them, and the booking hall with its door to the street
+    function station(T, F, lay, st, rng) {
+        const { S, p } = T, P = F.P, [a0, a1] = lay.pA, [b0, b1] = lay.pB;
+        S.kind = INK;
+        S.box(F, st.u0, a0, 0, st.u1, a1, 1);
+        S.box(F, st.u0, b0, 0, st.u1, b1, 1);
+        for (const [v0, v1] of [[a0, a1], [b0, b1]]) {
+            const c0 = st.u0 + 10, c1 = st.u1 - 6, vm = (v0 + v1) / 2;
+            for (let a = c0 + 3; a < c1 - 1; a += 9) S.line([P(a, vm, 1), P(a, vm, 4.3)]);
+            S.box(F, c0, v0 + 0.2, 4.3, c1, v1 - 0.2, 4.65);
+            kit.shade(T, [P(c0, v0 + 0.2, 4.65), P(c1, v0 + 0.2, 4.65), P(c1, v1 - 0.2, 4.65), P(c0, v1 - 0.2, 4.65)], [0, 0, 1]);
+        }
+        const uf = st.u0 + 5, va = (a0 + a1) / 2, vb = (b0 + b1) / 2;
+        S.box(F, uf - 1.6, va, 6.6, uf + 1.6, vb, 8.6);
+        for (const v of [va, vb]) S.box(F, uf - 2.2, v - 1.7, 1, uf + 2.2, v + 1.7, 9);
+        for (const b of [-1.6, 1.6]) if (T.sees(F.V(b, 0, 0))) inKind(S, GLASS, () => S.line([P(uf + b, va + 1.7, 7.7), P(uf + b, vb - 1.7, 7.7)]));
+        // the booking hall
+        const fp = [st.hall - 10, 0.5, st.hall + 10, 6.3];
+        S.box(F, fp[0], fp[1], 0, fp[2], fp[3], 6);
+        kit.shadeGable(T, F, kit.gableRoof(T, F, fp, 6, true, geo.rad(rng.range(32, 40)), rng, { attic: false }));
+        const W = kit.wall(F, 0, fp);
+        if (T.sees(W.n)) {
+            kit.door(T, W.at, 10, 0, 2.8, 3, true);
+            for (const s of [3.5, 6.5, 13.5, 16.5]) kit.arch(T, W.at, s, 1, 1.3, 2.9);
+            if (0.6 * T.k > 1.5 * FINE) S.loop(ring(T.segs(0.6), (c, s) => W.at(10 + 0.6 * c, 4.5 + 0.6 * s)));
+        }
+        // fans off the train
+        if (p.matchday) {
+            for (const [v0, v1] of [[a0, a1], [b0, b1]]) {
+                for (let i = Math.round((st.u1 - st.u0) * 0.25 * p.people); i > 0; i--) {
+                    const [x, y] = P(rng.range(st.u0 + 2, st.u1 - 2), rng.range(v0 + 0.6, v1 - 0.6), 0);
+                    person(T, x, y, 1, rng);
+                }
+            }
+        }
+    }
+
+    // A railway along the corridor: walls each side, the track bed with its
+    // sleepers and rails, gantries for the wires, level crossings where
+    // streets cross it away from the station, and a train or two
+    function railway(T, cor, cross, rng) {
+        const { S, p } = T, { F, U0, U1, lay } = cor, P = F.P, tv = lay.tracks, last = tv[tv.length - 1];
+        // the station is on the stretch nearest the stadium
+        const mid = rng.range(-20, 20), len = rng.range(115, 150), st = { u0: mid - len / 2, u1: mid + len / 2 };
+        st.hall = rng.range(st.u0 + 25, st.u1 - 25);
+        const level = cross.filter(u => (u < st.u0 - 8 || u > st.u1 + 8) && rng.chance(0.75)), roads = level.map(u => [u - 5, u + 5]);
+        S.kind = INK;
+        for (const [a, b] of spans(U0, U1, roads.concat([[st.hall - 10, st.hall + 10]]))) wallRun(T, F, a, b, 0, 1.6);
+        for (const [a, b] of spans(U0, U1, roads)) wallRun(T, F, a, b, lay.W, 1.6);
+        // the track bed, with sleepers as close as stay apart on paper
+        S.kind = PAVE;
+        const bed = spans(U0, U1, roads);
+        for (const [a, b] of bed) for (const v of [tv[0] - 1.9, last + 1.9]) S.line([P(a, v, 0), P(b, v, 0)]);
+        // any closer and the rails and sleepers plot as a solid black strip
+        const sl = Math.max(1.6, (2.6 * FINE) / apart(T, F.V(0, 1, 0), F.V(1, 0, 0))), pair = apart(T, F.V(1, 0, 0), F.V(0, 1.435, 0)) > 1.2 * FINE;
+        if (pair) for (const [a, b] of spans(U0, U1, roads.map(([g0, g1]) => [g0 - 1, g1 + 1]))) {
+            for (const v of tv) for (let u = Math.ceil(a / sl) * sl; u < b; u += sl) S.line([P(u, v - 1.25, 0), P(u, v + 1.25, 0)]);
+        }
+        S.kind = INK;
+        for (const v of tv) for (const o of pair ? [-0.72, 0.72] : [0]) S.line([P(U0, v + o, 0), P(U1, v + o, 0)]);
+        // level crossings: the road over the tracks, barriers down each side
+        for (const u of level) {
+            S.kind = PAVE;
+            for (const t of [-3.5, 3.5]) S.line([P(u + t, 0, 0), P(u + t, lay.W, 0)]);
+            S.kind = INK;
+            for (const [v, s] of [[0.8, 1], [lay.W - 0.8, -1]]) {
+                const post = u + s * 4.4;
+                S.line([P(post, v, 0), P(post, v, 1.3)]);
+                inKind(S, RED, () => S.line([P(post, v, 1.05), P(u - s * 0.3, v, 1.05)]));
+            }
+        }
+        // gantries for the overhead wires
+        S.kind = INK;
+        const g0 = tv[0] - 2.9, g1 = last + 2.9;
+        for (let a = Math.floor(U0 / 48) * 48 + 20; a < U1; a += 48) {
+            if (roads.some(([r0, r1]) => a > r0 - 5 && a < r1 + 5) || Math.abs(a - st.u0 - 5) < 5) continue;
+            for (const v of [g0, g1]) S.frustum(...P(a, v, 0).slice(0, 2), 0, 7.2, 0.22, 0.16, 6);
+            S.box(F, a - 0.2, g0, 6.7, a + 0.2, g1, 7.1);
+        }
+        station(T, F, lay, st, rng);
+        // a train in at the platform, and maybe another passing through
+        const kinds = [RED, BLUE, GOLD], cars = rng.int(4, 6);
+        train(T, F, tv[0], st.u0 + 4, Math.min(st.u1 - 3, st.u0 + 4 + cars * 20.8), rng.pick(kinds));
+        const run = rng.int(3, 8) * 20.8;
+        if (rng.chance(0.65) && U1 - U0 > run + 80) {
+            const a = rng.range(U0 + 40, U1 - 40 - run);
+            train(T, F, tv[rng.int(1, tv.length - 1)], a, a + run, rng.pick(kinds));
+        }
+        // trees and scrub along the lineside, away from the station
+        for (const v of [3.5, last + 4.4]) {
+            for (let a = U0 + rng.range(0, 10); a < U1; a += rng.range(8, 13)) {
+                if ((a > st.u0 - 6 && a < st.u1 + 6) || roads.some(([r0, r1]) => a > r0 - 5 && a < r1 + 5) || !rng.chance(p.trees * 0.8)) continue;
+                tree(T, ...P(a, v + rng.range(-0.8, 0.8), 0).slice(0, 2), 0, rng);
+            }
+        }
+    }
+
+    // Road bridge of stone arches over the river, level with the banks, the
+    // openings hatched dark on the face the camera sees
+    function archBridge(T, F, u, v0, v1, zw, rng) {
+        const S = T.S, P = F.P, span = v1 - v0, n = Math.max(2, Math.round(span / rng.range(14, 20))), sp = span / n, pier = Math.min(2.4, sp * 0.15), deck = 0.3;
+        S.kind = INK;
+        S.box(F, u - 5, v0, zw, u + 5, v1, deck);
+        for (const a of [u - 5, u + 4.6]) S.box(F, a, v0 - 1.5, deck, a + 0.4, v1 + 1.5, deck + 1);
+        for (const [a, s] of [[u - 5, -1], [u + 5, 1]]) {
+            if (!T.sees(F.V(s, 0, 0))) continue;
+            const at = (b, c) => P(a + s * 0.01, b, c), spring = zw + 0.6, crown = deck - 1;
+            for (let i = 0; i < n; i++) {
+                const s0 = v0 + i * sp + (i ? pier / 2 : 0), s1 = v0 + (i + 1) * sp - (i < n - 1 ? pier / 2 : 0), w = s1 - s0, mid = (s0 + s1) / 2;
+                const rise = crown - spring, R = (w * w) / (8 * rise) + rise / 2, pts = [at(s0, zw)];
+                for (let k = 0; k <= 16; k++) {
+                    const b = s0 + (w * k) / 16;
+                    pts.push(at(b, crown - R + Math.sqrt(Math.max(0, R * R - (b - mid) * (b - mid)))));
+                }
+                pts.push(at(s1, zw));
+                S.line(pts);
+                if (T.tones) inKind(S, T.tones.dark, () => S.hatch(pts, UP, T.hDark));
+            }
+        }
+        S.kind = PAVE;
+        for (const t of [-3.5, 3.5]) S.line([P(u + t, v0, deck), P(u + t, v1, deck)]);
+    }
+
+    // A river along the corridor: a promenade with trees each side, the
+    // embankment walls, bridges where some of the streets cross, boats, and
+    // marks on the water
+    function river(T, cor, cross, rng) {
+        const { S, p } = T, { F, U0, U1, lay } = cor, P = F.P, W = lay.W, v0 = lay.prom, v1 = W - lay.prom, zw = -4;
+        const nearest = cross.reduce((u, v) => (Math.abs(v) < Math.abs(u) ? v : u), Infinity);
+        const bridges = cross.filter(u => u === nearest || rng.chance(0.45)), roads = cross.map(u => [u - 5, u + 5]);
+        S.kind = PAVE;
+        for (const v of [0, W]) for (const [a, b] of spans(U0, U1, roads)) S.line([P(a, v, 0), P(b, v, 0)]);
+        // both walls go in as faces, so the near one hides the water under its bank
+        S.kind = INK;
+        for (const [v, s] of [[v0, 1], [v1, -1]]) {
+            S.face([P(U0, v, 0), P(U1, v, 0), P(U1, v, zw), P(U0, v, zw)], false);
+            if (T.sees(F.V(0, s, 0))) S.line([P(U0, v, zw), P(U1, v, zw)]);
+            for (const [a, b] of spans(U0, U1, bridges.map(u => [u - 5, u + 5]))) wallRun(T, F, a, b, v - s * 0.2, 0.9);
+        }
+        for (const u of bridges) {
+            archBridge(T, F, u, v0, v1, zw, rng);
+            S.kind = PAVE;
+            for (const t of [-3.5, 3.5]) for (const [b0, b1] of [[0, v0], [v1, W]]) S.line([P(u + t, b0, 0), P(u + t, b1, 0)]);
+        }
+        // trees along the promenades, and people out walking
+        for (const v of [v0 * 0.45, W - v0 * 0.45]) {
+            for (let a = U0 + rng.range(0, 12); a < U1; a += rng.range(10, 14)) {
+                if (roads.some(([g0, g1]) => a > g0 - 4 && a < g1 + 4) || !rng.chance(p.trees)) continue;
+                tree(T, ...P(a, v, 0).slice(0, 2), 0, rng);
+            }
+            for (const [a, b] of spans(U0, U1, roads)) walkers(T, P(a, v + 1.6, 0), P(b, v + 1.6, 0), 0.06 * p.people, rng, 0, 0.6);
+        }
+        // boats tied up in runs along the banks, clear of the bridges
+        const boats = [], uv = F.V(1, 0, 0);
+        S.kind = INK;
+        for (const [v, s] of [[v0, 1], [v1, -1]]) {
+            for (let a = U0 + rng.range(0, 40); a < U1; ) {
+                const run = rng.range(25, 70);
+                if (rng.chance(0.5)) for (let b = a; b < a + run; ) {
+                    const kind = rng.weighted([[3, 'launch'], [2, 'row'], [1.5, 'fishing']]), L0 = kit.LENGTH[kind], vv = v + s * (kit.BEAM[kind] / 2 + 0.5);
+                    if (bridges.some(u => b + L0 > u - 9 && b < u + 9)) {
+                        b += L0 + 2;
+                        continue;
+                    }
+                    const head = rng.chance(0.7) ? 1 : -1, [x, y] = P(b + L0 / 2, vv, zw);
+                    const L = kit.boat(T, kit.turned(x, y, zw, Math.atan2(uv[1] * head, uv[0] * head)), kind, rng);
+                    boats.push([b + L0 / 2, vv]);
+                    b += L + rng.range(0.8, 2.4);
+                }
+                a += run + rng.range(10, 40);
+            }
+        }
+        // and under way in the middle
+        for (let i = Math.round(((U1 - U0) / 110) * rng.range(0.6, 1.4)); i > 0; i--) {
+            const a = rng.range(U0, U1), v = rng.range(v0 + 7, v1 - 5), head = rng.chance(0.5) ? 1 : -1, kind = rng.weighted([[3, 'launch'], [2, 'row'], [1, 'fishing']]);
+            if (bridges.some(u => Math.abs(u - a) < 22) || boats.some(b => Math.hypot(b[0] - a, b[1] - v) < 24)) continue;
+            const [x, y] = P(a, v, zw), ang = Math.atan2(uv[1] * head, uv[0] * head);
+            S.kind = INK;
+            const L = kit.boat(T, kit.turned(x, y, zw, ang), kind, rng);
+            if (kind !== 'row') kit.wake(T, x, y, ang, L, rng, zw);
+            boats.push([a - head * L, v]);
+        }
+        // marks on the water, out of the shadows
+        T.later.push(() => {
+            const dark = shadeTest(T), step = Math.max(2.5, 2.4 / apart(T, F.V(1, 0, 0), F.V(0, 1, 0)));
+            S.kind = GLASS;
+            for (let v = v0 + 2 + rng.range(0, step); v < v1 - 1.5; v += step * rng.range(0.8, 1.2)) {
+                for (let a = U0 + rng.range(0, 20); a < U1; a += rng.range(12, 28)) {
+                    const len = rng.range(2, 7), m = P(a + len / 2, v, zw);
+                    if (bridges.some(u => a < u + 7 && a + len > u - 7) || boats.some(b => Math.hypot(b[0] - a, b[1] - v) < 16) || dark(m[0], m[1])) continue;
+                    S.line([P(a, v, zw), P(a + len, v, zw)]);
+                }
+            }
+            S.kind = INK;
+        });
+    }
+
+    // Where the railway or river runs: across the grid on one side of the
+    // stadium's block, either right beside it or a block further out. Takes
+    // the street lines it covers out of xs or ys and puts streets along it.
+    function corridor(T, D, cell, xs, ys, gs, rng) {
+        const { p, cam, S } = T, sw = D.street, out = D.block * rng.range(0.9, 1.25);
+        const lay = p.corridor === 'rail' ? railLayout(rng) : { W: rng.range(36, 54), prom: rng.range(5.5, 7) };
+        // How much of its middle line lands on the page, if the stretch nearest the stadium does
+        const shows = (axis, s, gap) => {
+            const c = (s > 0 ? cell[axis + 2] + sw / 2 : cell[axis] - sw / 2) + s * (sw / 2 + gap + lay.W / 2), m = 15;
+            const q = cam.project(axis ? 0 : c, axis ? c : 0, 0);
+            if (q[0] < m || q[0] > S.W - m || q[1] < m || q[1] > S.H - m) return 0;
+            const a = cam.project(axis ? -3000 : c, axis ? c : -3000, 0), b = cam.project(axis ? 3000 : c, axis ? c : 3000, 0);
+            let t0 = 0, t1 = 1;
+            for (const [d, lo, hi] of [[b[0] - a[0], m - a[0], S.W - m - a[0]], [b[1] - a[1], m - a[1], S.H - m - a[1]]]) {
+                if (Math.abs(d) < 1e-9) continue;
+                const u = lo / d, v = hi / d;
+                t0 = Math.max(t0, Math.min(u, v));
+                t1 = Math.min(t1, Math.max(u, v));
+            }
+            return Math.max(0, t1 - t0) * Math.hypot(b[0] - a[0], b[1] - a[1]);
+        };
+        const options = [];
+        for (const axis of [0, 1]) for (const s of [1, -1]) for (const gap of [0, out]) options.push({ axis, s, gap, len: shows(axis, s, gap) });
+        const best = Math.max(...options.map(o => o.len));
+        // any that shows a good long stretch, or failing that whichever shows most
+        const good = options.filter(o => o.len > 0 && o.len >= 0.6 * best);
+        const { axis, s, gap } = good.length ? rng.weighted(good.map(o => [o.len * o.len, o])) : options.find(o => o.len === best);
+        const lines = axis ? ys : xs, edge = s > 0 ? cell[axis + 2] + sw / 2 : cell[axis] - sw / 2, at = t => edge + s * t;
+        const near = sw / 2 + gap, far = near + lay.W;
+        const keep = lines.filter(v => s * (v - edge) <= 0.01 || s * (v - edge) >= far + sw / 2 + 12);
+        keep.push(at(far + sw / 2));
+        if (gap) keep.push(at(near - sw / 2));
+        lines.length = 0;
+        lines.push(...keep.sort((u, v) => u - v));
+        const O = axis ? [0, at(near)] : [at(near), 0], F = frame(O[0], O[1], 0, axis ? (s > 0 ? 0 : 2) : (s > 0 ? 3 : 1)), uv = F.V(1, 0, 0);
+        const along = q => (q[0] - O[0]) * uv[0] + (q[1] - O[1]) * uv[1], us = gs.map(along);
+        // only as far along as either edge is on the page, and a little more
+        let U0 = Infinity, U1 = -Infinity;
+        const a = Math.min(...us) - 30, b = Math.max(...us) + 30;
+        for (const v of [0, lay.W]) {
+            const p0 = cam.project(...F.P(a, v, 0)), p1 = cam.project(...F.P(b, v, 0));
+            let t0 = 0, t1 = 1;
+            for (const [d, lo, hi] of [[p1[0] - p0[0], -12 - p0[0], S.W + 12 - p0[0]], [p1[1] - p0[1], -12 - p0[1], S.H + 12 - p0[1]]]) {
+                if (Math.abs(d) < 1e-9) continue;
+                t0 = Math.max(t0, Math.min(lo / d, hi / d));
+                t1 = Math.min(t1, Math.max(lo / d, hi / d));
+            }
+            if (t1 > t0) {
+                U0 = Math.min(U0, mix(a, b, t0));
+                U1 = Math.max(U1, mix(a, b, t1));
+            }
+        }
+        if (U1 < U0) U0 = U1 = 0;
+        return { axis, lo: Math.min(at(near), at(far)), hi: Math.max(at(near), at(far)), F, lay, along, U0: U0 - 20, U1: U1 + 20 };
+    }
+
+    // ------------------------------------------------------------------
+    // Streets
+    // ------------------------------------------------------------------
+
+    // The streets between the blocks: kerbs, a dashed center line and
+    // traffic, and on a match day the fans walking in, thicker the nearer
+    // they are. The streets right round the stadium are shut to traffic.
+    function streets(T, D, xs, ys, cell, cor, seed) {
+        const { S, p, cam } = T, sw = D.street;
+        const seen = pts => pts.some(q => {
+            const r = cam.project(q[0], q[1], 0);
+            return r[0] > -20 && r[0] < S.W + 20 && r[1] > -20 && r[1] < S.H + 20;
+        });
+        for (const axis of [0, 1]) {
+            const lines = axis ? ys : xs, others = axis ? xs : ys;
+            lines.forEach((c, i) => {
+                for (let j = 0; j + 1 < others.length; j++) {
+                    const s0 = others[j] + sw / 2, s1 = others[j + 1] - sw / 2;
+                    if (s1 - s0 < 4 || (cor && cor.axis !== axis && s0 < cor.hi && s1 > cor.lo)) continue;
+                    const at = (s, t) => (axis ? [s, c + t, 0] : [c + t, s, 0]);
+                    if (!seen([at(s0, 0), at(s1, 0), at((s0 + s1) / 2, 0)])) continue;
+                    const rng = new PG.RNG(hash(seed, 47, axis, i, j));
+                    const beside = Math.abs(c - cell[axis] + sw / 2) < 0.01 || Math.abs(c - cell[axis + 2] - sw / 2) < 0.01;
+                    const shut = p.matchday && beside && s0 < cell[3 - axis] && s1 > cell[1 - axis];
+                    S.kind = PAVE;
+                    for (const t of [-3.5, 3.5]) S.line([at(s0, t), at(s1, t)]);
+                    if (!shut) for (let s = s0 + 2; s + 3 < s1 - 2; s += 8) S.line([at(s, 0), at(s + 3, 0)]);
+                    // traffic keeps to the right
+                    if (!shut && p.traffic > 0) {
+                        let s = s0 + rng.range(2, 12);
+                        while (s < s1 - 3) {
+                            const lane = rng.chance(0.5) ? 1 : -1, dir = axis ? (lane < 0 ? 0 : 2) : (lane > 0 ? 1 : 3);
+                            const bus = p.matchday && rng.chance(0.08);
+                            if (bus && s + 13 > s1) break;
+                            if (rng.chance(p.traffic)) {
+                                const q = at(s + (bus ? 6 : 2.2), lane * 1.75);
+                                if (bus) coach(T, q[0], q[1], dir);
+                                else parked(T, q[0], q[1], dir, rng);
+                            }
+                            s += (bus ? 13 : bay(T) + 2) + rng.range(2, 20) / Math.max(0.2, p.traffic);
+                        }
+                    }
+                    if (p.matchday && p.people > 0) {
+                        const m = at((s0 + s1) / 2, 0), dx = Math.max(cell[0] - m[0], 0, m[0] - cell[2]), dy = Math.max(cell[1] - m[1], 0, m[1] - cell[3]);
+                        const dens = 0.4 * p.people * Math.exp(-Math.hypot(dx, dy) / 90);
+                        for (const t of [-4.25, 4.25]) walkers(T, at(s0, t), at(s1, t), dens, rng);
+                        if (shut) for (const t of [-1.8, 1.8]) walkers(T, at(s0, t), at(s1, t), dens * 1.4, rng, 0, 1.2);
+                    }
+                }
+            });
+        }
+    }
+
     // Everything outside the walls: the apron round the stadium with the
     // crowd on it, and blocks of streets, car parks, parks and pitches out
     // to the edges of the page
@@ -1546,13 +2311,44 @@
         for (const t of fit.towers) taken.add(t.x, t.y, 8);
         for (const q of fit.keep) taken.add(q[0], q[1], q[2]);
 
-        // the four corners of the stadium's block, each as big a square as clears the apron
-        const whats = ['trees', 'tents', 'coaches', 'fountain', 'statue', 'trees'];
+        // the four corners of the stadium's block, each as big a square as clears the apron.
+        // A match day brings a fan zone and the TV trucks, one of each at most.
+        const whats = ['trees', 'tents', 'coaches', 'fountain', 'statue', 'trees'].concat(p.matchday ? ['screen', 'trucks', 'screen', 'trucks'] : []), used = new Set();
         [[cell[0], cell[1], 1, 1], [cell[2], cell[1], -1, 1], [cell[2], cell[3], -1, -1], [cell[0], cell[3], 1, -1]].forEach(([x, y, sx, sy]) => {
             let s = 0;
             while (s < 80 && !geo.pointInPolygon(x + sx * (s + 3), y + sy * (s + 3), apron)) s += 1;
-            if (s > 8) cornerPlot(T, x, y, sx, sy, s, rng.pick(whats), rng, taken);
+            let what = rng.pick(whats);
+            if (used.has(what) && (what === 'screen' || what === 'trucks')) what = 'trees';
+            used.add(what);
+            if (s > 8) cornerPlot(T, x, y, sx, sy, s, what, rng, taken);
         });
+
+        // kiosks and stalls in runs along the foot of the stands, clear of the gates
+        if (p.matchday) {
+            const krng = new PG.RNG(hash(seed, 43));
+            let left = 0;
+            for (let i = 0; i < R.n; i++) {
+                const sp = D.bays[i];
+                if (!left && krng.chance(0.2)) left = krng.int(2, 4);
+                if (!sp || !left) continue;
+                left--;
+                if (sp.gates && i % sp.gates === 0) continue;
+                const d = Math.max(depth[i], depth[(i + 1) % R.n]) + 3, [x, y] = R.at(i, 0.5, d), o = R.out(i);
+                if (R.width(i, d) < 5 || !taken.free(x + o[0] * 0.5, y + o[1] * 0.5, 2.6)) continue;
+                taken.add(x + o[0] * 0.5, y + o[1] * 0.5, 2.6);
+                const what = krng.weighted([[5, 'kiosk'], [2, 'tent'], [1.2, 'cart']]);
+                if (what === 'kiosk') kiosk(T, kit.turned(x, y, 0, Math.atan2(o[0], -o[1])), krng.pick(T.club));
+                else if (what === 'tent') tent(T, x - o[0] * 0.6, y - o[1] * 0.6, 2, krng);
+                else kit.cart(T, x, y, 0, krng);
+                // and somebody being served
+                for (let q = krng.int(0, 3); q > 0; q--) {
+                    const [px, py] = R.at(i, 0.5 + krng.range(-0.15, 0.15), d + 1.6 + q * 0.75);
+                    if (!taken.free(px, py, 0.4)) continue;
+                    taken.add(px, py, 0.45);
+                    person(T, px, py, 0, krng);
+                }
+            }
+        }
 
         // the crowd: queues out from the gates, and people about the apron
         const inWall = (x, y) => geo.pointInPolygon(x, y, wallAt);
@@ -1600,19 +2396,31 @@
         const lo = [Math.min(...gs.map(g => g[0])), Math.min(...gs.map(g => g[1]))], hi = [Math.max(...gs.map(g => g[0])), Math.max(...gs.map(g => g[1]))];
         const xs = streetLines(lo[0], hi[0], cell[0] - sw / 2, cell[2] + sw / 2, D.block, rng);
         const ys = streetLines(lo[1], hi[1], cell[1] - sw / 2, cell[3] + sw / 2, D.block, rng);
+        const cor = p.corridor !== 'none' ? corridor(T, D, cell, xs, ys, gs, new PG.RNG(hash(seed, 41))) : null;
         const onPage = r => [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]].some(([x, y]) => {
             const q = cam.project(x, y, 0);
             return q[0] > -25 && q[0] < S.W + 25 && q[1] > -12 && q[1] < S.H + 40;
         });
-        const uses = { carPark, houses, park, pitches, courts, sheds };
+        const uses = { carPark, houses, park, pitches, courts, sheds, flats, shops, gasworks, multiStorey, allotments, churchyard };
+        // one gasworks and one church is plenty
+        const once = new Set(['gasworks', 'churchyard']), had = new Set();
         for (let i = 0; i + 1 < xs.length; i++) {
             for (let j = 0; j + 1 < ys.length; j++) {
                 const r = [xs[i] + sw / 2, ys[j] + sw / 2, xs[i + 1] - sw / 2, ys[j + 1] - sw / 2];
                 if (r[0] > cell[0] - sw && r[2] < cell[2] + sw && r[1] > cell[1] - sw && r[3] < cell[3] + sw) continue;
+                if (cor && (r[cor.axis] + r[cor.axis + 2]) / 2 > cor.lo && (r[cor.axis] + r[cor.axis + 2]) / 2 < cor.hi) continue;
                 if (r[2] - r[0] < 12 || r[3] - r[1] < 12 || !onPage(r)) continue;
                 const brng = new PG.RNG(hash(seed, 31, i, j));
-                uses[brng.weighted(D.uses)](T, r, brng);
+                let use = brng.weighted(D.uses);
+                if (had.has(use)) use = 'park';
+                if (once.has(use)) had.add(use);
+                uses[use](T, r, brng);
             }
+        }
+        streets(T, D, xs, ys, cell, cor, seed);
+        if (cor) {
+            const crng = new PG.RNG(hash(seed, 53)), cross = (cor.axis ? xs : ys).map(v => cor.along(cor.axis ? [v, 0] : [0, v]));
+            (p.corridor === 'rail' ? railway : river)(T, cor, cross, crng);
         }
     }
 
@@ -1716,16 +2524,23 @@
 
     // What the blocks round about are used for, as weights
     const SETTINGS = {
-        town: [[7, 'houses'], [1, 'park'], [0.8, 'sheds'], [0.5, 'pitches'], [1, 'carPark']],
-        park: [[4.5, 'park'], [2.5, 'pitches'], [1.5, 'courts'], [1.5, 'carPark'], [0.6, 'houses']],
-        lots: [[6, 'carPark'], [1.3, 'sheds'], [1, 'park'], [0.4, 'courts']],
-        campus: [[3, 'pitches'], [2, 'courts'], [2.5, 'park'], [1.6, 'carPark'], [1.2, 'sheds']],
+        town: [[6, 'houses'], [1.2, 'shops'], [1, 'park'], [0.8, 'allotments'], [0.6, 'sheds'], [0.4, 'pitches'], [1, 'carPark'], [0.5, 'flats'], [0.6, 'gasworks'], [0.6, 'churchyard']],
+        park: [[4.5, 'park'], [2.5, 'pitches'], [1.5, 'courts'], [1.5, 'carPark'], [0.6, 'houses'], [1, 'allotments'], [0.4, 'churchyard']],
+        lots: [[5, 'carPark'], [1.5, 'multiStorey'], [1.3, 'sheds'], [1, 'park'], [0.4, 'courts'], [0.5, 'flats'], [0.4, 'gasworks']],
+        campus: [[3, 'pitches'], [2, 'courts'], [2.5, 'park'], [1.6, 'carPark'], [1.2, 'sheds'], [0.6, 'multiStorey']],
+        city: [[3.5, 'flats'], [2.5, 'shops'], [1.2, 'multiStorey'], [1, 'carPark'], [1, 'park'], [0.5, 'sheds'], [0.4, 'churchyard'], [0.4, 'gasworks']],
     };
     // and the settings each kind of stadium turns up in
     const HOME = {
-        ground: [[5, 'town'], [1, 'park'], [1, 'lots']], bowl: [[3, 'lots'], [2, 'park'], [2, 'campus'], [1, 'town']],
-        oval: [[3, 'park'], [3, 'campus'], [1, 'lots'], [1, 'town']], horseshoe: [[3, 'lots'], [3, 'campus'], [1, 'park']],
-        cricket: [[3, 'park'], [3, 'town'], [1, 'campus']], bullring: [[5, 'town'], [1, 'park']], ballpark: [[3, 'town'], [3, 'lots'], [1, 'park']],
+        ground: [[5, 'town'], [1, 'park'], [1, 'lots'], [1, 'city']], bowl: [[3, 'lots'], [2, 'park'], [2, 'campus'], [1, 'town'], [2, 'city']],
+        oval: [[3, 'park'], [3, 'campus'], [1, 'lots'], [1, 'town'], [1, 'city']], horseshoe: [[3, 'lots'], [3, 'campus'], [1, 'park'], [1, 'city']],
+        cricket: [[3, 'park'], [3, 'town'], [1, 'campus']], bullring: [[5, 'town'], [1, 'park'], [1, 'city']], ballpark: [[3, 'town'], [3, 'lots'], [1, 'park'], [2, 'city']],
+    };
+    // and how often a railway or a river runs past each kind
+    const PAST = {
+        ground: [[2, 'none'], [2, 'rail'], [1, 'river']], bowl: [[2, 'none'], [1.5, 'rail'], [1.5, 'river']], oval: [[2, 'none'], [1, 'rail'], [1.5, 'river']],
+        horseshoe: [[2, 'none'], [1, 'rail'], [1, 'river']], cricket: [[2, 'none'], [1.5, 'rail'], [1, 'river']], bullring: [[3, 'none'], [1, 'river']],
+        ballpark: [[2, 'none'], [1.5, 'rail'], [1.5, 'river']],
     };
     // What Randomize gives each kind. A kind with no sport or roof here has no choice of one.
     const USUAL = {
@@ -2145,11 +2960,17 @@
             { type: 'section', label: 'Round about' },
             { id: 'around', label: 'Streets round it', type: 'checkbox', value: true },
             { id: 'setting', label: 'Setting', type: 'select', value: 'campus', was: { any: 'campus' }, random: false, show: p => p.around,
-                options: [['town', 'Terraced streets'], ['park', 'Parkland'], ['lots', 'Car parks'], ['campus', 'Sports grounds']] },
+                options: [['town', 'Terraced streets'], ['city', 'Inner city'], ['park', 'Parkland'], ['lots', 'Car parks'], ['campus', 'Sports grounds']] },
+            { id: 'corridor', label: 'Railway or river', type: 'select', value: 'rail', random: false, show: p => p.around,
+                hint: 'Runs past on one side, right beside the stadium or a block further out. The railway stops at a station near the ground',
+                options: [['none', 'None'], ['rail', 'Railway'], ['river', 'River']] },
+            { id: 'matchday', label: 'Match day crowds', type: 'checkbox', value: true, random: 0.85, show: p => p.around,
+                hint: 'Kiosks round the stands, a fan zone, TV trucks, and fans walking in. The streets beside the ground are shut to traffic' },
             { id: 'block', label: 'Block size (m)', type: 'range', min: 40, max: 110, step: 1, value: 64, random: [52, 84], show: p => p.around },
             { id: 'people', label: 'People', type: 'range', min: 0, max: 1, step: 0.01, value: 0.55, random: [0.3, 0.9], show: p => p.around },
             { id: 'trees', label: 'Trees', type: 'range', min: 0, max: 1, step: 0.01, value: 0.6, random: [0.3, 0.9], show: p => p.around },
-            { id: 'cars', label: 'Cars', type: 'range', min: 0, max: 1, step: 0.01, value: 0.55, random: [0.25, 0.85], show: p => p.around },
+            { id: 'cars', label: 'Parked cars', type: 'range', min: 0, max: 1, step: 0.01, value: 0.55, random: [0.25, 0.85], show: p => p.around },
+            { id: 'traffic', label: 'Traffic', type: 'range', min: 0, max: 1, step: 0.01, value: 0.4, random: [0.15, 0.7], show: p => p.around },
             { type: 'section', label: 'Shading' },
             { id: 'rowGap', label: 'Seat row spacing (mm)', type: 'range', min: 0.6, max: 3, step: 0.05, value: 1, random: false,
                 hint: 'Between rows of seats on paper. Stands seen from behind drop rows to keep to it' },
@@ -2171,7 +2992,7 @@
 
         // The kind is picked before this runs, so a locked kind still gets what suits it
         randomize(rng, p) {
-            const usual = USUAL[p.type], out = { setting: rng.weighted(HOME[p.type]) };
+            const usual = USUAL[p.type], out = { setting: rng.weighted(HOME[p.type]), corridor: rng.weighted(PAST[p.type]) };
             if (usual.sport) out.sport = rng.weighted(usual.sport);
             if (usual.roof) out.roof = rng.weighted(usual.roof);
             const roofed = usual.roof && out.roof !== 'none';
@@ -2205,6 +3026,7 @@
                 pts.push(R.pt(i, c.depth, 0), R.pt(i, c.depth, c.wall));
                 if (sp.roof) for (const [d, z] of roofCut(sp.roof, c, section(sp, 0).rows, 1)) pts.push(R.pt(i, d, z + (sp.roof.flags ? 4.5 : 0)));
             }
+            const body = pts.slice();
             for (const l of fit.lights) pts.push([l.x, l.y, l.h * 1.14], [l.x, l.y, 0]);
             for (const t of fit.towers) pts.push([t.x, t.y, t.h + 7], [t.x, t.y, 0]);
             for (const q of fit.tall) pts.push(q);
@@ -2227,6 +3049,10 @@
                 hDark: p.roofGap * 0.85,
                 later: [],
                 lit: n => (n[0] * toSun[0] + n[1] * toSun[1] + n[2] * toSun[2]) / Math.hypot(n[0], n[1], n[2]) >= 0.75 * toSun[2],
+                // the stadium's outline on the page, which nothing in front of it should cover
+                bowl: hull(body.map(q => cam.project(q[0], q[1], q[2]).slice(0, 2))),
+                club: D.colors.filter(c => c > 0),
+                score: D.score || [(seed >>> 0) % 4, (seed >>> 2) % 3],
             };
             // rows as close as the most open view of a rake allows
             let q = 0;
