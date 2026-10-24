@@ -1998,17 +1998,13 @@
 
     // A plowman behind a pair of oxen, walking along w down the furrows
     function plowTeam(T, x, y, w, rng) {
-        const S = T.S, dir = dot2(w, [T.cam.rx, T.cam.ry]) >= 0 ? 1 : -1, side = [-w[1] * 0.65, w[0] * 0.65];
+        const dir = dot2(w, [T.cam.rx, T.cam.ry]) >= 0 ? 1 : -1, side = [-w[1] * 0.65, w[0] * 0.65];
         const pair = [[x + side[0], y + side[1]], [x - side[0], y - side[1]]];
         pair.sort((p, q) => (q[0] * T.cam.fx + q[1] * T.cam.fy) - (p[0] * T.cam.fx + p[1] * T.cam.fy));
         for (const [u, v] of pair) beast(T, u, v, dir, true);
-        // the beam back from the yoke to the plow, its handles, and the plowman holding them
-        const [px, py] = [x - w[0] * 3, y - w[1] * 3];
-        S.kind = WOOD;
-        S.line([[x - w[0] * 0.6, y - w[1] * 0.6, LAND + 1.1], [px, py, LAND + 0.3]]);
-        S.line([[px, py, LAND + 0.1], [px - w[0] * 0.9, py - w[1] * 0.9, LAND + 1]]);
-        S.kind = INK;
-        person(T, px - w[0] * 1.4, py - w[1] * 1.4, LAND, rng);
+        // No beam or plow. At the size people come out on the page those were
+        // only a tangle of lines between the oxen and the plowman.
+        person(T, x - w[0] * 2.4, y - w[1] * 2.4, LAND, rng);
     }
 
     // Someone with a staff: a shepherd's crook, or a hay rake
