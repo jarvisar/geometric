@@ -55,7 +55,7 @@ function page({ title, description, url, image, root, body }) {
 </head>
 <body>
     <header class="site-head">
-        <a class="brand" href="${root}">${LOGO}<span>Plotter Geometry</span></a>
+        <a class="brand" href="${root}" aria-label="Jarvizar Plotter Geometry">${LOGO}<span>Jarvizar <span class="brand-light">Plotter Geometry</span></span></a>
         <nav>
             <a href="${root}designs/">Designs</a>
             <a href="${root}about/">About</a>

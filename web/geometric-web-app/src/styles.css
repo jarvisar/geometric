@@ -143,7 +143,8 @@ kbd {
     color: #fff;
     text-shadow: 0 -1px 0 #000;
 }
-.brand .logo { width: 26px; height: 26px; color: var(--accent); filter: drop-shadow(0 -1px 0 rgba(0, 0, 0, 0.7)); }
+.brand .logo { width: 28px; height: 28px; color: var(--accent); filter: drop-shadow(0 -1px 0 rgba(0, 0, 0, 0.7)); }
+.brand-light { font-weight: normal; color: var(--text-2); }
 
 .spacer { flex: 1; }
 
