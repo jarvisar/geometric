@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const src = path.resolve(__dirname, '../src');
-const SITE = 'https://geometric.jarvisar.com/';
+const SITE = 'https://svgeom.jarvisar.com/';
 
 const load = f => vm.runInThisContext(fs.readFileSync(path.join(src, f), 'utf8'), { filename: f });
 ['core', 'pens', 'noise', 'contours', 'iso', 'isokit', 'optimize', 'pipeline', 'loader'].forEach(n => load(`lib/${n}.js`));
@@ -33,7 +33,7 @@ function page({ title, description, url, image, root, body }) {
     <meta name="description" content="${esc(description)}">
     <link rel="canonical" href="${SITE}${url}">
     <meta property="og:type" content="website">
-    <meta property="og:site_name" content="Plotter Geometry">
+    <meta property="og:site_name" content="SVGeom">
     <meta property="og:title" content="${esc(title)}">
     <meta property="og:description" content="${esc(description)}">
     <meta property="og:url" content="${SITE}${url}">
@@ -44,7 +44,7 @@ function page({ title, description, url, image, root, body }) {
     <meta name="theme-color" content="#0f1113">
     <link rel="stylesheet" href="${root}pages.css">
     <script>
-      if (location.hostname === 'geometric.jarvisar.com') {
+      if (location.hostname === 'svgeom.jarvisar.com') {
         const beacon = document.createElement('script');
         beacon.type = 'module';
         beacon.src = 'https://static.cloudflareinsights.com/beacon.min.js';
@@ -55,7 +55,7 @@ function page({ title, description, url, image, root, body }) {
 </head>
 <body>
     <header class="site-head">
-        <a class="brand" href="${root}" aria-label="Jarvizar Plotter Geometry">${LOGO}<span>Jarvizar <span class="brand-light">Plotter Geometry</span></span></a>
+        <a class="brand" href="${root}" aria-label="Jarvizar SVGeom">${LOGO}<span>Jarvizar <span class="brand-light">SVGeom</span></span></a>
         <nav>
             <a href="${root}designs/">Designs</a>
             <a href="${root}about/">About</a>
@@ -105,7 +105,7 @@ ${related.map(d => `                    <li><a href="../${d.id}/">${esc(d.name)}
         </div>
     </main>`;
     return page({
-        title: `${def.name} Generator for Pen Plotters · Plotter Geometry`,
+        title: `${def.name} Generator for Pen Plotters · SVGeom`,
         description: `${def.description} Free in the browser, with layered SVG export for the AxiDraw and other pen plotters.`,
         url: `designs/${def.id}/`,
         image: `images/designs/${def.id}.webp`,
@@ -130,7 +130,7 @@ ${sections}
         </div>
     </main>`;
     return page({
-        title: 'Generative Line Art Designs for Pen Plotters · Plotter Geometry',
+        title: 'Generative Line Art Designs for Pen Plotters · SVGeom',
         description: 'Spirographs, harmonographs, flow fields, contour maps, Penrose tilings, circle packing, mazes and more. Free in the browser, with SVG export for pen plotters.',
         url: 'designs/',
         image: 'icons/og-image.png',

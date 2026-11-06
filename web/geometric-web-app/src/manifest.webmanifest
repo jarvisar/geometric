@@ -1,6 +1,6 @@
 {
-    "name": "Plotter Geometry",
-    "short_name": "Geometry",
+    "name": "SVGeom",
+    "short_name": "SVGeom",
     "description": "Generative line art for pen plotters, with layered SVG export.",
     "lang": "en",
     "id": "./",

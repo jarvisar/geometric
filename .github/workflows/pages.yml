@@ -1,4 +1,4 @@
-# Publishes the Plotter Geometry web app (web/geometric-web-app/src) to GitHub Pages.
+# Publishes the SVGeom web app (web/geometric-web-app/src) to GitHub Pages.
 name: Deploy to GitHub Pages
 
 on:

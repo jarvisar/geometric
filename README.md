@@ -1,8 +1,8 @@
-# Plotter Geometry
+# SVGeom
 
 Web app for generating geometric line art for pen plotters like the AxiDraw. Pick from 49 generative art designs, adjust them in the browser and export plot-ready SVG files. Built using JavaScript, HTML and CSS with no dependencies.
 
-Visit the [Plotter Geometry web app](https://geometric.jarvisar.com/) to access the latest deployment. It also works offline after the first visit.
+Visit the [SVGeom web app](https://svgeom.jarvisar.com/) to access the latest deployment. It also works offline after the first visit.
 
 ## Designs
 

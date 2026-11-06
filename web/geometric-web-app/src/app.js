@@ -1,5 +1,5 @@
 /*
- * Plotter Geometry — application UI.
+ * SVGeom — application UI.
  *
  * state (persisted) -> PG.run (generate + place + clip + optimize) -> result
  * result -> canvas preview / SVG and PNG export
@@ -105,6 +105,8 @@
 
     // ------------------------------------------------------------------ constants
 
+    // 'plotter-geometry' is from the app's old name. It stays in storage keys, share links and
+    // exported SVGs because renaming it would lose saved work and stop old files from loading.
     const STORAGE_KEY = 'plotter-geometry:state:v1';
     const SNAPS_KEY = 'plotter-geometry:snapshots:v1';
     const MM_PER_CSS_PX = 25.4 / 96;
@@ -968,7 +970,7 @@
         $('#designDesc').textContent = def.description || '';
         $('#designName').textContent = def.name;
         $('#designCat').textContent = def.category;
-        document.title = `${def.name} · Plotter Geometry`;
+        document.title = `${def.name} · SVGeom`;
 
         const locks = new Set(state.locks[def.id] || []);
         const groups = [{ label: 'Pens', controls: def.params.filter(q => q.id === 'pens') }];
@@ -1945,7 +1947,7 @@
 
     function showInstallToast() {
         storageSet(INSTALL_KEY, true);
-        installToast = cardToast('Install Plotter Geometry',
+        installToast = cardToast('Install SVGeom',
             installEvent ? 'Works offline, in its own window.' : 'Tap Share, then Add to Home Screen.',
             installEvent && 'Install', installApp, hideInstallToast);
         setTimeout(hideInstallToast, 20000);

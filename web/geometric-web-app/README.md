@@ -1,4 +1,4 @@
-# Plotter Geometry
+# SVGeom
 
 Generative geometric line art built for pen plotters. Pick a design, push the
 sliders around (or hit **Randomize** until something grabs you), then export a

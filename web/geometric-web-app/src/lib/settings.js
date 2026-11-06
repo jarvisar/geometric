@@ -134,7 +134,7 @@
     settings.read = function (obj, session = false) {
         object(obj, 'expected an object');
         checkKeys(obj);
-        if (own(obj, 'app') && obj.app !== 'plotter-geometry') fail('not a Plotter Geometry recipe');
+        if (own(obj, 'app') && obj.app !== 'plotter-geometry') fail('not an SVGeom recipe');
         if (own(obj, 'v') && ![1, 2, 3].includes(obj.v)) fail('unsupported version');
         if (!own(obj, 'gen') || typeof obj.gen !== 'string' || !own(PG.byId, obj.gen)) fail('unknown design');
         const next = settings.defaults();
