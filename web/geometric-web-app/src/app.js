@@ -1,5 +1,5 @@
 /*
- * SVGeom — application UI.
+ * SVGeometric — application UI.
  *
  * state (persisted) -> PG.run (generate + place + clip + optimize) -> result
  * result -> canvas preview / SVG and PNG export
@@ -970,7 +970,7 @@
         $('#designDesc').textContent = def.description || '';
         $('#designName').textContent = def.name;
         $('#designCat').textContent = def.category;
-        document.title = `${def.name} · SVGeom`;
+        document.title = `${def.name} · SVGeometric`;
 
         const locks = new Set(state.locks[def.id] || []);
         const groups = [{ label: 'Pens', controls: def.params.filter(q => q.id === 'pens') }];
@@ -1947,7 +1947,7 @@
 
     function showInstallToast() {
         storageSet(INSTALL_KEY, true);
-        installToast = cardToast('Install SVGeom',
+        installToast = cardToast('Install SVGeometric',
             installEvent ? 'Works offline, in its own window.' : 'Tap Share, then Add to Home Screen.',
             installEvent && 'Install', installApp, hideInstallToast);
         setTimeout(hideInstallToast, 20000);

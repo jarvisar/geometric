@@ -104,7 +104,7 @@
             '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
             `<< /Type /Page /Parent 2 0 R /MediaBox [${box}] /CropBox [${box}] /Resources << >> /Contents 4 0 R >>`,
             `<< /Length ${stream.length} >>\nstream\n${stream}endstream`,
-            `<< /Title ${pdfString(String(meta.title || 'SVGeom'))} /Creator (SVGeom) >>`,
+            `<< /Title ${pdfString(String(meta.title || 'SVGeometric'))} /Creator (SVGeometric) >>`,
         ];
         let file = '%PDF-1.4\n';
         const offsets = [0];
@@ -131,12 +131,12 @@
         const bounds = Number.isFinite(minX)
             ? [Math.max(0, minX), Math.max(0, minY), Math.min(paper.w, maxX), Math.min(paper.h, maxY)].map(n => n * PT)
             : [0, 0, 0, 0];
-        const title = String(meta.title || 'SVGeom').replace(/[^\x20-\x7e]/g, ' ').slice(0, 200);
+        const title = String(meta.title || 'SVGeometric').replace(/[^\x20-\x7e]/g, ' ').slice(0, 200);
         const lines = [
             '%!PS-Adobe-3.0 EPSF-3.0',
             `%%BoundingBox: ${bounds.map((n, i) => i < 2 ? Math.floor(n) : Math.ceil(n)).join(' ')}`,
             `%%HiResBoundingBox: ${bounds.map((n, i) => num((i < 2 ? Math.floor(n * 1e5) : Math.ceil(n * 1e5)) / 1e5)).join(' ')}`,
-            `%%Title: ${title}`, '%%Creator: SVGeom', '%%Pages: 1',
+            `%%Title: ${title}`, '%%Creator: SVGeometric', '%%Pages: 1',
             '%%LanguageLevel: 2', '%%DocumentData: Clean7Bit', '%%EndComments',
             '%%Page: 1 1', 'gsave', '1 setlinecap 1 setlinejoin', '[] 0 setdash',
             'false setstrokeadjust false setoverprint',

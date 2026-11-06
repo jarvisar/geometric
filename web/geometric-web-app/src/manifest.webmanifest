@@ -1,5 +1,5 @@
 {
-    "name": "SVGeom",
+    "name": "SVGeometric",
     "short_name": "SVGeom",
     "description": "Generative line art for pen plotters, with layered SVG export.",
     "lang": "en",

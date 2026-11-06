@@ -1,5 +1,5 @@
 /*
- * SVGeom — core: generator registry, seeded RNG and geometry helpers.
+ * SVGeometric — core: generator registry, seeded RNG and geometry helpers.
  *
  * Everything lives on the global `PG` namespace so the app works from file://
  * (no modules, no build step). Units are millimeters unless a generator is

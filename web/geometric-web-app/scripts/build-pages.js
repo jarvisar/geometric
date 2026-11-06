@@ -33,7 +33,7 @@ function page({ title, description, url, image, root, body }) {
     <meta name="description" content="${esc(description)}">
     <link rel="canonical" href="${SITE}${url}">
     <meta property="og:type" content="website">
-    <meta property="og:site_name" content="SVGeom">
+    <meta property="og:site_name" content="SVGeometric">
     <meta property="og:title" content="${esc(title)}">
     <meta property="og:description" content="${esc(description)}">
     <meta property="og:url" content="${SITE}${url}">
@@ -55,7 +55,7 @@ function page({ title, description, url, image, root, body }) {
 </head>
 <body>
     <header class="site-head">
-        <a class="brand" href="${root}" aria-label="Jarvizar SVGeom">${LOGO}<span>Jarvizar <span class="brand-light">SVGeom</span></span></a>
+        <a class="brand" href="${root}" aria-label="Jarvizar SVGeometric">${LOGO}<span>Jarvizar <span class="brand-light">SVGeometric</span></span></a>
         <nav>
             <a href="${root}designs/">Designs</a>
             <a href="${root}about/">About</a>
@@ -105,7 +105,7 @@ ${related.map(d => `                    <li><a href="../${d.id}/">${esc(d.name)}
         </div>
     </main>`;
     return page({
-        title: `${def.name} Generator for Pen Plotters · SVGeom`,
+        title: `${def.name} Generator for Pen Plotters · SVGeometric`,
         description: `${def.description} Free in the browser, with layered SVG export for the AxiDraw and other pen plotters.`,
         url: `designs/${def.id}/`,
         image: `images/designs/${def.id}.webp`,
@@ -130,7 +130,7 @@ ${sections}
         </div>
     </main>`;
     return page({
-        title: 'Generative Line Art Designs for Pen Plotters · SVGeom',
+        title: 'Generative Line Art Designs for Pen Plotters · SVGeometric',
         description: 'Spirographs, harmonographs, flow fields, contour maps, Penrose tilings, circle packing, mazes and more. Free in the browser, with SVG export for pen plotters.',
         url: 'designs/',
         image: 'icons/og-image.png',
