@@ -1,4 +1,4 @@
-# SVGeom
+# SVGeomtric
 
 Web app for generating geometric line art for pen plotters like the AxiDraw. Pick from 49 generative art designs, adjust them in the browser and export plot-ready SVG files. Built using JavaScript, HTML and CSS with no dependencies.
 
