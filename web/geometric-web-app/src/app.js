@@ -1577,13 +1577,16 @@
             section.append(cards);
             body.append(section);
         }
-        // Links out to my other plotter tools, not designs. Kept as plain links so they never go through selectGenerator
-        const tool = el('a', { class: 'card', href: 'https://svgmap.jarvisar.com/', target: '_blank', rel: 'noopener',
-            'data-search': 'svgmap svg map city street maps openstreetmap more tools' },
-        el('img', { class: 'thumb', src: 'images/svgmap-square.webp', alt: '', loading: 'lazy' }),
-        el('div', { class: 'card-text' }, el('div', { class: 'card-name' }, 'SVGmap ', icon('external')),
-            el('div', { class: 'card-desc', text: 'Street maps of any city, for plotting or laser engraving' })));
-        body.append(el('section', { 'data-cat': 'More Tools' }, el('h3', { class: 'gallery-cat', text: 'More Tools' }), el('div', { class: 'cards' }, tool)));
+        // Links out to my other apps, not designs. Kept as plain links so they never go through selectGenerator
+        const app = (href, image, name, desc, search) => el('a', { class: 'card', href, target: '_blank', rel: 'noopener', 'data-search': `${search} more apps` },
+            el('img', { class: 'thumb', src: image, alt: '', loading: 'lazy' }),
+            el('div', { class: 'card-text' }, el('div', { class: 'card-name' }, `${name} `, icon('external'), el('span', { class: 'sr-only', text: ' (opens in a new tab)' })),
+                el('div', { class: 'card-desc', text: desc })));
+        body.append(el('section', { 'data-cat': 'More Apps' }, el('h3', { class: 'gallery-cat', text: 'More Apps' }), el('div', { class: 'cards' },
+            app('https://svgmap.jarvisar.com/', 'images/svgmap-square.webp', 'SVGmap', 'Street maps of any city, for plotting or laser engraving',
+                'svgmap svg map city street maps openstreetmap'),
+            app('https://citymodel.jarvisar.com/', 'images/citymodel-square.webp', 'City Model', '3D printable city models of any place',
+                'city model 3d print printable models terrain buildings'))));
         pumpThumbs();
     }
 

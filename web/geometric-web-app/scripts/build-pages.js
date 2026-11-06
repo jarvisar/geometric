@@ -123,9 +123,10 @@ ${designs.filter(d => d.category === cat).map(d => `            <a class="card" 
         <h1>Designs</h1>
         <p class="lead">Generative line art for pen plotters. Every design runs in the browser and exports a layered SVG. Previews use the default settings on A4.</p>
 ${sections}
-        <h2 id="more-tools">More Tools</h2>
+        <h2 id="more-apps">More Apps</h2>
         <div class="cards">
             <a class="card" href="https://svgmap.jarvisar.com/"><img src="../images/svgmap.webp" width="360" height="509" alt="" loading="lazy"><span><b>SVGmap</b>Street maps of any city from OpenStreetMap, for pen plotters, laser engraving or print.</span></a>
+            <a class="card" href="https://citymodel.jarvisar.com/"><img src="../images/citymodel.webp" width="360" height="509" alt="" loading="lazy"><span><b>City Model</b>Multicolor 3D printable models of any place, with terrain, water, parks, roads, and buildings.</span></a>
         </div>
     </main>`;
     return page({
