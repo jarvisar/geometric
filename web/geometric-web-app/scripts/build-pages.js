@@ -31,9 +31,10 @@ function page({ title, description, url, image, root, body }) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${esc(title)}</title>
     <meta name="description" content="${esc(description)}">
+    <meta name="author" content="Jarvizar">
     <link rel="canonical" href="${SITE}${url}">
     <meta property="og:type" content="website">
-    <meta property="og:site_name" content="SVGeometric">
+    <meta property="og:site_name" content="Jarvizar SVGeometric">
     <meta property="og:title" content="${esc(title)}">
     <meta property="og:description" content="${esc(description)}">
     <meta property="og:url" content="${SITE}${url}">
