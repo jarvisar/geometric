@@ -24,17 +24,27 @@
         ['Square 20 cm', 200, 200], ['Square 12 in', 304.8, 304.8], ['custom', 0, 0],
     ];
     settings.pngDpis = [96, 150, 300, 600, 1200];
+    settings.MAX_LAYERS = PG.MAX_LAYERS || 6;
+    // Where a layer sits on the sheet and how it stacks. The bottom layer keeps these in comp,
+    // next to the sheet's grid settings, and every other layer has its own comp.
+    settings.layerComp = () => ({
+        scale: 100, rotate: 0, offsetX: 0, offsetY: 0, clip: 'rect', frame: false, framePen: 0, frameInset: 0,
+        size: 100, posX: 0, posY: 0, pen: -1, hidden: false,
+        cover: 'none', gap: 1, inside: -1, shapes: 'all', minShape: 5, inset: 1.5, shapeVary: 'seed',
+    });
+    settings.LAYER_KEYS = Object.keys(settings.layerComp());
     settings.defaults = () => ({
         v: 3, gen: 'spirograph', params: {}, locks: {}, images: {}, seed: 1,
         paper: { size: 'A4', landscape: false, w: 210, h: 297, margin: 15, color: '#fbfaf6' },
-        comp: {
-            scale: 100, rotate: 0, offsetX: 0, offsetY: 0, clip: 'rect', frame: false, framePen: 0, frameInset: 0,
-            cols: 1, rows: 1, gutter: 8, cellVary: 'seed', sweepId: '', sweepAmount: 50,
-        },
+        comp: Object.assign(settings.layerComp(), {
+            cols: 1, rows: 1, gutter: 8, cellVary: 'seed', sweepId: '', sweepAmount: 50, sweepLayer: 0,
+        }),
+        // Layers on top of the bottom one: { gen, seed, params, locks, images, comp }, like the top level
+        layers: [],
         pens: PG.pens.sets.fineliner.colors.map((color, i) => ({ name: `Pen ${i + 1}`, color, width: 0.35, visible: true })),
         opt: { merge: true, mergeTol: 0.1, simplify: true, simplifyTol: 0.02, sort: true, minLength: 0, overlap: false, overlapPct: 100, overlapMin: 1 },
         view: { margin: false, penWidth: true, pngDpi: 600 },
-        ui: { tab: 'design', open: { paper: true, comp: true, pens: true }, paramClosed: [] },
+        ui: { tab: 'design', open: { paper: true, comp: true, pens: true, layers: true }, paramClosed: [], layer: 0 },
     });
 
     // Check even ignored legacy fields. Never walk inherited properties while merging.
@@ -52,17 +62,27 @@
             if (own(from, key)) into[key] = read(from[key], `${name}.${key}`);
         }
     }
+    // Which of the regions below a layer draws in: all, every other one, or one kind of them
+    const shapes = (v, name) => { if (typeof v !== 'string' || !/^(all|alternate|kind:1?\d)$/.test(v)) fail(name); return v; };
+    const layerComp = {
+        scale: number(10, 300), rotate: number(-180, 180), offsetX: number(-150, 150), offsetY: number(-150, 150),
+        clip: choice(['rect', 'circle', 'hexagon', 'diamond']), frame: boolean, framePen: number(0, 7, true),
+        frameInset: number(0, 12), size: number(10, 100), posX: number(-150, 150), posY: number(-150, 150),
+        pen: number(-1, 7, true), hidden: boolean, cover: choice(['none', 'lines', 'outline', 'area']), gap: number(0.2, 10),
+        inside: number(-1, settings.MAX_LAYERS - 1, true), shapes, minShape: number(1, 100), inset: number(0, 10),
+        shapeVary: choice(['seed', 'params', 'none']),
+    };
     const schemas = {
         paper: {
             size: choice(settings.papers.map(p => p[0])), landscape: boolean,
             w: number(50, 1200), h: number(50, 1200), margin: number(0, 80), color,
         },
-        comp: {
-            scale: number(10, 300), rotate: number(-180, 180), offsetX: number(-150, 150), offsetY: number(-150, 150),
-            clip: choice(['rect', 'circle', 'hexagon', 'diamond']), frame: boolean, framePen: number(0, 7, true),
-            frameInset: number(0, 12), cols: number(1, 8, true), rows: number(1, 10, true), gutter: number(0, 40),
+        comp: Object.assign({}, layerComp, {
+            cols: number(1, 8, true), rows: number(1, 10, true), gutter: number(0, 40),
             cellVary: choice(['seed', 'params', 'none']), sweepId: string(100), sweepAmount: number(-100, 100),
-        },
+            sweepLayer: number(0, settings.MAX_LAYERS - 1, true),
+        }),
+        layerComp,
         opt: {
             merge: boolean, mergeTol: number(0.01, 1), simplify: boolean, simplifyTol: number(0.005, 0.5),
             sort: boolean, minLength: number(0, 5), overlap: boolean, overlapPct: number(25, 100), overlapMin: number(0.2, 10),
@@ -131,6 +151,37 @@
         return [...new Set(locks.map(k => k === 'inks' ? 'pens' : k).filter(k => ids.has(k)))];
     }
 
+    // The design of the recipe or of one of its layers: params and locks for each design (by
+    // id, kept for switching back) and photo references. `into.gen` is already set.
+    function readDesigns(into, from, session, name) {
+        if (own(from, 'params')) {
+            object(from.params, `${name}params`);
+            for (const [id, params] of Object.entries(from.params)) into.params[id] = readParams(id, params, session);
+        }
+        if (!own(into.params, into.gen)) into.params[into.gen] = readParams(into.gen, {});
+        if (own(from, 'images')) {
+            object(from.images, `${name}images`);
+            for (const [id, refs] of Object.entries(from.images)) {
+                if (!own(PG.byId, id)) fail('image design');
+                object(refs, 'image references');
+                into.images[id] = {};
+                for (const [param, ref] of Object.entries(refs)) {
+                    if (!PG.byId[id].params.some(q => q.id === param && q.type === 'image') ||
+                        typeof ref !== 'string' || !/^img-[a-z0-9-]{1,100}$/.test(ref)) fail('image reference');
+                    into.images[id][param] = ref;
+                }
+            }
+        }
+        if (own(from, 'locks')) {
+            if (Array.isArray(from.locks)) into.locks[into.gen] = readLocks(into.gen, from.locks);
+            else {
+                object(from.locks, `${name}locks`);
+                for (const [id, locks] of Object.entries(from.locks)) into.locks[id] = readLocks(id, locks);
+            }
+        }
+        if (!own(into.locks, into.gen)) into.locks[into.gen] = [];
+    }
+
     settings.read = function (obj, session = false) {
         object(obj, 'expected an object');
         checkKeys(obj);
@@ -147,42 +198,37 @@
             if (!Array.isArray(obj.pens) || !obj.pens.length || obj.pens.length > PG.MAX_PENS) fail('pens');
             obj.pens.forEach((pen, i) => fields(next.pens[i], pen, schemas.pen, `pens.${i}`));
         }
-        if (own(obj, 'params')) {
-            object(obj.params, 'params');
-            for (const [id, params] of Object.entries(obj.params)) next.params[id] = readParams(id, params, session);
+        readDesigns(next, obj, session, '');
+        // The bottom layer has nothing below it to draw in
+        next.comp.inside = -1;
+        if (own(obj, 'layers')) {
+            if (!Array.isArray(obj.layers) || obj.layers.length > settings.MAX_LAYERS - 1) fail('layers');
+            next.layers = obj.layers.map((from, i) => {
+                const name = `layers.${i}`;
+                object(from, name);
+                if (!own(from, 'gen') || typeof from.gen !== 'string' || !own(PG.byId, from.gen)) fail(`${name}: unknown design`);
+                const layer = { gen: from.gen, seed: 1, params: {}, locks: {}, images: {}, comp: settings.layerComp() };
+                if (own(from, 'seed')) layer.seed = number(0, 999999999, true)(from.seed, `${name}.seed`);
+                if (own(from, 'comp')) fields(layer.comp, from.comp, schemas.layerComp, `${name}.comp`);
+                // only regions of a layer below can hold it
+                if (layer.comp.inside > i) layer.comp.inside = -1;
+                readDesigns(layer, from, session, `${name}.`);
+                return layer;
+            });
         }
-        if (!own(next.params, next.gen)) next.params[next.gen] = readParams(next.gen, {});
-        if (own(obj, 'images')) {
-            object(obj.images, 'images');
-            for (const [id, refs] of Object.entries(obj.images)) {
-                if (!own(PG.byId, id)) fail('image design');
-                object(refs, 'image references');
-                next.images[id] = {};
-                for (const [param, ref] of Object.entries(refs)) {
-                    if (!PG.byId[id].params.some(q => q.id === param && q.type === 'image') ||
-                        typeof ref !== 'string' || !/^img-[a-z0-9-]{1,100}$/.test(ref)) fail('image reference');
-                    next.images[id][param] = ref;
-                }
-            }
-        }
-        if (own(obj, 'locks')) {
-            if (Array.isArray(obj.locks)) next.locks[next.gen] = readLocks(next.gen, obj.locks);
-            else {
-                object(obj.locks, 'locks');
-                for (const [id, locks] of Object.entries(obj.locks)) next.locks[id] = readLocks(id, locks);
-            }
-        }
-        if (!own(next.locks, next.gen)) next.locks[next.gen] = [];
-        const sweep = next.comp.sweepId;
-        if (sweep && !PG.byId[next.gen].params.some(q => q.id === sweep && q.type === 'range')) next.comp.sweepId = '';
+        const sweepLayer = next.comp.sweepLayer > next.layers.length ? 0 : next.comp.sweepLayer;
+        next.comp.sweepLayer = sweepLayer;
+        const sweep = next.comp.sweepId, sweepGen = sweepLayer ? next.layers[sweepLayer - 1].gen : next.gen;
+        if (sweep && !PG.byId[sweepGen].params.some(q => q.id === sweep && q.type === 'range')) next.comp.sweepId = '';
         if (session && own(obj, 'ui')) {
-            fields(next.ui, obj.ui, { tab: choice(['design', 'output', 'preview']) }, 'ui');
+            fields(next.ui, obj.ui, { tab: choice(['design', 'output', 'preview']), layer: number(0, settings.MAX_LAYERS - 1, true) }, 'ui');
+            next.ui.layer = Math.min(next.ui.layer, next.layers.length);
             if (own(obj.ui, 'paramClosed')) {
                 if (!Array.isArray(obj.ui.paramClosed) || obj.ui.paramClosed.length > 500) fail('collapsed sections');
                 next.ui.paramClosed = [...new Set(obj.ui.paramClosed.map(k => string(200)(k, 'collapsed section')))];
             }
             if (own(obj.ui, 'open')) fields(next.ui.open, obj.ui.open,
-                Object.fromEntries(['paper', 'comp', 'grid', 'pens', 'opt', 'png', 'snaps'].map(k => [k, boolean])), 'ui.open');
+                Object.fromEntries(['paper', 'layers', 'comp', 'grid', 'pens', 'opt', 'png', 'snaps'].map(k => [k, boolean])), 'ui.open');
         }
         if (next.paper.size !== 'custom') {
             const paper = settings.papers.find(p => p[0] === next.paper.size);

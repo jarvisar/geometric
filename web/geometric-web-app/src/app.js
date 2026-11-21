@@ -125,10 +125,23 @@
     let generationVersion = 0, shownVersion = 0, resultKey = '';
     const waiters = [];
 
-    const currentDef = () => PG.byId[state.gen] || PG.generators[0];
+    // Layers. The top level of the state is the bottom layer (gen, seed, params, locks, images
+    // and the layer keys of comp), and state.layers holds the ones on top, each with the same
+    // fields. The Design panel, the seed, Randomize and the gallery work on the selected layer,
+    // state.ui.layer, numbered from 0 at the bottom.
+    const MAX_LAYERS = PG.settings.MAX_LAYERS;
+    const LAYER_KEYS = PG.settings.LAYER_KEYS;
+    const layerAt = (i, s = state) => (i > 0 ? s.layers[i - 1] : s);
+    const layerCount = (s = state) => s.layers.length + 1;
+    const activeIndex = () => Math.min(Math.max(0, state.ui.layer | 0), state.layers.length);
+    const activeLayer = () => layerAt(activeIndex());
+    const layerName = (i, s = state) => (PG.byId[layerAt(i, s).gen] || {}).name || layerAt(i, s).gen;
+
+    const currentDef = () => PG.byId[activeLayer().gen] || PG.generators[0];
 
     // Params for a design, with defaults filled in place (controls hold on to this object).
-    function currentParams(def = currentDef(), s = state) {
+    // s is a layer, or a state for its bottom layer.
+    function currentParams(def = currentDef(), s = activeLayer()) {
         const p = s.params[def.id] || (s.params[def.id] = {});
         PG.pens.migrate(def, p);
         for (const q of def.params) if (q.id && !(q.id in p)) p[q.id] = q.value;
@@ -151,16 +164,21 @@
 
     function pipelineSettings(s = state) {
         const c = s.comp;
-        return {
+        const S = {
             seed: s.seed, paperW: s.paper.w, paperH: s.paper.h, margin: s.paper.margin,
             scale: c.scale, rotate: c.rotate, offsetX: c.offsetX, offsetY: c.offsetY, clip: c.clip,
             frame: c.frame, framePen: c.framePen, frameInset: c.frameInset, opt: s.opt,
+            size: c.size, posX: c.posX, posY: c.posY, pen: c.pen, hidden: c.hidden,
             // Only overlap removal depends on pen width. Otherwise a width change is just a redraw.
             penWidths: s.opt.overlap ? s.pens.map(p => p.width) : null,
             cols: c.cols, rows: c.rows, gutter: c.gutter, cellVary: c.cellVary,
             locks: s.locks[s.gen] || [],
-            sweep: c.sweepId ? { id: c.sweepId, amount: c.sweepAmount / 100 } : null,
+            sweep: c.sweepId ? { id: c.sweepId, amount: c.sweepAmount / 100, layer: c.sweepLayer } : null,
         };
+        if (s.layers.length) {
+            S.layers = s.layers.map(L => ({ gen: L.gen, params: currentParams(PG.byId[L.gen], L), seed: L.seed, comp: L.comp, locks: L.locks[L.gen] || [] }));
+        }
+        return S;
     }
 
     function constrainLayout(s = state) {
@@ -179,16 +197,28 @@
         }
     }
 
-    // What travels in share links, exported SVGs and settings files.
+    // What travels in share links, exported SVGs and settings files. Each layer only takes the
+    // settings of the design it shows.
     function shareable() {
-        const def = currentDef();
-        return JSON.parse(JSON.stringify({
-            app: 'plotter-geometry', v: 3, gen: def.id, params: { [def.id]: currentParams(def) }, seed: state.seed,
+        const def = PG.byId[state.gen];
+        const recipe = {
+            app: 'plotter-geometry', v: 3, gen: def.id, params: { [def.id]: currentParams(def, state) }, seed: state.seed,
             images: state.images[def.id] ? { [def.id]: state.images[def.id] } : {},
             paper: state.paper, comp: state.comp, locks: state.locks[def.id] || [],
             pens: state.pens, opt: state.opt, view: state.view,
-        }));
+        };
+        if (state.layers.length) {
+            recipe.layers = state.layers.map(L => ({
+                gen: L.gen, seed: L.seed, params: { [L.gen]: currentParams(PG.byId[L.gen], L) },
+                images: L.images[L.gen] ? { [L.gen]: L.images[L.gen] } : {}, locks: L.locks[L.gen] || [], comp: L.comp,
+            }));
+        }
+        return JSON.parse(JSON.stringify(recipe));
     }
+
+    // Names of the sheet's designs from the bottom up, for titles: "Spirograph + Flow Field"
+    const sheetName = (s = state) => Array.from({ length: layerCount(s) }, (_, i) => layerName(i, s)).join(' + ');
+    const recipeName = r => [r.gen, ...(r.layers || []).map(l => l.gen)].map(id => PG.byId[id]?.name || id).join(' + ');
 
     function sharedState(obj) {
         const next = PG.settings.read(obj);
@@ -233,6 +263,7 @@
         settle(++generationVersion);
         renderStats();
         renderPenUsage();
+        renderLayerNote();
         beginTransition(previous.result);
         draw();
         commit();
@@ -259,6 +290,7 @@
     function snapshotForUndo() {
         const s = Object.assign({}, state);
         delete s.ui; delete s.view; delete s.locks;
+        s.layers = state.layers.map(L => { const copy = Object.assign({}, L); delete copy.locks; return copy; });
         return JSON.stringify(s);
     }
     function commit() {
@@ -277,14 +309,31 @@
     }
     function restoreUndo(i) {
         if (i < 0 || i >= undoStack.items.length) return;
-        const keep = { ui: state.ui, view: state.view, locks: state.locks };
-        const pensLocked = (state.locks[state.gen] || []).includes('pens');
+        const keep = { ui: state.ui, view: state.view };
+        const before = [state, ...state.layers].map((L, k) => ({ k, gen: L.gen, locks: L.locks }));
+        const selected = activeIndex(), pensLocked = (activeLayer().locks[activeLayer().gen] || []).includes('pens');
         state = PG.settings.read(JSON.parse(undoStack.items[i]), true);
         Object.assign(state, keep);
-        // Undoing back to another design is a design switch too, so the pens lock follows it like in switchGenerator
-        const locks = new Set(state.locks[state.gen] || []);
-        pensLocked ? locks.add('pens') : locks.delete('pens');
-        state.locks[state.gen] = [...locks];
+        // Each layer keeps its locks: the one at the same place with the same design, else the one
+        // with its design (undoing a move), else the one at its place (undoing a design switch).
+        // A layer that comes back starts without any.
+        const after = [state, ...state.layers], found = new Map();
+        for (const pick of [(L, k) => b => b.k === k && b.gen === L.gen, L => b => b.gen === L.gen, (_, k) => b => b.k === k]) {
+            after.forEach((L, k) => {
+                if (found.has(L)) return;
+                const match = before.find(b => !b.used && pick(L, k)(b));
+                if (match) { match.used = true; found.set(L, match); }
+            });
+        }
+        for (const [L, match] of found) L.locks = match.locks;
+        // Undoing back to another design on the selected layer is a design switch too, so the pens
+        // lock follows it like in switchGenerator. A layer that moved there brought its own locks.
+        const L = activeLayer();
+        if (found.get(L)?.k === selected) {
+            const locks = new Set(L.locks[L.gen] || []);
+            pensLocked ? locks.add('pens') : locks.delete('pens');
+            L.locks[L.gen] = [...locks];
+        }
         undoStack.index = i;
         rebuildAll();
         requestGenerate();
@@ -304,10 +353,12 @@
     let genTimer = 0;
 
     function geometryKey(s = state) {
-        return JSON.stringify([s.gen, s.params[s.gen], pipelineSettings(s), s.images[s.gen] || {}]);
+        return JSON.stringify([s.gen, s.params[s.gen], pipelineSettings(s), s.images[s.gen] || {}, s.layers.map(L => L.images[L.gen] || {})]);
     }
     function generationJob(s = state) {
-        return { gen: s.gen, params: structuredClone(currentParams(PG.byId[s.gen], s)), settings: structuredClone(pipelineSettings(s)), images: PG.images.get(s) };
+        const job = { gen: s.gen, params: structuredClone(currentParams(PG.byId[s.gen], s)), settings: structuredClone(pipelineSettings(s)), images: PG.images.get(s) };
+        if (s.layers.length) job.layerImages = s.layers.map(L => PG.images.get(L, L.gen));
+        return job;
     }
 
     // The last drawing stays up while the next one generates. live is set while dragging a slider.
@@ -334,12 +385,12 @@
         genTimer = 0;
         const version = generationVersion;
         const done = new Promise(resolve => waiters.push({ version, resolve }));
-        const def = currentDef();
+        const def = PG.byId[state.gen];
         if (!def) {
             settle(version);
             return done;
         }
-        currentParams(def);
+        currentParams(def, state);
         constrainLayout();
         const key = geometryKey();
         let job = null, failure = null;
@@ -370,7 +421,7 @@
             present(next, key, version);
         }, err => {
             if (err.name === 'AbortError' || version !== generationVersion) return;
-            setError(`${def.name}: ${err.message}`);
+            setError(`${sheetName()}: ${err.message}`);
             const prev = result;
             result = null;
             resultKey = '';
@@ -393,6 +444,7 @@
         settle(version);
         renderStats();
         renderPenUsage();
+        renderLayerNote();
         beginTransition(prev);
         draw();
         scheduleSave();
@@ -800,7 +852,7 @@
             // Switch to the Image design only once the photo is in, so a bad file leaves the current drawing alone
             let switchFrom = null;
             if (!q && PG.byId.image) {
-                switchFrom = state.gen;
+                switchFrom = activeLayer().gen;
                 def = PG.byId.image;
                 q = def.params.find(p => p.type === 'image');
             }
@@ -879,11 +931,14 @@
             });
             ctlRow.append(range, num);
         } else if (q.type === 'select') {
+            // options: [value, text, disabled] or { group, options } for an optgroup
             const sel = el('select', { id });
-            for (const [value, text] of q.options) sel.append(el('option', { value: String(value), text }));
+            const option = ([value, text, disabled]) => el('option', { value: String(value), text, disabled: !!disabled });
+            for (const o of q.options) sel.append(o.group ? el('optgroup', { label: o.group }, o.options.map(option)) : option(o));
+            const flat = q.options.flatMap(o => (o.group ? o.options : [o]));
             row.sync = () => { sel.value = String(get()); };
             sel.addEventListener('change', () => {
-                const opt = q.options.find(o => String(o[0]) === sel.value);
+                const opt = flat.find(o => String(o[0]) === sel.value);
                 set(opt ? opt[0] : sel.value, false);
             });
             ctlRow.append(sel);
@@ -961,18 +1016,41 @@
 
     // ---- generator parameters (left panel)
 
+    // A collapsible section of the Design panel. Returns the element its controls go in.
+    function paramSection(root, label, sectionKey) {
+        const det = el('details', { class: 'out-section param-section', 'data-param-section': label });
+        det.open = !state.ui.paramClosed.includes(sectionKey);
+        const body = el('div', { class: 'controls' });
+        det.append(el('summary', {}, el('span', { text: label }), icon('chev')), body);
+        det.addEventListener('toggle', () => {
+            if (!det.isConnected) return;
+            if (state.ui.paramClosed.includes(sectionKey) === !det.open) return;
+            const closed = new Set(state.ui.paramClosed);
+            det.open ? closed.delete(sectionKey) : closed.add(sectionKey);
+            state.ui.paramClosed = [...closed];
+            scheduleSave();
+        });
+        root.append(det);
+        return body;
+    }
+
     function buildParams() {
         const def = currentDef();
         const params = currentParams(def);
+        const L = activeLayer(), multi = layerCount() > 1;
         const root = $('#params');
         root.replaceChildren();
         $('#designTitle').textContent = def.name;
         $('#designDesc').textContent = def.description || '';
         $('#designName').textContent = def.name;
-        $('#designCat').textContent = def.category;
+        $('#designCat').textContent = multi ? `Layer ${activeIndex() + 1} · ${def.category}` : def.category;
+        $('#designLayer').textContent = multi ? `Layer ${activeIndex() + 1} of ${layerCount()}` : '';
+        $('#designLayer').hidden = !multi;
         document.title = `${def.name} · SVGeometric`;
+        renderLayers();
+        if (multi) buildLayerSection(root);
 
-        const locks = new Set(state.locks[def.id] || []);
+        const locks = new Set(L.locks[def.id] || []);
         const groups = [{ label: 'Pens', controls: def.params.filter(q => q.id === 'pens') }];
         let group = { label: 'Parameters', controls: [] };
         groups.push(group);
@@ -984,21 +1062,7 @@
             else if (q.id !== 'pens') group.controls.push(q);
         }
         for (const group of groups.filter(g => g.controls.length)) {
-            const sectionKey = `${def.id}/${group.label}`;
-            const det = el('details', { class: 'out-section param-section', 'data-param-section': group.label });
-            det.open = !state.ui.paramClosed.includes(sectionKey);
-            const summary = el('summary', {}, el('span', { text: group.label }), icon('chev'));
-            const body = el('div', { class: 'controls' });
-            det.append(summary, body);
-            det.addEventListener('toggle', () => {
-                if (!det.isConnected) return;
-                if (state.ui.paramClosed.includes(sectionKey) === !det.open) return;
-                const closed = new Set(state.ui.paramClosed);
-                det.open ? closed.delete(sectionKey) : closed.add(sectionKey);
-                state.ui.paramClosed = [...closed];
-                scheduleSave();
-            });
-            root.append(det);
+            const body = paramSection(root, group.label, `${def.id}/${group.label}`);
             for (const q of group.controls) {
                 const row = makeControl(q, () => params[q.id], (v, live) => {
                     params[q.id] = v;
@@ -1011,9 +1075,9 @@
                     lockable: q.type !== 'image' && q.type !== 'text',
                     locked: locks.has(q.id),
                     onLock() {
-                        const set = new Set(state.locks[def.id] || []);
+                        const set = new Set(L.locks[def.id] || []);
                         set.has(q.id) ? set.delete(q.id) : set.add(q.id);
-                        state.locks[def.id] = [...set];
+                        L.locks[def.id] = [...set];
                         scheduleSave();
                         if (isGrid(state) && state.comp.cellVary === 'params') requestGenerate();
                         return set.has(q.id);
@@ -1032,14 +1096,14 @@
                         imageLoadVersion++;
                         clearTimeout(commitTimer);
                         pushUndo();
-                        if (state.images[def.id]) delete state.images[def.id][q.id];
+                        if (L.images[def.id]) delete L.images[def.id][q.id];
                         params[q.id] = '';
                         row.sync();
                         commit();
                         requestGenerate();
                     },
-                    hasImage: () => PG.images.has(state.images[def.id]?.[q.id]),
-                    hasImageReference: () => !!state.images[def.id]?.[q.id],
+                    hasImage: () => PG.images.has(L.images[def.id]?.[q.id]),
+                    hasImageReference: () => !!L.images[def.id]?.[q.id],
                 });
                 row.dataset.param = q.id;
                 if (q.show) row.showFn = q.show;
@@ -1055,15 +1119,15 @@
     let pendingImageTarget = null;
     let imageLoadVersion = 0;
     function pickImage(genId, paramId) {
-        pendingImageTarget = { genId, paramId };
+        pendingImageTarget = { genId, paramId, layer: activeLayer() };
         const input = $('#imageFile');
         input.value = '';
         input.click();
     }
 
-    function loadImageFile(file, genId, paramId, switchFrom = null) {
+    function loadImageFile(file, genId, paramId, switchFrom = null, target = activeLayer()) {
         const version = ++imageLoadVersion;
-        const params = currentParams(PG.byId[genId]);
+        const params = currentParams(PG.byId[genId], target);
         const url = URL.createObjectURL(file);
         const img = new Image();
         img.onload = async () => {
@@ -1082,16 +1146,19 @@
                     data[i] = (0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2]) / 255;
                 }
                 const key = await PG.images.put({ width: w, height: h, data });
-                if (version !== imageLoadVersion || state.params[genId] !== params) return;
+                // The layer goes by its parameters: moving layers keeps those while the layer
+                // objects change, and undo or loading settings replaces them, which drops the photo
+                const layer = [state, ...state.layers].find(L => L.params[genId] === params);
+                if (version !== imageLoadVersion || !layer) return;
                 clearTimeout(commitTimer);
                 pushUndo();
-                (state.images[genId] || (state.images[genId] = {}))[paramId] = key;
+                (layer.images[genId] || (layer.images[genId] = {}))[paramId] = key;
                 params[paramId] = file.name;
                 // Skip the switch if another design was picked while the photo loaded
-                if (switchFrom && state.gen === switchFrom) {
-                    switchGenerator(genId);
+                if (switchFrom && layer.gen === switchFrom) {
+                    switchGenerator(genId, null, layer);
                     designChanged();
-                } else if (state.gen === genId) buildParams();
+                } else if (layer.gen === genId && activeLayer() === layer) buildParams();
                 commit();
                 requestGenerate();
                 if (saveNow()) toast(`Loaded ${file.name}`);
@@ -1108,10 +1175,15 @@
     function imageRefs() {
         try { localStorage.getItem(STORAGE_KEY); } catch (e) { return null; }
         const refs = new Set();
-        const add = images => { for (const row of Object.values(images || {})) for (const key of Object.values(row || {})) refs.add(key); };
-        add(state.images);
-        add(storageGet(STORAGE_KEY)?.images);
-        for (const s of loadSnaps()) add(s.state.images);
+        const add = s => {
+            if (!s || typeof s !== 'object') return;
+            for (const images of [s.images, ...(Array.isArray(s.layers) ? s.layers.map(L => L && L.images) : [])]) {
+                for (const row of Object.values(images || {})) for (const key of Object.values(row || {})) refs.add(key);
+            }
+        };
+        add(state);
+        add(storageGet(STORAGE_KEY));
+        for (const s of loadSnaps()) add(s.state);
         return refs;
     }
 
@@ -1119,6 +1191,13 @@
 
     const penOptions = () => state.pens.map((p, i) => [i, `${i + 1} · ${p.name}`]);
     const isGrid = s => s.comp.cols * s.comp.rows > 1;
+
+    // Range parameters of every layer, grouped by layer when there's more than one
+    function sweepOptions() {
+        const ranges = i => PG.byId[layerAt(i).gen].params.filter(q => q.type === 'range').map(q => [`${i}:${q.id}`, q.label || q.id]);
+        if (layerCount() === 1) return [['', 'None'], ...ranges(0)];
+        return [['', 'None'], ...Array.from({ length: layerCount() }, (_, i) => ({ group: `Layer ${i + 1}, ${layerName(i)}`, options: ranges(i) }))];
+    }
 
     function outputSections() {
         return [
@@ -1140,16 +1219,21 @@
                 ],
             },
             {
-                id: 'comp', title: 'Composition', controls: [
+                // the selected layer's placement
+                id: 'comp', title: 'Composition', target: activeLayer, badge: () => (layerCount() > 1 ? `Layer ${activeIndex() + 1}` : ''), controls: [
                     { key: 'comp.scale', label: 'Scale %', type: 'range', min: 10, max: 300, step: 1 },
                     { key: 'comp.rotate', label: 'Rotation°', type: 'range', min: -180, max: 180, step: 0.5 },
                     { key: 'comp.offsetX', label: 'Offset X (mm)', type: 'range', min: -150, max: 150, step: 0.5 },
                     { key: 'comp.offsetY', label: 'Offset Y (mm)', type: 'range', min: -150, max: 150, step: 0.5 },
-                    { key: 'comp.clip', label: 'Crop to', type: 'select',
+                    { key: 'comp.clip', label: 'Crop to', type: 'select', show: L => !inShapes(L),
                         options: [['rect', 'Rectangle (margins)'], ['circle', 'Circle'], ['hexagon', 'Hexagon'], ['diamond', 'Diamond']] },
-                    { key: 'comp.frame', label: 'Draw frame', type: 'checkbox' },
-                    { key: 'comp.framePen', label: 'Frame pen', type: 'select', options: penOptions(), show: s => s.comp.frame },
-                    { key: 'comp.frameInset', label: 'Second frame line (mm in)', type: 'range', min: 0, max: 12, step: 0.5, show: s => s.comp.frame },
+                    { key: 'comp.size', label: 'Crop size %', type: 'range', min: 10, max: 100, step: 1, show: L => !inShapes(L),
+                        hint: 'Shrinks the crop to part of the drawing area, keeping its proportions. The design fills the smaller crop.' },
+                    { key: 'comp.posX', label: 'Crop position X (mm)', type: 'range', min: -150, max: 150, step: 0.5, show: L => !inShapes(L) && L.comp.size < 100 },
+                    { key: 'comp.posY', label: 'Crop position Y (mm)', type: 'range', min: -150, max: 150, step: 0.5, show: L => !inShapes(L) && L.comp.size < 100 },
+                    { key: 'comp.frame', label: inShapes() ? 'Outline each shape' : 'Draw frame', type: 'checkbox' },
+                    { key: 'comp.framePen', label: 'Frame pen', type: 'select', options: penOptions(), show: L => L.comp.frame },
+                    { key: 'comp.frameInset', label: 'Second frame line (mm in)', type: 'range', min: 0, max: 12, step: 0.5, show: L => L.comp.frame },
                 ],
             },
             {
@@ -1159,8 +1243,13 @@
                     { key: 'comp.gutter', label: 'Gutter (mm)', type: 'range', min: 0, max: 40, step: 0.5, show: isGrid },
                     { key: 'comp.cellVary', label: 'Each cell', type: 'select', show: isGrid,
                         options: [['seed', 'New seed per cell'], ['params', 'Random parameters per cell'], ['none', 'Identical']] },
-                    { key: 'comp.sweepId', label: 'Sweep a parameter across cells', type: 'select', show: isGrid,
-                        options: [['', 'None']].concat(currentDef().params.filter(q => q.type === 'range').map(q => [q.id, q.label || q.id])) },
+                    { key: 'comp.sweepId', label: 'Sweep a parameter across cells', type: 'select', show: isGrid, options: sweepOptions(),
+                        // as layer:param, since any layer's parameter can sweep
+                        get: () => (state.comp.sweepId ? `${state.comp.sweepLayer}:${state.comp.sweepId}` : ''),
+                        set: v => {
+                            const at = String(v).indexOf(':');
+                            Object.assign(state.comp, at > 0 ? { sweepLayer: +String(v).slice(0, at), sweepId: String(v).slice(at + 1) } : { sweepLayer: 0, sweepId: '' });
+                        } },
                     { key: 'comp.sweepAmount', label: 'Sweep amount (% of range)', type: 'range', min: -100, max: 100, step: 1,
                         show: s => isGrid(s) && !!s.comp.sweepId },
                 ],
@@ -1208,19 +1297,22 @@
             const body = el('div', { class: 'controls' });
             det.append(body);
             if (sec.custom) sec.custom(body);
+            // Composition works on the selected layer, the rest on the sheet
+            const target = sec.target || (() => state);
             const rows = [];
             for (const q of sec.controls || []) {
-                const row = makeControl(q, () => getPath(state, q.key), (v, live) => {
-                    setPath(state, q.key, v);
+                const row = makeControl(q, q.get || (() => getPath(target(), q.key)), (v, live) => {
+                    if (q.set) q.set(v); else setPath(target(), q.key, v);
                     if (q.then) {
                         q.then();
                         // e.g. paper size and orientation also change the custom width and height
                         for (const r of rows) if (r !== row) r.sync();
                     }
-                    updateVisibility(body, state);
+                    updateVisibility(body, target());
                     if (sec.badge) summary.querySelector('.badge').textContent = sec.badge();
                     applyEffect(q.effect || 'generate', live);
                     if (!live) commit();
+                    if (q.key === 'comp.size' || q.key === 'comp.clip') renderLayerNote();
                 });
                 if (q.show) row.showFn = q.show;
                 row.dataset.key = q.key;
@@ -1228,7 +1320,7 @@
                 body.append(row);
             }
             if (sec.note) body.append(sec.note);
-            updateVisibility(body, state);
+            updateVisibility(body, target());
             panel.append(det);
         }
         panel.scrollTop = scroll;
@@ -1282,8 +1374,9 @@
             const name = el('input', { class: 'pen-name', value: pen.name, spellcheck: 'false', maxlength: 200, title: 'Pen name (used for SVG layer names)', 'aria-label': `Pen ${i + 1} name` });
             name.addEventListener('change', () => {
                 pen.name = name.value || `Pen ${i + 1}`;
-                const opt = document.querySelector(`[data-key="comp.framePen"] option[value="${i}"]`);
-                if (opt) opt.textContent = `${i + 1} · ${pen.name}`;
+                for (const opt of document.querySelectorAll(`[data-key="comp.framePen"] option[value="${i}"], [data-layer-key="pen"] option[value="${i}"]`)) {
+                    opt.textContent = `${i + 1} · ${pen.name}`;
+                }
                 renderPenUsage();
                 commit();
             });
@@ -1331,10 +1424,38 @@
         const usage = {};
         if (result) for (const l of layerStats(result)) usage[l.pen] = l;
         const def = currentDef(), params = currentParams(def);
-        const parts = PG.pens.parts(def, params), roles = PG.pens.roles(def, params);
+        const a = activeIndex(), one = activeLayer().comp.pen, multi = layerCount() > 1;
+        // A layer on one pen has no parts to move
+        const parts = one >= 0 ? null : PG.pens.parts(def, params);
         const hint = $('#penAssignmentHint');
-        if (hint) hint.textContent = [PG.pens.designs[def.id]?.hint, parts && 'Select a part below to move it to another pen.'].filter(Boolean).join(' ');
+        if (hint) {
+            const own = one >= 0 ? `Layer ${a + 1} draws everything with pen ${one + 1}. Change it under Layer in the Design panel.`
+                : [PG.pens.designs[def.id]?.hint, parts && 'Select a part below to move it to another pen.'].filter(Boolean).join(' ');
+            hint.textContent = multi && one < 0 && own ? `Layer ${a + 1}, ${def.name}: ${own}` : own;
+        }
         renderParts(rows, parts);
+        if (multi) {
+            // What every shown layer puts on each pen, numbered by layer. Parts of the selected
+            // layer are already listed as controls.
+            const roles = {};
+            for (let i = 0; i < layerCount(); i++) {
+                const L = layerAt(i);
+                if (L.comp.hidden || (i === a && parts)) continue;
+                const d = PG.byId[L.gen];
+                const r = L.comp.pen >= 0 ? { [L.comp.pen]: ['everything'] } : PG.pens.roles(d, currentParams(d, L));
+                for (const [pen, names] of Object.entries(r)) (roles[pen] ||= []).push(`Layer ${i + 1}: ${names.join(', ')}`);
+            }
+            rows.forEach(row => {
+                const i = +row.dataset.pen, u = usage[i];
+                row.classList.toggle('unused', !u);
+                const listed = (roles[i] || []).join('; '), ownParts = !!parts && parts.some(q => q.pen === i);
+                row.querySelector('.pen-count').textContent = u
+                    ? [listed, `${fmtCount(u.paths)} ${u.paths === 1 ? 'path' : 'paths'}`].filter(Boolean).join(' · ')
+                    : listed || ownParts ? [listed, 'no paths in this drawing'].filter(Boolean).join(' · ') : 'nothing on this pen';
+            });
+            return;
+        }
+        const roles = one >= 0 ? { [one]: ['Everything'] } : PG.pens.roles(def, params);
         rows.forEach(row => {
             const i = +row.dataset.pen;
             const u = usage[i];
@@ -1410,6 +1531,299 @@
         ($('#penList .part select') || $('#penList .eye')).focus();
     }
 
+    // ---- layers
+    // The list at the top of the Design panel. Picking a layer there points the Design panel, the
+    // seed, Randomize, the gallery and Composition at it. Everything else is the sheet's.
+
+    const designsWithShapes = () => PG.generators.filter(g => g.regionKinds).map(g => g.name);
+    const inShapes = (L = activeLayer()) => L !== state && L.comp.inside >= 0;
+
+    // Shape kinds a design names for these params, like Thin rhombs and Thick rhombs
+    function shapeKinds(i) {
+        const L = layerAt(i), def = PG.byId[L.gen];
+        return def.regionKinds ? def.regionKinds(currentParams(def, L)) || [] : [];
+    }
+
+    function layerMeta(i) {
+        const c = layerAt(i).comp, out = [];
+        if (i > 0 && c.inside >= 0 && c.inside < i) out.push(`In layer ${c.inside + 1}`);
+        if (i > 0 && c.cover !== 'none') out.push('Covers below');
+        if (c.pen >= 0) out.push(`Pen ${c.pen + 1}`);
+        if (c.hidden) out.push('Hidden');
+        return out;
+    }
+
+    // Rebuilding the list loses focus, so actions say where it goes next as { layer, act }
+    let layerFocus = null;
+    function renderLayers() {
+        const root = $('#layers');
+        const n = layerCount(), active = activeIndex();
+        const det = el('details', { class: 'out-section layers-section', 'data-sec': 'layers' });
+        det.open = state.ui.open.layers !== false;
+        det.addEventListener('toggle', () => { state.ui.open.layers = det.open; scheduleSave(); });
+        det.append(el('summary', null, el('span', { text: 'Layers' }), el('span', { class: 'badge', text: n === 1 ? '1 layer' : `${n} layers` }), icon('chev')));
+        const body = el('div', { class: 'controls' });
+        const list = el('ol', { class: 'layer-list', 'aria-label': 'Layers, top first' });
+        for (let i = n - 1; i >= 0; i--) {
+            const c = layerAt(i).comp, name = layerName(i), meta = layerMeta(i);
+            const row = el('li', { class: 'layer-row' + (i === active ? ' active' : '') + (c.hidden ? ' off' : ''), 'data-layer': i });
+            if (n > 1) {
+                row.append(el('button', { class: 'eye' + (c.hidden ? ' off' : ''), type: 'button', 'data-act': 'eye',
+                    title: 'Show / hide this layer (hidden layers are not exported)', 'aria-label': `Show layer ${i + 1}`, 'aria-pressed': String(!c.hidden) },
+                icon(c.hidden ? 'eye-off' : 'eye')));
+            }
+            row.append(el('button', { class: 'layer-pick', type: 'button', 'data-act': 'pick', 'aria-pressed': String(i === active),
+                title: i === active ? 'The Design panel shows this layer' : 'Show this layer in the Design panel',
+                'aria-label': [`Layer ${i + 1}: ${name}`, ...meta].join(', ') },
+            el('span', { class: 'layer-num', text: i + 1 }),
+            el('span', { class: 'layer-text' }, el('span', { class: 'layer-name', text: name }), meta.length ? el('span', { class: 'layer-meta', text: meta.join(' · ') }) : null)));
+            if (n > 1) {
+                row.append(
+                    el('button', { class: 'icon-btn layer-act up', type: 'button', 'data-act': 'up', title: 'Move up', 'aria-label': `Move layer ${i + 1} up`, disabled: i === n - 1 }, icon('chev')),
+                    el('button', { class: 'icon-btn layer-act', type: 'button', 'data-act': 'down', title: 'Move down', 'aria-label': `Move layer ${i + 1} down`, disabled: i === 0 }, icon('chev')),
+                    el('button', { class: 'icon-btn layer-act', type: 'button', 'data-act': 'delete', title: 'Delete layer', 'aria-label': `Delete layer ${i + 1}` }, icon('x')));
+            }
+            list.append(row);
+        }
+        const full = n >= MAX_LAYERS;
+        body.append(list, el('div', { class: 'layer-tools' },
+            el('button', { class: 'btn', type: 'button', 'data-act': 'add', disabled: full, title: full ? `A sheet holds up to ${MAX_LAYERS} layers` : 'Add a design on top' },
+                icon('plus'), el('span', { text: 'Add layer' })),
+            el('button', { class: 'btn', type: 'button', 'data-act': 'duplicate', disabled: full, title: full ? `A sheet holds up to ${MAX_LAYERS} layers` : 'Copy the selected layer above it' },
+                icon('copy'), el('span', { text: 'Duplicate' }))));
+        if (n === 1) body.append(el('p', { class: 'out-note', text: 'Add a layer to draw another design on this sheet, on top of this one or inside its shapes.' }));
+        det.append(body);
+        root.replaceChildren(det);
+        if (layerFocus) {
+            const { layer, act } = layerFocus;
+            layerFocus = null;
+            const target = $(`#layers [data-layer="${layer}"] [data-act="${act}"]`) || $(`#layers [data-act="${act}"]`);
+            (target && !target.disabled ? target : $(`#layers [data-layer="${layer}"] .layer-pick`))?.focus();
+        }
+    }
+
+    function bindLayers() {
+        $('#layers').addEventListener('click', e => {
+            const b = e.target.closest('[data-act]');
+            if (!b || b.disabled) return;
+            const i = +b.closest('[data-layer]')?.dataset.layer;
+            switch (b.dataset.act) {
+                case 'pick': selectLayer(i); break;
+                case 'eye': toggleLayer(i); break;
+                case 'up': moveLayer(i, 1); break;
+                case 'down': moveLayer(i, -1); break;
+                case 'delete': deleteLayer(i); break;
+                // Safari doesn't focus a clicked button, and closing the gallery returns focus to it
+                case 'add': b.focus(); openGallery('add'); break;
+                case 'duplicate': duplicateLayer(activeIndex()); break;
+            }
+        });
+    }
+
+    // A layer as a plain record. The bottom one comes from the top level of the state.
+    function layerRecord(i) {
+        const L = layerAt(i);
+        return {
+            gen: L.gen, seed: L.seed, params: L.params, locks: L.locks, images: L.images,
+            comp: i ? L.comp : Object.fromEntries(LAYER_KEYS.map(k => [k, state.comp[k]])),
+        };
+    }
+    function setLayers(records) {
+        const [base, ...rest] = records;
+        Object.assign(state, { gen: base.gen, seed: base.seed, params: base.params, locks: base.locks, images: base.images });
+        Object.assign(state.comp, base.comp, { inside: -1 });
+        state.layers = rest.map(r => ({ gen: r.gen, seed: r.seed, params: r.params, locks: r.locks, images: r.images, comp: r.comp }));
+    }
+    // Layers in a new order, given as old indices. Layers drawn in the shapes of another follow
+    // it, or go back to the whole area when it's no longer below them, and so does the sweep.
+    function reorder(order) {
+        const records = order.map(i => layerRecord(i));
+        const pos = [];
+        order.forEach((old, at) => { pos[old] = at; });
+        records.forEach((r, at) => {
+            if (r.comp.inside < 0) return;
+            const host = pos[r.comp.inside];
+            if (host === undefined || host >= at) {
+                r.comp.inside = -1;
+                if (r.comp.cover === 'area') r.comp.cover = 'none';
+            } else r.comp.inside = host;
+        });
+        if (pos[state.comp.sweepLayer] === undefined) Object.assign(state.comp, { sweepId: '', sweepLayer: 0 });
+        else state.comp.sweepLayer = pos[state.comp.sweepLayer];
+        setLayers(records);
+    }
+
+    function layersChanged(focus) {
+        layerFocus = focus;
+        buildParams();
+        buildOutputPanel();
+        syncSeed();
+        requestGenerate();
+        commit();
+    }
+
+    function selectLayer(i) {
+        if (i === activeIndex()) { layerFocus = { layer: i, act: 'pick' }; renderLayers(); return; }
+        state.ui.layer = i;
+        layerFocus = { layer: i, act: 'pick' };
+        buildParams();
+        buildOutputPanel();
+        syncSeed();
+        scheduleSave();
+    }
+
+    function toggleLayer(i) {
+        const c = layerAt(i).comp;
+        c.hidden = !c.hidden;
+        layerFocus = { layer: i, act: 'eye' };
+        renderLayers();
+        requestGenerate();
+        commit();
+    }
+
+    function addLayer(id, preset, random = false) {
+        const def = PG.byId[id];
+        if (!def) return;
+        if (layerCount() >= MAX_LAYERS) { toast(`A sheet holds up to ${MAX_LAYERS} layers`, true); return; }
+        clearTimeout(commitTimer);
+        pushUndo();
+        const L = { gen: id, seed: randomSeed(), params: {}, locks: { [id]: [] }, images: {}, comp: PG.settings.layerComp() };
+        const params = currentParams(def, L);
+        if (preset) Object.assign(params, preset);
+        if (random) L.params[id] = PG.randomParams(def, params, new PG.RNG(randomSeed() * 7919), []);
+        state.layers.push(L);
+        state.ui.layer = state.layers.length;
+        closeGallery();
+        layersChanged({ layer: activeIndex(), act: 'pick' });
+        announce(`Added layer ${activeIndex() + 1}, ${def.name}`);
+    }
+
+    function duplicateLayer(i) {
+        if (layerCount() >= MAX_LAYERS) return;
+        clearTimeout(commitTimer);
+        pushUndo();
+        const records = Array.from({ length: layerCount() }, (_, k) => layerRecord(k));
+        records.splice(i + 1, 0, structuredClone(layerRecord(i)));
+        // layers above it shift up one, and so do the ones drawn in their shapes
+        records.forEach((r, at) => { if (at > i + 1 && r.comp.inside > i) r.comp.inside++; });
+        if (state.comp.sweepId && state.comp.sweepLayer > i) state.comp.sweepLayer++;
+        setLayers(records);
+        state.ui.layer = i + 1;
+        layersChanged({ layer: i + 1, act: 'pick' });
+        announce(`Duplicated ${layerName(i)} as layer ${i + 2}`);
+    }
+
+    function moveLayer(i, dir) {
+        const j = i + dir, n = layerCount();
+        if (j < 0 || j >= n) return;
+        clearTimeout(commitTimer);
+        pushUndo();
+        const name = layerName(i), active = activeIndex();
+        const order = Array.from({ length: n }, (_, k) => k);
+        [order[i], order[j]] = [order[j], order[i]];
+        reorder(order);
+        state.ui.layer = active === i ? j : active === j ? i : active;
+        layersChanged({ layer: j, act: dir > 0 ? 'up' : 'down' });
+        announce(`Moved ${name} to layer ${j + 1}`);
+    }
+
+    function deleteLayer(i) {
+        const n = layerCount();
+        if (n < 2) return;
+        clearTimeout(commitTimer);
+        pushUndo();
+        const name = layerName(i), active = activeIndex();
+        reorder(Array.from({ length: n }, (_, k) => k).filter(k => k !== i));
+        state.ui.layer = active === i ? Math.max(0, i - 1) : active > i ? active - 1 : active;
+        layersChanged({ layer: Math.max(0, i - 1), act: 'pick' });
+        announce(`Deleted layer ${i + 1}, ${name}`);
+    }
+
+    // Settings of the selected layer, at the top of the Design panel when there's more than one
+    function buildLayerSection(root) {
+        const i = activeIndex(), c = activeLayer().comp;
+        const body = paramSection(root, 'Layer', 'layers/Layer');
+        const kinds = c.inside >= 0 ? shapeKinds(c.inside) : [];
+        const shapeValue = () => (/^kind:/.test(c.shapes) && +c.shapes.slice(5) >= kinds.length ? 'all' : c.shapes);
+        const withShapes = designsWithShapes();
+        const controls = [
+            i > 0 && {
+                key: 'inside', label: 'Draw in', type: 'select',
+                options: [[-1, 'Whole drawing area'], ...Array.from({ length: i }, (_, j) => {
+                    const shapes = !!PG.byId[layerAt(j).gen].regionKinds;
+                    return [j, `Shapes of layer ${j + 1}, ${layerName(j)}${shapes ? '' : ' (no shapes)'}`, !shapes && c.inside !== j];
+                })],
+                hint: `Draws this design once in each shape of a lower layer. Designs with shapes: ${withShapes.slice(0, -1).join(', ')}, and ${withShapes.at(-1)}.`,
+            },
+            { key: 'shapes', label: 'Shapes', type: 'select', show: () => inShapes(),
+                options: [['all', 'All shapes'], ['alternate', 'Every other shape'], ...kinds.map((k, n) => [`kind:${n}`, k])] },
+            { key: 'shapeVary', label: 'Each shape', type: 'select', show: () => inShapes(),
+                options: [['seed', 'New seed per shape'], ['params', 'Random parameters per shape'], ['none', 'Identical']] },
+            { key: 'inset', label: 'Inset (mm)', type: 'range', min: 0, max: 10, step: 0.1, show: () => inShapes(),
+                hint: 'Space between the outline of each shape and the design inside it.' },
+            { key: 'minShape', label: 'Smallest shape (mm)', type: 'range', min: 1, max: 100, step: 0.5, show: () => inShapes(),
+                hint: 'Shapes narrower than this, after the inset, are left empty.' },
+            i > 0 && {
+                key: 'cover', label: 'Covers layers below', type: 'select',
+                options: [['none', 'No'], ['lines', 'Near its lines'], ['outline', 'Inside its outline'], ['area', inShapes() ? 'Inside its shapes' : 'Inside its area']],
+                hint: 'Leaves out the lines of lower layers where this layer covers them. Near its lines leaves a gap along its lines, so they pass over the lines below. Inside its outline also clears everything its lines enclose. Inside its area clears its whole crop, or each shape it draws in.',
+            },
+            i > 0 && { key: 'gap', label: 'Clearance (mm)', type: 'range', min: 0.2, max: 10, step: 0.1, show: () => c.cover !== 'none',
+                hint: 'How far the lines below stay from this layer.' },
+            { key: 'pen', label: 'Pen', type: 'select', options: [[-1, 'Design\'s pens'], ...penOptions()],
+                hint: 'Draws everything on this layer with one pen. The frame keeps its own pen.' },
+        ].filter(Boolean);
+        const defaults = PG.settings.layerComp();
+        for (const q of controls) {
+            const apply = (v, live) => {
+                c[q.key] = v;
+                // Drawing in shapes usually means hiding what's under them, the whole area hardly ever
+                if (q.key === 'inside') {
+                    if (v >= 0 && c.cover === 'none') c.cover = 'area';
+                    if (v < 0 && c.cover === 'area') c.cover = 'none';
+                }
+                if (!live) commit();
+                if (['inside', 'cover', 'pen'].includes(q.key)) {
+                    layerFocus = null;
+                    buildParams();
+                    buildOutputPanel();
+                    $(`#params [data-layer-key="${q.key}"] select`)?.focus();
+                } else {
+                    updateVisibility(root, currentParams());
+                    renderLayerNote();
+                }
+                requestGenerate(live);
+            };
+            const row = makeControl(q, () => (q.key === 'shapes' ? shapeValue() : c[q.key]), apply,
+                { onReset: () => { apply(defaults[q.key], false); row.sync?.(); } });
+            row.dataset.layerKey = q.key;
+            if (q.show) row.showFn = q.show;
+            body.append(row);
+        }
+        body.append(el('p', { class: 'out-note', id: 'layerNote', hidden: true }));
+        renderLayerNote();
+    }
+
+    // What the last drawing says about the selected layer: shapes it couldn't draw in, or a cover
+    // that hides everything
+    function renderLayerNote() {
+        const note = $('#layerNote');
+        if (!note) return;
+        const i = activeIndex(), c = activeLayer().comp, info = result?.layerInfo?.[i];
+        let text = '';
+        if (inShapes()) {
+            const host = PG.byId[layerAt(c.inside).gen];
+            if (!host.regionKinds) text = `${host.name} has no shapes to draw in, so this layer draws nothing.`;
+            else if (info?.noShapes) text = `Layer ${c.inside + 1} has no shapes on the paper, so this layer draws nothing.`;
+            else if (info && info.regions && !info.shapes) text = 'None of the shapes are wide enough. Lower Smallest shape or Inset, or choose other Shapes.';
+            else if (info && info.used < info.shapes) text = `Drawn in the ${info.used} largest of ${info.shapes} shapes, which keeps generating quick.`;
+        } else if (i > 0 && c.cover === 'area' && !(c.size < 100) && c.clip === 'rect') {
+            text = 'While this layer fills the drawing area, Inside its area hides every layer below it. Lower Crop size under Composition.';
+        }
+        note.textContent = text;
+        note.hidden = !text;
+    }
+
     // ---- snapshots
 
     function loadSnaps() {
@@ -1475,9 +1889,8 @@
         const c = el('canvas', { width: Math.round(P.w * k * 1.5), height: Math.round(P.h * k * 1.5) });
         PG.drawResult(c.getContext('2d'), res, { scale: k * 1.5, ox: 0, oy: 0 },
             { paper: { w: P.w, h: P.h }, paperColor: P.color, pens: recipe.pens, minLinePx: 0.6, hairline: true });
-        const def = PG.byId[recipe.gen];
         const snaps = loadSnaps();
-        snaps.unshift({ time: Date.now(), title: `${def.name} #${recipe.seed}`, thumb: c.toDataURL('image/png'), state: recipe });
+        snaps.unshift({ time: Date.now(), title: `${recipeName(recipe)} #${recipe.seed}`, thumb: c.toDataURL('image/png'), state: recipe });
         while (snaps.length > 30) snaps.pop();
         if (!storageSet(SNAPS_KEY, snaps)) { toast('Browser storage is full — delete some snapshots', true); return; }
         state.ui.open.snaps = true;
@@ -1523,7 +1936,12 @@
     const thumbRunner = new PG.GenerationRunner();
     let thumbVersion = 0;
 
-    function openGallery() {
+    // 'switch' changes the design of the selected layer, 'add' adds a layer with the design picked
+    let galleryMode = 'switch';
+    function openGallery(mode) {
+        galleryMode = mode === 'add' ? 'add' : 'switch';
+        $('#galleryTitle').textContent = galleryMode === 'add' ? 'Add a layer'
+            : layerCount() > 1 ? `Design for layer ${activeIndex() + 1}` : 'Designs';
         const g = $('#gallery');
         // Focus the dialog, not the search, so mobile doesn't pop up the keyboard
         openDialog(g, g);
@@ -1559,17 +1977,18 @@
                 // A design with gallery presets (Image) gets a card per preset instead of one for itself
                 const entries = def.gallery ? def.gallery.map((g, i) => ({ ...g, key: `${def.id}:${i}` }))
                     : [{ name: def.name, description: def.description, key: def.id }];
-                const params = currentParams(def);
+                const shown = galleryMode === 'switch' && def.id === activeLayer().gen;
+                const params = shown ? currentParams(def) : null;
                 for (const entry of entries) {
                     // `params` picks the card's highlight, `preview` (e.g. a demo picture) is applied too so the result matches the thumbnail
                     const preset = { ...entry.preview, ...entry.params };
-                    const current = def.id === state.gen && Object.entries(entry.params || {}).every(([k, v]) => params[k] === v);
+                    const current = shown && Object.entries(entry.params || {}).every(([k, v]) => params[k] === v);
                     const thumb = el('canvas', { class: 'thumb', width: 320, height: 320 });
                     const card = el('button', { class: 'card' + (current ? ' current' : ''), type: 'button', 'data-id': def.id,
                         'data-search': `${entry.name} ${entry.description || ''} ${def.name} ${def.category} ${def.id}`.toLowerCase() },
                     thumb,
                     el('div', { class: 'card-text' }, el('div', { class: 'card-name', text: entry.name }), el('div', { class: 'card-desc', text: entry.description || '' })));
-                    card.addEventListener('click', () => selectGenerator(def.id, preset));
+                    card.addEventListener('click', () => (galleryMode === 'add' ? addLayer(def.id, preset) : selectGenerator(def.id, preset)));
                     cards.append(card);
                     const cached = thumbCache.get(entry.key);
                     if (cached) thumb.getContext('2d').drawImage(cached, 0, 0);
@@ -1644,16 +2063,16 @@
     }
 
     // The pen count lock follows design switches; other parameter locks belong to their design.
-    function switchGenerator(id, preset) {
-        const pensLocked = (state.locks[state.gen] || []).includes('pens');
-        const pens = currentParams().pens;
-        state.gen = id;
-        const params = currentParams();
+    function switchGenerator(id, preset, L = activeLayer()) {
+        const pensLocked = (L.locks[L.gen] || []).includes('pens');
+        const pens = currentParams(PG.byId[L.gen], L).pens;
+        L.gen = id;
+        const params = currentParams(PG.byId[id], L);
         if (preset) Object.assign(params, preset);
         if (pensLocked) params.pens = pens;
-        const locks = new Set(state.locks[id] || []);
+        const locks = new Set(L.locks[id] || []);
         pensLocked ? locks.add('pens') : locks.delete('pens');
-        state.locks[id] = [...locks];
+        L.locks[id] = [...locks];
     }
 
     function selectGenerator(id, preset) {
@@ -1665,16 +2084,16 @@
         commit();
     }
 
-    // The sweep parameter list in the grid section depends on the design.
+    // The sweep parameter list in the grid section depends on the designs.
     function designChanged() {
-        const def = currentDef();
-        if (state.comp.sweepId && !def.params.some(q => q.id === state.comp.sweepId)) state.comp.sweepId = '';
+        const at = state.comp.sweepLayer, sweepDef = at < layerCount() ? PG.byId[layerAt(at).gen] : null;
+        if (state.comp.sweepId && !sweepDef?.params.some(q => q.id === state.comp.sweepId)) Object.assign(state.comp, { sweepId: '', sweepLayer: 0 });
         buildParams();
         buildOutputPanel();
     }
 
     function surprise() {
-        const others = PG.generators.filter(g => g.id !== state.gen);
+        const others = PG.generators.filter(g => g.id !== activeLayer().gen);
         const def = others[Math.floor(Math.random() * others.length)] || currentDef();
         switchGenerator(def.id);
         closeGallery();
@@ -1684,11 +2103,12 @@
 
     // ------------------------------------------------------------------ actions
 
+    // Randomize, New seed and Reset work on the selected layer
     function randomize() {
-        const def = currentDef();
+        const def = currentDef(), L = activeLayer();
         const current = currentParams(def);
-        state.params[def.id] = PG.randomParams(def, current, new PG.RNG(randomSeed() * 7919), state.locks[def.id] || []);
-        state.seed = randomSeed();
+        L.params[def.id] = PG.randomParams(def, current, new PG.RNG(randomSeed() * 7919), L.locks[def.id] || []);
+        L.seed = randomSeed();
         buildParams();
         syncSeed();
         requestGenerate();
@@ -1696,36 +2116,37 @@
     }
 
     function newSeed() {
-        state.seed = randomSeed();
+        activeLayer().seed = randomSeed();
         syncSeed();
         requestGenerate();
         commit();
     }
 
     // Resetting parameters keeps the current photo. Clear removes it and can be undone.
-    function defaultsFor(def) {
+    function defaultsFor(def, L = activeLayer()) {
         const p = PG.defaultParams(def);
-        for (const q of def.params) if (q.type === 'image' && state.params[def.id]?.[q.id]) p[q.id] = state.params[def.id][q.id];
+        for (const q of def.params) if (q.type === 'image' && L.params[def.id]?.[q.id]) p[q.id] = L.params[def.id][q.id];
         return p;
     }
 
     function resetParams() {
         closeMenus();
         const def = currentDef();
-        state.params[def.id] = defaultsFor(def);
+        activeLayer().params[def.id] = defaultsFor(def);
         buildParams();
         requestGenerate();
         commit();
     }
 
-    // Back to a fresh start, but staying on the current design. Undo brings it all back
-    // except the locks, which never go through undo.
+    // Back to a fresh start with one layer, showing the design of the selected one. Undo brings
+    // it all back except the locks, which never go through undo.
     function resetAll() {
         closeMenus();
         clearTimeout(commitTimer);
         pushUndo();
-        const imageParams = Object.fromEntries(Object.keys(state.images).map(id => [id, defaultsFor(PG.byId[id])]));
-        state = Object.assign(defaultState(), { gen: state.gen, ui: state.ui, images: state.images, params: imageParams });
+        const L = activeLayer();
+        const imageParams = Object.fromEntries(Object.keys(L.images).map(id => [id, defaultsFor(PG.byId[id], L)]));
+        state = Object.assign(defaultState(), { gen: L.gen, ui: Object.assign(state.ui, { layer: 0 }), images: L.images, params: imageParams });
         rebuildAll();
         fitView();
         requestGenerate();
@@ -1733,7 +2154,7 @@
         toast('Everything reset to defaults');
     }
 
-    function syncSeed() { $('#seed').value = state.seed; }
+    function syncSeed() { $('#seed').value = activeLayer().seed; }
 
     function toggleView(key) {
         state.view[key] = !state.view[key];
@@ -1776,7 +2197,7 @@
                 constrainLayout();
                 const recipe = shareable();
                 if (kind === 'link') { copyLink(recipe); return; }
-                const assets = PG.images.pack(recipe.images);
+                const assets = PG.images.pack(PG.images.refsOf(recipe));
                 if (Object.keys(assets).length) recipe.assets = assets;
                 download(`${recipe.gen}-${recipe.seed}.json`, JSON.stringify(recipe, null, 2), 'application/json');
             } catch (err) { toast(`Could not export: ${err.message}`, true); }
@@ -1786,14 +2207,14 @@
         try {
             captured = await captureDrawing();
             if (kind.startsWith('svg')) {
-                const assets = PG.images.pack(captured.recipe.images);
+                const assets = PG.images.pack(PG.images.refsOf(captured.recipe));
                 if (Object.keys(assets).length) captured.recipe.assets = assets;
             }
         } catch (err) { toast(`Could not export: ${err.message}`, true); return; }
         const { recipe, res, base } = captured;
         if (!res || !res.layers.length) { toast('Nothing to export', true); return; }
         const paper = { w: recipe.paper.w, h: recipe.paper.h };
-        const meta = { title: `${PG.byId[recipe.gen].name} — seed ${recipe.seed}`,
+        const meta = { title: `${recipeName(recipe)} — seed ${recipe.seed}`,
             description: 'plotter-geometry:' + JSON.stringify(recipe) };
         const vectorTypes = { svg: 'image/svg+xml', pdf: 'application/pdf', dxf: 'image/vnd.dxf', eps: 'application/postscript' };
         if (Object.hasOwn(vectorTypes, kind)) {
@@ -1840,7 +2261,7 @@
     }
 
     function copyLink(recipe) {
-        if (Object.values(recipe.images || {}).some(refs => Object.keys(refs).length)) {
+        if (PG.images.refsOf(recipe).some(refs => Object.keys(refs || {}).length)) {
             toast('This drawing includes a photo. Export a settings JSON or SVG to share the complete drawing.', true);
             return;
         }
@@ -2043,7 +2464,7 @@
         $('#keysBtn').addEventListener('click', () => openDialog($('#keysDialog')));
         $('#seed').addEventListener('change', () => {
             const v = Math.floor(+$('#seed').value);
-            state.seed = isFinite(v) ? clamp(v, 0, 999999999) : 1;
+            activeLayer().seed = isFinite(v) ? clamp(v, 0, 999999999) : 1;
             syncSeed();
             requestGenerate();
             commit();
@@ -2069,7 +2490,7 @@
         $('#settingsFile').addEventListener('change', e => { const f = e.target.files[0]; if (f) loadSettingsFile(f); });
         $('#imageFile').addEventListener('change', e => {
             const f = e.target.files[0];
-            if (f && pendingImageTarget) loadImageFile(f, pendingImageTarget.genId, pendingImageTarget.paramId);
+            if (f && pendingImageTarget) loadImageFile(f, pendingImageTarget.genId, pendingImageTarget.paramId, null, pendingImageTarget.layer);
         });
 
         $('#fitView').addEventListener('click', fitView);
@@ -2084,7 +2505,11 @@
             }
         });
         $('#galleryClose').addEventListener('click', closeGallery);
-        $('#surprise').addEventListener('click', surprise);
+        $('#surprise').addEventListener('click', () => {
+            if (galleryMode !== 'add') { surprise(); return; }
+            const def = PG.generators[Math.floor(Math.random() * PG.generators.length)];
+            addLayer(def.id, null, true);
+        });
         for (const dlg of [$('#gallery'), $('#keysDialog')]) {
             dlg.addEventListener('click', e => { if (e.target === dlg) { dlg === $('#gallery') ? closeGallery() : closeDialog(dlg); } });
         }
@@ -2210,7 +2635,7 @@
         }
         if (!PG.byId[state.gen]) state.gen = PG.generators[0] ? PG.generators[0].id : state.gen;
         applyPaperSize();
-        try { await PG.images.load(state.images); }
+        try { await PG.images.load(PG.images.refsOf(state)); }
         catch (err) { toast(`Could not restore image: ${err.message}`, true); }
     }
 
@@ -2225,6 +2650,7 @@
         bindTopbar();
         bindKeys();
         bindCanvas();
+        bindLayers();
         rebuildAll();
         syncInstallItem();
         placeSeedControls();
@@ -2247,6 +2673,7 @@
         get state() { return state; },
         get result() { return result; },
         select: selectGenerator, randomize, surprise, resetParams, resetAll, newSeed, undo, redo, exportAs: doExport, regenerate,
+        addLayer, selectLayer, moveLayer, deleteLayer, duplicateLayer, toggleLayer,
     };
 
     setupInstallPrompt(); // before init: the browser's install event can arrive while designs load

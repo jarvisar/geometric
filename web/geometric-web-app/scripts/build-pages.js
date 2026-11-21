@@ -10,11 +10,12 @@ const src = path.resolve(__dirname, '../src');
 const SITE = 'https://svgeom.jarvisar.com/';
 
 const load = f => vm.runInThisContext(fs.readFileSync(path.join(src, f), 'utf8'), { filename: f });
-['core', 'pens', 'noise', 'contours', 'iso', 'isokit', 'optimize', 'pipeline', 'loader'].forEach(n => load(`lib/${n}.js`));
+['core', 'pens', 'noise', 'contours', 'iso', 'isokit', 'optimize', 'stack', 'pipeline', 'loader'].forEach(n => load(`lib/${n}.js`));
 PG.GENERATOR_FILES.forEach(n => load(`generators/${n}.js`));
 
-// Scenes, Studies and Tidal Atlas are left off the public pages for now
-const designs = PG.generators.filter(d => !['Scenes', 'Studies'].includes(d.category) && d.id !== 'tidal');
+// Scenes, Studies and Tidal Atlas are left off the public pages for now, and so is Sampler,
+// which draws the other designs
+const designs = PG.generators.filter(d => !['Scenes', 'Studies', 'Mixed'].includes(d.category) && d.id !== 'tidal');
 const categories = [...new Set(designs.map(d => d.category))];
 const slug = cat => cat.toLowerCase();
 

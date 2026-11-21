@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const SRC = path.resolve(__dirname, '../src');
 const load = file => vm.runInThisContext(fs.readFileSync(path.join(SRC, file), 'utf8'), { filename: file });
-['core', 'pens', 'noise', 'contours', 'iso', 'isokit', 'optimize', 'pipeline', 'settings', 'loader'].forEach(n => load(`lib/${n}.js`));
+['core', 'pens', 'noise', 'contours', 'iso', 'isokit', 'optimize', 'stack', 'pipeline', 'settings', 'loader'].forEach(n => load(`lib/${n}.js`));
 PG.GENERATOR_FILES.forEach(n => load(`generators/${n}.js`));
 const json = value => JSON.parse(JSON.stringify(value));
 const read = obj => PG.settings.read(obj);

@@ -22,6 +22,8 @@
         'megastructure', 'stairwell', 'cosmic', 'radiolaria',
         // Image
         'image',
+        // Mixed: draws one of the designs above
+        'sampler',
     ];
 
     PG.loadGenerators = function (base = 'generators/') {

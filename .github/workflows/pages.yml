@@ -63,6 +63,7 @@ jobs:
           node scripts/check-farmland.js
           node scripts/check-blackhole.js
           node scripts/check-overlap.js
+          node scripts/check-layers.js
 
       - uses: actions/configure-pages@v5
 

@@ -77,10 +77,12 @@
         }
         return out;
     }
+    // Photo references of a recipe or state and all its layers, as one { id: { param: key } }-like list
+    const rowsOf = s => [s.images, ...(s.layers || []).map(l => l.images)].flatMap(m => Object.values(m || {}));
     async function unpack(s, assets) {
-        if (!assets) return load(s.images);
+        if (!assets) return load(rowsOf(s));
         const decoded = new Map();
-        for (const row of Object.values(s.images)) for (const key of Object.values(row)) {
+        for (const row of rowsOf(s)) for (const key of Object.values(row)) {
             if (decoded.has(key)) continue;
             const a = Object.prototype.hasOwnProperty.call(assets, key) && assets[key];
             if (!a || !Number.isInteger(a.width) || !Number.isInteger(a.height) || a.width < 1 || a.height < 1 ||
@@ -96,7 +98,7 @@
         // Imported IDs never overwrite an image belonging to undo history or another recipe.
         const ids = new Map();
         for (const [key, asset] of decoded) ids.set(key, await put(asset));
-        for (const row of Object.values(s.images)) for (const param of Object.keys(row)) row[param] = ids.get(row[param]);
+        for (const row of rowsOf(s)) for (const param of Object.keys(row)) row[param] = ids.get(row[param]);
     }
     // Photos stay stored after they're cleared or replaced, since undo can bring them back. Once
     // nothing refers to them they're deleted at the next start, but not while another tab is open:
@@ -118,5 +120,5 @@
             return drop.length;
         });
     }
-    PG.images = { put, load, get, pack, unpack, collect, has: key => cache.has(key) };
+    PG.images = { put, load, get, pack, unpack, collect, has: key => cache.has(key), refsOf: s => rowsOf(s) };
 })();

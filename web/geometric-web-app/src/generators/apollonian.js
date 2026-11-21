@@ -45,6 +45,8 @@
         category: 'Packing',
         description: 'Circles packed into every gap between three tangent circles, forever (Descartes\' theorem).',
         fit: false,
+        // Other layers can draw in the circles (not the outer one). Mixed fills name each kind of circle.
+        regionKinds: p => (p.style === 'mixed' ? ['Concentric rings', 'Eccentric bubbles', 'Spirals', 'Hatched', 'Outlines'] : []),
         params: [
             { type: 'section', label: 'Gasket' },
             { id: 'r1', label: 'First circle (× outer)', type: 'range', min: 0.1, max: 0.9, step: 0.001, value: 0.5,
@@ -142,6 +144,8 @@
             const pens = Math.max(1, p.pens | 0);
             const layers = Array.from({ length: pens }, () => []);
             const lnSpan = Math.log(R / minR) || 1;
+            const STYLES = ['rings', 'eccentric', 'spiral', 'hatch', 'outline'];
+            const regions = ctx.wantRegions ? [] : null;
             for (const c of circles) {
                 const outer = c.k < 0;
                 if (outer && !p.outer) continue;
@@ -165,6 +169,7 @@
                         : [[3, 'rings'], [3, 'eccentric'], [2, 'spiral'], [2, 'hatch'], [1.5, 'outline']]);
                 }
                 if (r < s * 0.9) style = 'outline';
+                if (regions && !outer) regions.push({ circle: [c.x, c.y, r], kind: p.style === 'mixed' ? STYLES.indexOf(style) : undefined });
                 if (style === 'rings') {
                     for (let rr = r; rr > s * 0.3; rr -= s) out.push(geo.circle(c.x, c.y, rr));
                 } else if (style === 'eccentric') {
@@ -182,6 +187,7 @@
                     out.push(geo.circle(c.x, c.y, r));
                 }
             }
+            if (regions) return { layers, regions };
             return pens > 1 ? { layers } : layers[0];
         },
     });

@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const SRC = path.resolve(__dirname, '../src');
 const load = f => vm.runInThisContext(fs.readFileSync(path.join(SRC, f), 'utf8'), { filename: f });
-['core', 'pens', 'noise', 'contours', 'iso', 'isokit', 'optimize', 'pipeline', 'export', 'loader'].forEach(n => load(`lib/${n}.js`));
+['core', 'pens', 'noise', 'contours', 'iso', 'isokit', 'optimize', 'stack', 'pipeline', 'export', 'loader'].forEach(n => load(`lib/${n}.js`));
 load('generators/spirograph.js');
 const settings = { seed: 1, paperW: 210, paperH: 297, margin: 15, scale: 100, rotate: 0, clip: 'rect',
     opt: { merge: true, mergeTol: 0.1, sort: true, simplify: true, simplifyTol: 0.02 } };

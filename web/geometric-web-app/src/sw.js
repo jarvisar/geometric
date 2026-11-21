@@ -15,7 +15,7 @@ const SHELL = [
     // The About page, linked from the app. The design pages are left to the offline notice
     // below unless they were opened online, their previews are a few MB.
     'about/', 'pages.css', 'images/app.webp', 'images/gallery.webp',
-    'lib/core.js', 'lib/pens.js', 'lib/noise.js', 'lib/contours.js', 'lib/iso.js', 'lib/isokit.js', 'lib/optimize.js',
+    'lib/core.js', 'lib/pens.js', 'lib/noise.js', 'lib/contours.js', 'lib/iso.js', 'lib/isokit.js', 'lib/optimize.js', 'lib/stack.js',
     'lib/pipeline.js', 'lib/settings.js', 'lib/images.js', 'lib/generation.js', 'lib/worker-source.js',
     'lib/render.js', 'lib/gl.js', 'lib/export.js', 'lib/loader.js',
     'icons/favicon.svg', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',

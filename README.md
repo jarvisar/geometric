@@ -18,11 +18,15 @@ Currently supports 49 designs:
 - Studies: a megastructure tower packed with slab stacks, fins and grilles, a spiral stairwell in one-point perspective, comic pages of little alien landscapes and a plate of radiolarian skeletons with the inner shells showing through the pores
 - Image: converts photos into line art in 12 styles, including squiggle spirals, waves, halftone, stipples, TSP art and string art
 
+Sampler draws a different one of the curves, fields, tiles, and packings for every seed. Use it in a grid or in the shapes of another layer to make a sampler sheet.
+
 ## Usage
 
 Select a design from the menu and use the sliders to adjust it. Click `Randomize` to generate new settings, or lock individual parameters to keep them from changing. Using the same seed and settings produces the same drawing.
 
 Set the paper size (A6 to A2, Letter, Legal, Tabloid or custom), margins and pen widths to match your plotter setup. Designs can be scaled, rotated or arranged in a grid. Every design supports one to eight pens, with color defaults based on its geometry. Change the pen count in the design controls and edit the colors under `Paper & Output`. The pen list shows which parts of a scene each pen draws, like roofs, shadows or trees. Select a part there to move it to another pen. If you plot with markers, turn on `Skip lines already drawn` under `Optimize` so a pen doesn't go back over its own ink and dry out.
+
+Click `Add layer` under `Layers` to draw another design on the same sheet, up to six in all. Select a layer in the list to edit it: the design controls, seed, `Randomize`, and `Composition` work on the selected layer. Under `Layer`, `Draw in` draws the design once in each shape of a lower layer, like the circles of Circle Packing or the tiles of Penrose Tiling, and `Covers layers below` leaves out the lines underneath it.
 
 Click `Export SVG` to download the drawing. Exported SVGs use millimeter units and a separate Inkscape layer for each pen, so they work with the AxiDraw Inkscape extension, vpype and saxi. The export menu also includes vector PDF for printing, DXF for CAD and engraving, EPS for graphics software, PNG, one SVG file per pen, and a share link. Print PDF at actual size. Import DXF in millimeters. EPS crops to the artwork. See the [export notes](web/geometric-web-app/README.md#export-checks) for format details and checks. Drop an exported SVG back onto the preview to restore its settings.
 

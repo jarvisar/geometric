@@ -162,9 +162,12 @@
     };
 
     // Generate one design into the rectangle (x, y, w, h) of the paper: place it
-    // (fit / rotate / scale / offset), clip it to the crop shape and add the frame.
-    function placeCell(def, params, S, extra, x, y, w, h, seed) {
-        const shape = PG.makeShape(S.clip, x, y, w, h);
+    // (fit / rotate / scale / offset), clip it to the crop shape and add the frame. With `area`
+    // the design goes in a region of another layer instead (area.shape, from
+    // PG.stack.regionShape). With wantRegions the design's own regions come back too, placed
+    // like its lines.
+    function placeCell(def, params, S, extra, x, y, w, h, seed, area, wantRegions) {
+        const shape = area ? area.shape : PG.makeShape(S.clip, x, y, w, h);
         const rot = geo.rad(S.rotate || 0);
         const scale = (S.scale || 100) / 100;
         const cxA = x + w / 2 + (S.offsetX || 0), cyA = y + h / 2 + (S.offsetY || 0);
@@ -196,7 +199,8 @@
             } else if (shape.type === 'rect') {
                 verts = [[shape.x0, shape.y0], [shape.x1, shape.y0], [shape.x1, shape.y1], [shape.x0, shape.y1]];
             } else {
-                verts = shape.verts;
+                // a concave region gives designs its hull, and the clip below trims the rest
+                verts = shape.hull || shape.verts;
             }
             let poly = verts.map(v => fromPaper(v[0], v[1]));
             for (const [p, n] of [[[0, 0], [1, 0]], [[0, 0], [0, 1]], [[gw, gh], [-1, 0]], [[gw, gh], [0, -1]]]) {
@@ -214,45 +218,206 @@
                 dist: (px, py) => { const p = toPaper(px, py); return shape.dist(p[0], p[1]) / scale; },
                 inside: (px, py) => { const p = toPaper(px, py); return shape.inside(p[0], p[1]); },
                 polygon: region,
-                kind: S.clip || 'rect',
+                kind: area ? shape.kind : S.clip || 'rect',
             },
             images: extra.images || {},
         };
+        if (wantRegions) ctx.wantRegions = true;
 
         const t0 = performance.now();
-        let layers = PG.normalizeOutput(PG.pens.apply(def, def.generate(params, ctx), params));
+        const raw = def.generate(params, ctx);
+        let layers = PG.normalizeOutput(PG.pens.apply(def, raw, params));
         const genMs = performance.now() - t0;
+        let regions = wantRegions && raw && !Array.isArray(raw) && Array.isArray(raw.regions) ? raw.regions : null;
 
         if (def.fit) {
             // rotate about the origin, then fit the bbox into the cell (or its inscribed square for round crops)
             const rotated = rot ? layers.map(l => ({ pen: l.pen, paths: geo.rotatePaths(l.paths, rot) })) : layers;
             const bb = geo.bbox(rotated.flatMap(l => l.paths));
-            const square = S.clip && S.clip !== 'rect';
-            const fw = square ? Math.min(w, h) : w, fh = square ? Math.min(w, h) : h;
-            const k = bb.w > 0 || bb.h > 0 ? Math.min(fw / (bb.w || 1e-9), fh / (bb.h || 1e-9)) * scale : 1;
-            const bx = (bb.minX + bb.maxX) / 2, by = (bb.minY + bb.maxY) / 2;
+            let k, bx = (bb.minX + bb.maxX) / 2, by = (bb.minY + bb.maxY) / 2, cx = cxA, cy = cyA;
+            if (area && shape.fitCircle) {
+                // in a region: the drawing's bounding circle fills the largest circle the region holds
+                let R = 0;
+                for (const l of rotated) for (const p of l.paths) for (const q of p) R = Math.max(R, (q[0] - bx) ** 2 + (q[1] - by) ** 2);
+                R = Math.sqrt(R);
+                k = R > 0 ? (shape.fitCircle[2] / R) * scale : 1;
+                cx = shape.fitCircle[0] + (S.offsetX || 0);
+                cy = shape.fitCircle[1] + (S.offsetY || 0);
+            } else {
+                const square = !area && S.clip && S.clip !== 'rect';
+                const fw = square ? Math.min(w, h) : w, fh = square ? Math.min(w, h) : h;
+                k = bb.w > 0 || bb.h > 0 ? Math.min(fw / (bb.w || 1e-9), fh / (bb.h || 1e-9)) * scale : 1;
+            }
             layers = rotated.map(l => ({
                 pen: l.pen,
-                paths: l.paths.map(p => p.map(q => [cxA + (q[0] - bx) * k, cyA + (q[1] - by) * k])),
+                paths: l.paths.map(p => p.map(q => [cx + (q[0] - bx) * k, cy + (q[1] - by) * k])),
             }));
+            if (regions) {
+                const cs = Math.cos(rot), sn = Math.sin(rot);
+                regions = regions.map(r => PG.stack.mapRegion(r, (u, v) => {
+                    const ru = rot ? u * cs - v * sn : u, rv = rot ? u * sn + v * cs : v;
+                    return [cx + (ru - bx) * k, cy + (rv - by) * k];
+                }, k));
+            }
         } else {
             layers = layers.map(l => ({ pen: l.pen, paths: l.paths.map(p => p.map(q => toPaper(q[0], q[1]))) }));
+            if (regions) regions = regions.map(r => PG.stack.mapRegion(r, toPaper, scale));
         }
 
         // never draw outside the cell
-        layers = layers.map(l => ({ pen: l.pen, paths: PG.clipPaths(l.paths, shape) }));
+        layers = layers.map(l => ({ pen: l.pen, paths: shape.clipPaths ? shape.clipPaths(l.paths) : PG.clipPaths(l.paths, shape) }));
+        if (regions) regions = regions.map(r => PG.stack.clipRegion(r, shape)).filter(Boolean);
+
+        // a layer can put everything it draws on one pen; its frame keeps the frame pen
+        if (S.pen >= 0 && layers.length) layers = [{ pen: S.pen % PG.MAX_PENS, paths: layers.flatMap(l => l.paths) }];
 
         if (S.frame) {
             const fp = (S.framePen || 0) % PG.MAX_PENS;
             let layer = layers.find(l => l.pen === fp);
             if (!layer) { layer = { pen: fp, paths: [] }; layers.push(layer); }
-            layer.paths.push(shape.outline());
+            // a region within a concave one of the layer below only outlines what's inside both
+            const rings = s => (s.frameLines ? s.frameLines() : [s.outline()]).filter(ring => ring.length > 1);
+            for (const ring of rings(shape)) layer.paths.push(ring);
             const inset = S.frameInset || 0;
-            if (inset > 0 && inset * 2 < Math.min(w, h)) {
+            if (area) {
+                const inner = inset > 0 && PG.stack.inset(shape.region, inset);
+                if (inner) for (const ring of rings(PG.stack.regionShape(inner))) layer.paths.push(ring);
+            } else if (inset > 0 && inset * 2 < Math.min(w, h)) {
                 layer.paths.push(PG.makeShape(S.clip, x + inset, y + inset, w - 2 * inset, h - 2 * inset).outline());
             }
         }
-        return { layers, shape, genMs };
+        return { layers, shape, genMs, regions };
+    }
+
+    // ------------------------------------------------------------------
+    // Layers. The design in the main settings is the bottom layer, S.layers go on top of it in
+    // order. Each has its own design, parameters, seed and placement (layer.comp), and can:
+    //   - fill only part of the drawing area: comp.size (%) and comp.posX / posY (mm)
+    //   - draw in the regions of a lower layer (comp.inside, its index), one copy per region
+    //   - cover the layers below it (comp.cover): 'lines' leaves a gap of comp.gap mm along its
+    //     lines, 'outline' also hides everything its lines enclose, 'area' hides its whole area
+    //     (or each region)
+    //   - draw everything on one pen (comp.pen), or be hidden (comp.hidden). A hidden layer's
+    //     regions still hold the layers drawn in them.
+    // ------------------------------------------------------------------
+    PG.MAX_LAYERS = 6;
+    // Designs that take long to generate fill fewer regions, the largest ones, so a sheet of them
+    // still generates in a few seconds. Tiers from the time each design takes in a 30 mm circle.
+    const REGION_CAPS = [
+        [120, ['superformula', 'guilloche', 'attractor', 'wireframe', 'voronoi', 'cosmic', 'radiolaria', 'stairwell', 'fairground']],
+        [80, ['ribbons', 'tidal', 'stadium']],
+        [40, ['blackhole', 'castle', 'farmland']],
+        [24, ['moonbase', 'alpine']],
+    ];
+    const regionCap = def => (REGION_CAPS.find(([, ids]) => ids.includes(def.id)) || [def.category === 'Scenes' ? 120 : 400])[0];
+
+    function layerStack(def, params, S, extra) {
+        const base = { def, params, seed: S.seed | 0, place: S, locks: S.locks || [], extra, cover: 'none', inside: -1, hidden: !!S.hidden };
+        const stack = [base];
+        (S.layers || []).slice(0, PG.MAX_LAYERS - 1).forEach((L, i) => {
+            const d = PG.byId[L.gen];
+            if (!d) throw new Error(`Unknown design in layer ${i + 2}`);
+            const p = Object.assign(PG.defaultParams(d), PG.pens.migrate(d, { ...L.params }));
+            p.pens = PG.pens.count(p.pens);
+            const c = L.comp || {};
+            const at = i + 1;
+            stack.push({
+                def: d, params: p, seed: L.seed | 0, place: c, locks: L.locks || [],
+                extra: { images: (extra.layerImages && extra.layerImages[i]) || {} },
+                cover: at > 0 ? c.cover || 'none' : 'none', gap: Math.max(0, c.gap ?? 1),
+                inside: Number.isInteger(c.inside) && c.inside >= 0 && c.inside < at ? c.inside : -1,
+                which: c.shapes || 'all', inset: Math.max(0, c.inset ?? 1.5), min: Math.max(0, c.minShape ?? 8), vary: c.shapeVary || 'seed',
+                hidden: !!c.hidden,
+            });
+        });
+        // regions are only placed for layers another layer draws in
+        for (const e of stack) if (e.inside >= 0) stack[e.inside].wanted = true;
+        return stack;
+    }
+
+    // The rectangle a layer fills within the cell: the whole cell, or a smaller one of the same
+    // proportions moved by posX / posY.
+    function areaOf(P, x, y, w, h) {
+        const s = P.size;
+        if (!(s > 0 && s < 100)) return null;
+        const k = s / 100, aw = w * k, ah = h * k;
+        return { x: x + (w - aw) / 2 + (P.posX || 0), y: y + (h - ah) / 2 + (P.posY || 0), w: aw, h: ah };
+    }
+
+    // One cell of the sheet: every layer from the bottom up, each covering the ones below it.
+    function runCell(stack, x, y, w, h, info) {
+        const outs = [], outlines = [];
+        let genMs = 0;
+        const cellRect = shapes.rect(x, y, x + w, y + h);
+        stack.forEach((e, i) => {
+            const host = e.inside >= 0 ? outs[e.inside] : null;
+            let out;
+            if (host && host.regions && host.regions.length) {
+                // A kind the layer below no longer names (its settings changed) means all of them
+                const below = stack[e.inside], kinds = below.def.regionKinds ? below.def.regionKinds(below.params) || [] : [];
+                const which = /^kind:/.test(e.which) && +e.which.slice(5) >= kinds.length ? 'all' : e.which;
+                const { picked, found } = PG.stack.pick(host.regions, { which, inset: e.inset, min: e.min, max: regionCap(e.def) });
+                info[i].regions += host.regions.length;
+                info[i].shapes += found;
+                info[i].used += picked.length;
+                const byPen = new Map(), regions = [], covers = [];
+                // Covering reaches the clearance out from where this layer draws, but stops short of
+                // the region's outline, which is usually a line of the layer below
+                const reach = Math.max(0.3, e.inset - Math.max(0.2, e.gap));
+                for (const { shape, index, region } of picked) {
+                    const seed = e.vary === 'none' ? e.seed : (e.seed + index) | 0;
+                    let p = e.params;
+                    if (e.vary === 'params' && index > 0) p = PG.randomParams(e.def, e.params, new PG.RNG(seed * 7919 + index), e.locks);
+                    const b = shape.box;
+                    const cell = placeCell(e.def, p, e.place, e.extra, b.x, b.y, b.w, b.h, seed, { shape }, e.wanted);
+                    genMs += cell.genMs;
+                    for (const l of cell.layers) {
+                        if (!byPen.has(l.pen)) byPen.set(l.pen, []);
+                        const into = byPen.get(l.pen);
+                        for (const path of l.paths) into.push(path);
+                    }
+                    if (cell.regions) for (const r of cell.regions) regions.push(r);
+                    if (e.cover === 'area') {
+                        const solid = PG.stack.inset(region, reach);
+                        if (solid) covers.push([PG.stack.regionShape(solid), 0]);
+                    }
+                }
+                out = { layers: [...byPen].map(([pen, paths]) => ({ pen, paths })), regions, covers };
+            } else if (e.inside >= 0) {
+                // the layer it draws in has no regions here, so there is nothing to draw in
+                info[i].noShapes = true;
+                out = { layers: [], regions: e.wanted ? [] : null, covers: [] };
+            } else {
+                const a = areaOf(e.place, x, y, w, h);
+                const cell = a ? placeCell(e.def, e.params, e.place, e.extra, a.x, a.y, a.w, a.h, e.seed, null, e.wanted)
+                    : placeCell(e.def, e.params, e.place, e.extra, x, y, w, h, e.seed, null, e.wanted);
+                genMs += cell.genMs;
+                let layers = cell.layers, regions = cell.regions;
+                if (a) {
+                    // a moved area can run past the cell, which still bounds everything
+                    layers = layers.map(l => ({ pen: l.pen, paths: PG.clipPaths(l.paths, cellRect) }));
+                    if (regions) regions = regions.map(r => PG.stack.clipRegion(r, cellRect)).filter(Boolean);
+                }
+                if (i === 0 || a || (e.place.clip || 'rect') !== (stack[0].place.clip || 'rect')) outlines.push(cell.shape.outline());
+                out = { layers, regions, covers: [[cell.shape, Math.max(0.2, e.gap)]] };
+            }
+            if (!e.hidden && i > 0 && e.cover !== 'none') {
+                const cover = PG.stack.cover();
+                const lines = out.layers.flatMap(l => l.paths);
+                const gap = Math.max(0.2, e.gap);
+                if (e.cover === 'area') for (const [s, g] of out.covers) cover.area(s, g);
+                else {
+                    if (e.cover === 'outline') cover.enclosed(lines);
+                    cover.lines(lines, gap);
+                }
+                for (let j = 0; j < i; j++) {
+                    if (stack[j].hidden) continue;
+                    outs[j].layers = outs[j].layers.map(l => ({ pen: l.pen, paths: cover.cut(l.paths) }));
+                }
+            }
+            outs.push(out);
+        });
+        return { layers: outs.filter((o, i) => !stack[i].hidden).flatMap(o => o.layers), outlines, genMs };
     }
 
     // Parameters for grid cell t (0..1) when sweeping a range parameter across the grid.
@@ -270,13 +435,14 @@
     // S = {
     //   seed, paperW, paperH, margin,
     //   scale (%), rotate (deg), offsetX, offsetY (mm), clip: 'rect'|'circle'|'hexagon'|'diamond',
-    //   frame, framePen, frameInset,
-    //   cols, rows, gutter (mm), sweep: { id, amount (-1..1) },               (grid layouts)
+    //   frame, framePen, frameInset, size (%), posX, posY (mm), pen, hidden,  (the bottom layer)
+    //   layers: [{ gen, params, seed, comp, locks }]                           (layers on top, see layerStack)
+    //   cols, rows, gutter (mm), sweep: { id, amount (-1..1), layer },        (grid layouts)
     //   cellVary: 'seed' | 'params' | 'none', locks: [param ids kept when varying params]
     //   opt: { merge, mergeTol, sort, simplify, simplifyTol, minLength, overlap, overlapPct, overlapMin },
     //   penWidths: [mm per pen]                                                (overlap removal)
     // }
-    // extra: { images } – non-serializable inputs handed to the generator.
+    // extra: { images, layerImages }, the non-serializable inputs handed to the generators.
     // ------------------------------------------------------------------
     PG.layoutSizes = function (S) {
         if (!Number.isFinite(S.paperW) || !Number.isFinite(S.paperH) || S.paperW < 1 || S.paperH < 1) {
@@ -306,18 +472,25 @@
         const outlines = [];
         let genMs = 0;
         const vary = n > 1 ? S.cellVary || 'seed' : 'none';
+        const stack = layerStack(def, params, S, extra);
+        // per layer: regions offered by the layer it draws in, how many passed its filters and
+        // how many it drew in (fewer when capped), or noShapes when there were none to draw in
+        const info = stack.map(() => ({ regions: 0, shapes: 0, used: 0, noShapes: false }));
+        const sweepAt = S.sweep && Number.isInteger(S.sweep.layer) ? S.sweep.layer : 0;
         for (let k = 0; k < n; k++) {
             const r = Math.floor(k / cols), c = k % cols;
-            const seed = ((S.seed | 0) + (vary === 'none' ? 0 : k)) | 0;
-            let p = params;
-            if (vary === 'params' && k > 0) {
-                // every cell but the first gets its own random parameters; locked ones stay put
-                p = PG.randomParams(def, params, new PG.RNG(seed * 7919 + k), S.locks || []);
-            }
-            if (n > 1) p = sweepParams(def, p, S.sweep, k / (n - 1));
-            const cell = placeCell(def, p, S, extra, m + c * (cw + gut), m + r * (ch + gut), cw, ch, seed);
+            // every layer of every cell gets its own seed, and with 'params' every cell but the
+            // first gets its own random parameters; locked ones stay put
+            const cellStack = stack.map((e, i) => {
+                const seed = ((e.seed | 0) + (vary === 'none' ? 0 : k)) | 0;
+                let p = e.params;
+                if (vary === 'params' && k > 0) p = PG.randomParams(e.def, e.params, new PG.RNG(seed * 7919 + k), e.locks);
+                if (n > 1 && i === sweepAt) p = sweepParams(e.def, p, S.sweep, k / (n - 1));
+                return Object.assign({}, e, { seed, params: p });
+            });
+            const cell = runCell(cellStack, m + c * (cw + gut), m + r * (ch + gut), cw, ch, info);
             genMs += cell.genMs;
-            outlines.push(cell.shape.outline());
+            for (const o of cell.outlines) outlines.push(o);
             for (const l of cell.layers) {
                 if (!byPen.has(l.pen)) byPen.set(l.pen, []);
                 byPen.get(l.pen).push(l.paths);
@@ -374,6 +547,7 @@
         };
         if (o.overlap) res.overlap = overlap;
         if (motion) res.motion = motion;
+        if (stack.length > 1) res.layerInfo = info;
         return res;
     };
 

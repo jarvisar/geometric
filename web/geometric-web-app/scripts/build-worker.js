@@ -5,12 +5,12 @@ const vm = require('vm');
 const src = path.resolve(__dirname, '../src');
 const registry = vm.createContext({});
 vm.runInContext(fs.readFileSync(path.join(src, 'lib/loader.js'), 'utf8'), registry);
-const files = ['core', 'pens', 'noise', 'contours', 'iso', 'isokit', 'optimize', 'pipeline'].map(n => `lib/${n}.js`)
+const files = ['core', 'pens', 'noise', 'contours', 'iso', 'isokit', 'optimize', 'stack', 'pipeline'].map(n => `lib/${n}.js`)
     .concat(registry.PG.GENERATOR_FILES.map(n => `generators/${n}.js`));
 const source = files.map(f => fs.readFileSync(path.join(src, f), 'utf8').replace(/\r\n/g, '\n')).join('\n') + `
 self.onmessage = ({ data: job }) => {
     try {
-        const result = PG.packResult(PG.run(PG.byId[job.gen], job.params, job.settings, { images: job.images, motion: job.motion }));
+        const result = PG.packResult(PG.run(PG.byId[job.gen], job.params, job.settings, { images: job.images, layerImages: job.layerImages, motion: job.motion }));
         self.postMessage({ result }, PG.transferList(result));
     } catch (err) { self.postMessage({ error: err.message }); }
 };

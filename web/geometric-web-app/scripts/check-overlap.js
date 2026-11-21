@@ -7,7 +7,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const SRC = path.resolve(__dirname, '../src');
 const load = file => vm.runInThisContext(fs.readFileSync(path.join(SRC, file), 'utf8'), { filename: file });
-['core', 'pens', 'noise', 'contours', 'iso', 'isokit', 'optimize', 'pipeline', 'loader'].forEach(n => load(`lib/${n}.js`));
+['core', 'pens', 'noise', 'contours', 'iso', 'isokit', 'optimize', 'stack', 'pipeline', 'loader'].forEach(n => load(`lib/${n}.js`));
 PG.GENERATOR_FILES.forEach(id => load(`generators/${id}.js`));
 const O = PG.optimize, len = ps => ps.reduce((n, p) => n + PG.geo.pathLength(p), 0);
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 0.5, `${msg}: ${a} vs ${b}`);

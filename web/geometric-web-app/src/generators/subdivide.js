@@ -28,6 +28,8 @@
         category: 'Packing',
         description: 'Recursive rectangle / triangle subdivision, each cell hatched, cross-hatched or nested at its own tone.',
         fit: false,
+        // Other layers can draw in the cells, picked by fill
+        regionKinds: () => ['Hatched cells', 'Cross-hatched cells', 'Concentric cells', 'Blank cells'],
         params: [
             { type: 'section', label: 'Subdivision' },
             { id: 'shape', label: 'Cells', type: 'select', value: 'rects', random: ['rects', 'rects', 'triangles', 'mixed', 'mixed'],
@@ -140,6 +142,8 @@
             // every cut drawn once, and fills start inside it so none retrace it
             const shared = !(p.gap > 0);
             if (shared && p.outline) layers[0].push(geo.close(area), ...cuts);
+            const KINDS = ['hatch', 'cross', 'nested', 'blank'];
+            const regions = ctx.wantRegions ? [] : null;
             for (let poly of leaves) {
                 if (!whole) poly = intersectConvex(poly, area);
                 if (poly.length < 3) continue;
@@ -147,6 +151,7 @@
                 if (poly.length < 3 || Math.abs(geo.polygonArea(poly)) < 1) continue;
                 const tint = rng.random();
                 const kind = anyFill ? rng.weighted(weights) : 'blank';
+                if (regions) regions.push({ poly, kind: KINDS.indexOf(kind) });
                 const s = tone();
                 const tonePosition = hi > lo ? Math.log(s / lo) / Math.log(hi / lo) : tint;
                 const out = layers[PG.pens.band(0.8 * tonePosition + 0.2 * tint, layers.length)];
@@ -176,6 +181,7 @@
                     }
                 } else if (outline) out.push(outline);
             }
+            if (regions) return { layers, regions };
             return p.pens > 1 ? { layers } : layers[0];
         },
     });

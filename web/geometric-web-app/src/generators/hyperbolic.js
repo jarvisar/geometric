@@ -84,6 +84,8 @@
         category: 'Tiles',
         description: 'Regular {p, q} tilings of the Poincaré disk, in the manner of Escher\'s Circle Limit prints.',
         fit: false,
+        // Other layers can draw in the tiles, which alternate like a checkerboard
+        regionKinds: () => ['Light tiles', 'Dark tiles'],
         params: [
             { type: 'section', label: 'Tiling' },
             { id: 'p', label: 'Polygon sides p', type: 'range', min: 3, max: 12, step: 1, value: 7 },
@@ -240,6 +242,20 @@
                 }
             }
             if (prm.rim) layers[0].push(geo.circle(cx, cy, Rd));
+            if (ctx.wantRegions) {
+                // tiles with curved edges, colored like a checkerboard. Rim tiles too small to hold anything are left out.
+                const regions = [];
+                for (const t of tiles) {
+                    if (tileSize(t) < 1.5) continue;
+                    const poly = [];
+                    for (let i = 0; i < p; i++) {
+                        const s = arc(t.pts[V(i)], t.pts[V(i + 1)]);
+                        for (let k = 0; k < s.length - 1; k++) poly.push(s[k]);
+                    }
+                    regions.push({ poly, kind: t.parity });
+                }
+                return { layers, regions };
+            }
             return { layers };
         },
     });

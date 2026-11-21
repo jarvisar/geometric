@@ -78,12 +78,26 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 
 Any design can also be laid out as a **grid** on one sheet. Each cell gets its own seed or its own random parameters, or one parameter sweeps from cell to cell.
 
+A sheet can hold up to six **layers**, each a design of its own, drawn bottom to top.
+A layer can draw in the shapes of a lower one: the circles of Circle Packing and
+Apollonian Gasket, the cells of Voronoi and Subdivision, or the tiles of Penrose
+Tiling, Hyperbolic Tiling, Truchet, and Whirls. It's drawn once per shape, each with
+its own seed, and can pick one kind of shape, like the thick rhombs of a Penrose
+tiling or the blank cells of a Subdivision.
+
+**Sampler** draws a different design for every seed, picked from the curves,
+fields, tiles, and packings that generate quickly, with random settings or their
+defaults. In a grid with a new seed per cell, or in the shapes of another layer,
+it makes a sampler sheet.
+
 ## Plotting
 
 1. **Paper**: pick a size (A6–A2, US sizes, cards, squares or custom) and a margin.
    Nothing is ever drawn outside the margin.
 2. **Composition**: scale, rotate or offset the design, crop it to a circle,
-   hexagon or diamond, and optionally draw a (double) frame.
+   hexagon or diamond, and optionally draw a (double) frame. `Crop size %` makes
+   the crop smaller than the drawing area and `Crop position` moves it. With
+   layers, these settings belong to the selected layer.
 3. **Pens**: up to eight pens. Designs with a color split put each part on its own pen.
    Set pen widths to match your pens: the preview draws true-to-scale
    line widths, so you can judge ink density before committing. Hide a pen to
@@ -151,11 +165,27 @@ drawings, share the JSON or SVG file instead. Both include the image data.
 * **Locks**: hover a parameter and click the lock to keep it fixed while
   randomizing. Locking **Pens** also keeps the pen count when switching designs,
   including gallery presets and `Shift+R`. Unlock it to use each design's own count.
+* **Layers**: `Add layer` under `Layers` picks a design for a new layer on top.
+  Select a layer in the list to edit it. The design controls, seed, `Randomize`,
+  `Reset`, and `Composition` work on the selected layer, and the arrows, eye, and x
+  next to it move, hide, and delete it. A hidden layer is left out of the export,
+  but layers drawn in its shapes still use them. The `Layer` section sets:
+  * `Draw in`: the whole drawing area, or each shape of a lower layer. `Shapes`
+    picks all of them, every other one or one kind, `Inset (mm)` keeps the design
+    off each outline and shapes narrower than `Smallest shape (mm)` stay empty.
+    Slow designs, like the scenes, only fill the largest shapes, and the section
+    says when that happens.
+  * `Covers layers below`: `Near its lines` leaves a gap along this layer's lines,
+    so they pass over the lines below. `Inside its outline` also clears what its
+    lines enclose, and `Inside its area` clears its crop, or each shape it's drawn
+    in. `Clearance (mm)` is how far the lines below stay away.
+  * `Pen`: draws the whole layer with one pen.
 * **Snapshots** (`S`): keep designs you like, with thumbnails, in the browser.
 * **Undo / redo**: `Ctrl+Z` / `Ctrl+Shift+Z`. Double-click a parameter label to reset it.
   `Reset` puts the design's parameters back to defaults. The arrow next to it has
-  `Reset everything`, which does that for every design, resets the seed, paper,
-  pens and layout, and clears the locks. Undo brings it all back except the locks.
+  `Reset everything`, which does that for every design, removes the layers, resets
+  the seed, paper, pens, and layout, and clears the locks. Undo brings it all back
+  except the locks.
 * **Images**: the *Image* design turns a photo into line art in 12 styles. Drop a
   picture onto the preview. Photos stay in this browser across reloads, and undo
   restores cleared or replaced photos. TSP refinement and the flow line packing
@@ -180,7 +210,8 @@ src/
     contours.js    marching-squares iso-lines stitched into polylines
     iso.js         3D scenes for the Scenes and Studies designs: camera, solids, hidden-line removal, shadows
     isokit.js      walls, windows, roofs, cars, fences and people shared by the Scenes designs
-    pipeline.js    fit / rotate / clip to the drawing area / frame
+    pipeline.js    fit / rotate / clip to the drawing area / frame, layers
+    stack.js       shapes for other layers to draw in, covering lower layers
     optimize.js    simplify, merge, overlap removal, travel ordering, stats
     export.js      SVG, PDF, DXF and EPS export
     render.js      canvas preview
@@ -190,6 +221,7 @@ src/
 scripts/
   check.js         runs every design through the pipeline (npm run check)
   check-overlap.js overlap removal, checked by brute force (npm run check:overlap)
+  check-layers.js  layers, shapes and covering (npm run check:layers)
   shot.js          headless-Chrome screenshot of any page
   drive.js         tiny DevTools-protocol driver for UI tests (npm run smoke)
   build-pages.js   design pages and sitemap (npm run build:pages)

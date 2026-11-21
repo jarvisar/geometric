@@ -134,6 +134,8 @@
         category: 'Tiles',
         description: 'Aperiodic rhomb or kite-and-dart tilings with five-fold symmetry and matching arcs.',
         fit: false,
+        // Other layers can draw in the tiles, both kinds or one
+        regionKinds: p => (p.kind === 'P2' ? ['Kites', 'Darts'] : ['Thin rhombs', 'Thick rhombs']),
         params: [
             { type: 'section', label: 'Tiling' },
             { id: 'kind', label: 'Tiles', type: 'select', value: 'P3', random: true,
@@ -221,8 +223,9 @@
 
             if (p.decor === 'arcs') {
                 for (const t of tris) for (const a of tileArcs(kind, t)) layers[orientPen(t[1], t[2], a.fam)].push(arcPath(a));
-            } else if (p.decor === 'hatch' || p.decor === 'nested') {
-                // pair the halves back into whole tiles (the twin shares the axis)
+            }
+            // pair the halves back into whole tiles (the twin shares the axis)
+            const wholeTiles = () => {
                 const key = q => `${Math.round(q[0] * 1e4)},${Math.round(q[1] * 1e4)}`;
                 const axis = ([, A, B, C]) => (kind === 'P3' ? [B, C] : [A, C]);
                 const byAxis = new Map();
@@ -231,9 +234,9 @@
                     const k = ku < kv ? ku + '|' + kv : kv + '|' + ku;
                     if (byAxis.has(k)) byAxis.get(k).push(t); else byAxis.set(k, [t]);
                 }
+                const tiles = [];
                 for (const pair of byAxis.values()) {
                     const t = pair[0], type = t[0];
-                    if (p.which !== 'both' && String(type) !== p.which) continue;
                     const [, A, B, C] = t;
                     // whole tile when both halves are present; a half at the page edge is still worth filling
                     let poly;
@@ -243,7 +246,13 @@
                         poly = kind === 'P3' ? [A, B, D, C] : [B, A, D, C];
                     } else poly = [A, B, C];
                     poly = geo.cleanPolygon(poly);
-                    if (poly.length < 3) continue;
+                    if (poly.length >= 3) tiles.push({ type, A, B, C, poly });
+                }
+                return tiles;
+            };
+            if (p.decor === 'hatch' || p.decor === 'nested') {
+                for (const { type, A, B, poly } of wholeTiles()) {
+                    if (p.which !== 'both' && String(type) !== p.which) continue;
                     const out = layers[orientPen(A, B, type)];
                     // at 0 the first fill ring is the tile edge, which the neighboring tile draws too
                     const inner = insetPoly(poly, Math.max(0.3, p.gap));
@@ -261,6 +270,7 @@
                     }
                 }
             }
+            if (ctx.wantRegions) return { layers, regions: wholeTiles().map(t => ({ poly: t.poly, kind: t.type })) };
             return { layers };
         },
     });

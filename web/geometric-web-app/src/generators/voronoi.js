@@ -25,6 +25,8 @@
         category: 'Packing',
         description: 'Relaxed Voronoi cells filled with nested insets, hatching or outlines.',
         fit: false,
+        // Other layers can draw in the cells. Mixed styles name each kind of cell.
+        regionKinds: p => (p.style === 'mixed' ? ['Nested insets', 'Hatched', 'Outlines'] : []),
         params: [
             { type: 'section', label: 'Cells' },
             { id: 'cells', label: 'Cells', type: 'range', min: 5, max: 600, step: 1, value: 90, random: [25, 220] },
@@ -179,6 +181,7 @@
                     if (!edges.has(id)) edges.set(id, [out, [a, b]]);
                 });
             };
+            const regions = ctx.wantRegions ? [] : null;
             cells.forEach((c, i) => {
                 let poly = p.gap > 0 ? geo.cleanPolygon(geo.insetConvex(c, p.gap / 2)) : c;
                 if (poly.length < 3 || Math.abs(geo.polygonArea(poly)) < 0.5) return;
@@ -186,6 +189,7 @@
                 if (shared && p.style !== 'outline') poly = geo.cleanPolygon(geo.insetConvex(poly, p.spacing / 2));
                 let style = p.style;
                 if (style === 'mixed') style = rng.weighted([[5, 'nested'], [3, 'hatch'], [1.5, 'outline']]);
+                if (regions) regions.push({ poly: cell, kind: p.style === 'mixed' ? STY.indexOf(style) : undefined });
                 let pen = 0;
                 if (pens > 1) {
                     // with one style there's nothing to split by, so spread the cells like 'random'
@@ -213,6 +217,7 @@
                 else out.push(ring(poly, 0, p.round));
             });
             for (const [out, seg] of edges.values()) out.push(seg);
+            if (regions) return { layers, regions };
             return pens > 1 ? { layers } : layers[0];
         },
     });

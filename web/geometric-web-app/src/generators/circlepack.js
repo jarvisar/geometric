@@ -35,6 +35,8 @@
         category: 'Packing',
         description: 'Randomly packed circles filled with rings, spirals, eccentric bubbles or hatching.',
         fit: false,
+        // Other layers can draw in the circles. Mixed fills name each kind of circle.
+        regionKinds: p => (p.style === 'mixed' ? ['Eccentric bubbles', 'Spirals', 'Concentric rings', 'Hatched', 'Outlines'] : []),
         params: [
             { type: 'section', label: 'Packing' },
             { id: 'maxR', label: 'Largest radius (mm)', type: 'range', min: 3, max: 80, step: 0.5, value: 28, random: [10, 45] },
@@ -114,6 +116,7 @@
             const shift = geo.rad(p.shift), spread = geo.rad(p.spread);
             const lnSpan = Math.log(maxR / minR) || 1;
             const out = [];
+            const kinds = [];
             for (const [x, y, r] of circles) {
                 let style = p.style;
                 if (style === 'mixed') {
@@ -122,6 +125,7 @@
                         : [[2, 'eccentric'], [1, 'spiral'], [1, 'rings'], [2, 'hatch'], [1.5, 'outline']]);
                 }
                 if (r < s * 0.9) style = 'outline';
+                kinds.push(STYLES.indexOf(style));
                 const paths = [];
                 if (style === 'spiral') {
                     paths.push(spiral(x, y, r, s, rng.range(0, TAU), rng.sign()));
@@ -149,10 +153,15 @@
                 }
                 for (const path of paths) out.push([path, pen]);
             }
-            if (p.pens <= 1) return out.map(o => o[0]);
+            const regions = ctx.wantRegions
+                ? circles.map((c, i) => ({ circle: c.slice(), kind: p.style === 'mixed' ? kinds[i] : undefined })) : null;
+            if (p.pens <= 1) {
+                const paths = out.map(o => o[0]);
+                return regions ? { layers: [paths], regions } : paths;
+            }
             const layers = Array.from({ length: p.pens }, () => []);
             for (const [path, pen] of out) layers[pen % p.pens].push(path);
-            return { layers };
+            return regions ? { layers, regions } : { layers };
         },
     });
 })();

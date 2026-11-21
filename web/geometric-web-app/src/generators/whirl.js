@@ -52,6 +52,14 @@
         category: 'Tiles',
         description: 'Pursuit polygons spiraling inwards, alone or tiled with alternating chirality.',
         fit: false,
+        // Other layers can draw in the cells, picked by their color class in the tiling
+        regionKinds: p => ({
+            square: ['Light squares', 'Dark squares'],
+            triangle: ['Triangles pointing down', 'Triangles pointing up'],
+            hex: ['Hexagons, first color', 'Hexagons, second color', 'Hexagons, third color'],
+            octagon: ['Octagons', 'Squares'],
+            trihex: ['Hexagons', 'Triangles pointing up', 'Triangles pointing down'],
+        })[p.layout] || [],
         params: [
             { type: 'section', label: 'Layout' },
             { id: 'layout', label: 'Layout', type: 'select', value: 'square',
@@ -206,6 +214,7 @@
                 PG.pens.bands(out, pens).layers.forEach((paths, i) => layers[i].push(...paths));
             }
             layers[0].push(...outline);
+            if (ctx.wantRegions) return { layers, regions: cells.map(c => ({ poly: c.poly, kind: p.layout === 'single' ? undefined : c.cls })) };
             return pens > 1 ? { layers } : layers[0];
         },
     });

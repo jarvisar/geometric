@@ -60,6 +60,26 @@ return `done()`. Don't read the pen tables yourself, or moved parts get ignored.
   points: the pipeline merges, simplifies and sorts everything afterwards. Do
   avoid emitting exact duplicate strokes (the pen would draw them twice).
 
+### Shapes for other layers
+
+A design made of closed shapes, like circles, cells, or tiles, can let another
+layer draw in them. Give the definition `regionKinds: params => [...]`, the
+names of the kinds of shape it has for those params (`[]` when they're all
+alike). When `ctx.wantRegions` is set, also return the shapes:
+
+```js
+return { layers, regions: [{ circle: [cx, cy, r], kind: 0 }, { poly: [[x, y], ...], kind: 1 }] };
+```
+
+* Use the same coordinates as the paths. The pipeline places and clips the
+  shapes like the lines.
+* `poly` is an open vertex list, convex or not. Give the outline the design
+  draws, after any gap, so a layer inside keeps clear of it.
+* `kind` is the index of a name in `regionKinds`. Leave it out when there are
+  no kinds.
+* Only build the shapes when `ctx.wantRegions` is set, and never use `ctx.rng`
+  for them, or the drawing changes when another layer draws in it.
+
 ## Coordinates
 
 * `fit: true` — draw around the origin in whatever units are convenient; the

@@ -65,6 +65,7 @@
     <script src="lib/iso.js"></script>
     <script src="lib/isokit.js"></script>
     <script src="lib/optimize.js"></script>
+    <script src="lib/stack.js"></script>
     <script src="lib/pipeline.js"></script>
     <script src="lib/settings.js"></script>
     <script src="lib/images.js"></script>
@@ -113,6 +114,8 @@
             <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12.5" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
             <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
             <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+            <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+            <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15.5 5.5v-.5A1.5 1.5 0 0 0 14 3.5H6A1.5 1.5 0 0 0 4.5 5v8A1.5 1.5 0 0 0 6 14.5h.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
             <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4v4.5H9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
             <symbol id="i-keys" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 10h.01M9.5 10h.01M13 10h.01M16.5 10h.01M7.5 14h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
             <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M4.5 9.5h12v5a4.5 4.5 0 0 1-4.5 4.5H9a4.5 4.5 0 0 1-4.5-4.5zM16.5 11h1.5a2.5 2.5 0 0 1 0 5h-1.8M8 3.5v2.5M11.5 3.5v2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -144,7 +147,7 @@
             <button id="resetMenuBtn" class="icon-btn caret" title="More reset options" aria-expanded="false" aria-controls="resetMenu"><svg class="ic"><use href="#i-chev"/></svg></button>
             <div id="resetMenu" class="menu" hidden>
                 <button data-reset="params">Reset design parameters <small>Just the controls for this design</small></button>
-                <button data-reset="all">Reset everything <small>Every design, seed, paper, pens and layout. Undo still works</small></button>
+                <button data-reset="all">Reset everything <small>Every design and layer, seed, paper, pens, and layout. Undo still works</small></button>
             </div>
         </div>
 
@@ -187,10 +190,12 @@
     <main class="layout" id="layout" data-tab="design">
         <aside class="panel left">
             <div class="design-info">
+                <p id="designLayer" class="design-layer" hidden></p>
                 <h2 id="designTitle"></h2>
                 <p id="designDesc"></p>
             </div>
             <div class="phone-tools" id="phoneTools"></div>
+            <div id="layers"></div>
             <div id="params"></div>
             <footer class="panel-foot"><a href="designs/">All designs</a><a href="about/">About</a><a href="about/#more-apps">More apps</a><a href="https://github.com/jarvisar/geometric">GitHub</a><a href="about/#support">Support</a></footer>
         </aside>

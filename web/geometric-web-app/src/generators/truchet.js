@@ -27,6 +27,8 @@
         category: 'Tiles',
         description: 'Randomly oriented tiles whose arcs, diagonals or triangles join into long meanders.',
         fit: false,
+        // Other layers can draw in the square or hexagonal tiles
+        regionKinds: () => [],
         params: [
             { type: 'section', label: 'Tiles' },
             { id: 'type', label: 'Tile', type: 'select', value: 'arcs', random: ['arcs', 'arcs', 'hex', 'hex', 'diagonal', 'triangles'],
@@ -87,6 +89,8 @@
 
             // Arcs carry { path, o (orientation), k (band class) }.
             const arcs = [];
+            const tiles = ctx.wantRegions ? [] : null;
+            const square = (x, y) => { if (tiles) tiles.push({ poly: [[x, y], [x + s, y], [x + s, y + s], [x, y + s]] }); };
 
             if (p.type === 'arcs') {
                 const cols = Math.ceil(W / s) + 2, rows = Math.ceil(H / s) + 2;
@@ -97,6 +101,7 @@
                     for (let i = 0; i < cols; i++) {
                         const x = x0 + i * s, y = y0 + j * s;
                         const o = orient(x + s / 2, y + s / 2, 2);
+                        square(x, y);
                         // corners (and start angles) of the two arcs
                         const cs = o === 0
                             ? [[x, y, 0], [x + s, y + s, Math.PI]]
@@ -116,6 +121,7 @@
                     for (let j = -1; j < rows; j++) {
                         const cx = i * dx, cy = (j + (i & 1 ? 0.5 : 0)) * dy;
                         const o = orient(cx, cy, 2);
+                        if (tiles) tiles.push({ poly: geo.ngon(cx, cy, e, 6) });
                         for (let v = o; v < 6; v += 2) {
                             const a = (v * TAU) / 6;
                             const vx = cx + e * Math.cos(a), vy = cy + e * Math.sin(a);
@@ -143,6 +149,7 @@
                     for (let i = 0; i < cols; i++) {
                         const x = x0 + i * s, y = y0 + j * s;
                         const o = orient(x + s / 2, y + s / 2, 2);
+                        square(x, y);
                         for (const { l, k } of unit) {
                             // o = 1 mirrors the tile horizontally ("/")
                             const path = o ? [[x + s - l[0], y + l[1]], [x + s - l[2], y + l[3]]] : [[x + l[0], y + l[1]], [x + l[2], y + l[3]]];
@@ -169,6 +176,7 @@
                         const x = x0 + i * s, y = y0 + j * s;
                         const c = [[x, y], [x + s, y], [x + s, y + s], [x, y + s]];
                         const o = orient(x + s / 2, y + s / 2, 4);
+                        square(x, y);
                         const color = ((Math.floor(i / 2) + Math.floor(j / 2)) % pens + pens) % pens;
                         const main = triangleLayers[color], other = triangleLayers[(color + 1) % pens];
                         main.push(...geo.hatch([c[o], c[(o + 1) % 4], c[(o + 3) % 4]], p.hatch, angleFor(o, false)));
@@ -178,10 +186,10 @@
                         }
                     }
                 }
-                return { layers: triangleLayers };
+                return tiles ? { layers: triangleLayers, regions: tiles } : { layers: triangleLayers };
             }
 
-            if (pens <= 1) return arcs.map(a => a.path);
+            if (pens <= 1) return tiles ? { layers: [arcs.map(a => a.path)], regions: tiles } : arcs.map(a => a.path);
 
             let penOf;
             if (p.penMode === 'band') penOf = a => a.k;
@@ -207,7 +215,7 @@
             }
             const layers = Array.from({ length: pens }, () => []);
             for (const a of arcs) layers[penOf(a) % pens].push(a.path);
-            return { layers };
+            return tiles ? { layers, regions: tiles } : { layers };
         },
     });
 })();

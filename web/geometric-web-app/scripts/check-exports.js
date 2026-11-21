@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const SRC = path.resolve(__dirname, '../src');
 const OUT = path.resolve(__dirname, '../shots/exports/fixtures');
 const load = file => vm.runInThisContext(fs.readFileSync(path.join(SRC, file), 'utf8'), { filename: file });
-['core', 'pens', 'noise', 'contours', 'iso', 'isokit', 'optimize', 'pipeline', 'export', 'loader'].forEach(n => load(`lib/${n}.js`));
+['core', 'pens', 'noise', 'contours', 'iso', 'isokit', 'optimize', 'stack', 'pipeline', 'export', 'loader'].forEach(n => load(`lib/${n}.js`));
 
 const paper = { w: 210, h: 297 };
 const pens = ['#102030', '#ef4367', '#1d70b8', '#eabb11', '#298741', '#bb26c2', '#00bbcc', '#fffdf2']
