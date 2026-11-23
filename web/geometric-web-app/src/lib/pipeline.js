@@ -304,8 +304,8 @@
     // Designs that take long to generate fill fewer regions, the largest ones, so a sheet of them
     // still generates in a few seconds. Tiers from the time each design takes in a 30 mm circle.
     const REGION_CAPS = [
-        [120, ['superformula', 'guilloche', 'attractor', 'wireframe', 'voronoi', 'cosmic', 'radiolaria', 'stairwell', 'fairground']],
-        [80, ['ribbons', 'tidal', 'stadium']],
+        [120, ['superformula', 'guilloche', 'attractor', 'wireframe', 'voronoi', 'cosmic', 'radiolaria', 'exploded', 'stairwell', 'fairground']],
+        [80, ['ribbons', 'tidal', 'stadium', 'temple']],
         [40, ['blackhole', 'castle', 'farmland']],
         [24, ['moonbase', 'alpine']],
     ];

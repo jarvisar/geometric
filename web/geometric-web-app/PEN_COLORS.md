@@ -42,15 +42,17 @@ preview, clipping and export. Custom pen colors still belong to the user.
 | Moon Base on Mars | Same as the Moon, with the ground on the red pen until an eighth pen takes it over in brown |
 | Stadium | Scene materials and objects, with the seats in the club's colors. The running track, clay courts and infield stay on the red pen until an eighth pen takes them over in brown, along with the streets |
 | Farmland | Scene materials and objects, with the crops in green and gold before anything else, since the fields are most of the drawing. Soil and tracks are gold until a sixth pen gives them brown, and the shadows are black until a fifth pen gives them blue |
+| Temple Garden | Scene materials and objects, with the gravel on the second pen, since it is most of the drawing. Shadows on the gravel are more rake lines, so they share its pen until a fifth pen gives them blue, along with the roof tiles and the water. A sixth pen takes the people, a seventh gives the roof tiles and the water light blue, and an eighth gives the timber brown |
 | Megastructure | Tiers in ink, then fins and grilles, slab stacks, studs and teeth, ducts and frames, loose blocks, the plinth and every other tier. Hatching takes the second pen when it's on |
 | Infinite Stairwell | Steps and walls, the handrail and shading, then the floor or skylight, balusters, string, walls and every other turn |
 | Cosmic Comics | Dark outlines, a warm sun and cool skies, then sand, distant ranges, plants, crystals and rock |
 | Radiolaria Plate | Skeletons in ink with the shells nested inside them in red, then the pore walls, spines, bells, discs, bristles and beams, and figure numbers |
+| Exploded View | Parts in ink, with the center lines, leader lines, and part numbers in red. A third pen moves the part numbers and leaders to blue, and more pens pick out the fasteners, the moving parts, the bearings and seals, the threads and knurling, and the lettering |
 | Image | Tonal bands in every drawing mode |
 
 ## Moving Parts Between Pens
 
-The scenes, Megastructure, Infinite Stairwell, Cosmic Comics, Radiolaria Plate,
+The scenes, Megastructure, Infinite Stairwell, Cosmic Comics, Radiolaria Plate, Exploded View,
 Tidal Atlas and Gothic Tracery have named parts, like roofs, shadows or the moat. The pen list shows each part
 under the pen that draws it. Select a part there to move it to another pen.
 

@@ -37,6 +37,7 @@
         skyline: profile(5, 'Black architecture, red signs and roofs, blue shade, shadows and water, yellow pads, markings, taxis and cranes, green trees. More pens separate glass, traffic and streets.'),
         stadium: profile(5, 'Black structure, red roofs and seats, blue shadows and seats, gold lights, flags and seats, green grass and trees. More pens separate people, glass and the track.'),
         radiolaria: profile(2, 'Black skeletons, with the shells nested inside them in red. More pens pick out the pore walls, the spines, the bells, the discs, the bristles and beams, and the figure numbers.', [INK, RED, GOLD, BLUE, GREEN, PURPLE, BROWN, CYAN]),
+        exploded: profile(2, 'Black parts, with the center lines, leader lines, and part numbers in red. More pens give the part numbers blue, then pick out the fasteners, the moving parts, the bearings, seals and springs, the threads and knurling, and the lettering.', [INK, RED, BLUE, GOLD, GREEN, PURPLE, BROWN, CYAN]),
         megastructure: profile(1, 'One black pen, like an old plotter drawing. More pens pick out the fins and grilles, then the slab stacks, the studs and teeth, the ducts and frames, loose blocks, the plinth and every other tier. Hatching takes the second pen when it is on.', [INK, RED, BLUE, GOLD, GREEN, PURPLE, BROWN, CYAN]),
         flowfield: profile(4, 'Color follows flow direction, position or patches of noise.', cool),
         ridgelines: profile(4, 'Colors separate near and distant ridges.', cool),
@@ -69,6 +70,7 @@
         moonbase: profile(6, 'Black structures, red pressure collars, blue shadows and solar cells, gold equipment, green gardens and light blue glazing. Seven pens separate astronauts, and eight add brown dust. On Mars the ground is drawn with the red pen until the eighth pen takes it over.'),
         alpine: profile(4, 'Dark architecture, red roofs, blue shade and gold details. More pens separate fir woods, people, water and timber.'),
         farmland: profile(7, 'Black buildings and machines, red roofs and barns, blue shadows and water, gold grain and hay, green crops and trees, brown soil and tracks, and purple people, animals and flowers. Eight pens give the water light blue. With fewer pens the soil goes gold, then the shadows go black.', [INK, RED, BLUE, GOLD, GREEN, BROWN, PURPLE, CYAN]),
+        temple: profile(5, 'Black for walls, stone, and timber. Gold for the gravel, green for moss and pines, and red for maples. Blue for shadows, roof tiles, and water. More pens separate the people, then give the roof tiles and the water light blue, then the timber brown. With fewer pens the shadows are drawn with the gravel\'s pen.', [INK, GOLD, GREEN, RED, BLUE, PURPLE, CYAN, BROWN]),
         image: profile(3, 'Colors follow image darkness in every drawing mode.', [BLUE, PURPLE, INK, RED, BROWN, GREEN, CYAN, GOLD]),
     };
 
@@ -152,6 +154,17 @@
             [INK, RED, BLUE, GOLD, GREEN, PURPLE, BLUE, BROWN, PURPLE],
             [INK, RED, BLUE, GOLD, GREEN, PURPLE, CYAN, BROWN, PURPLE],
         ], [0, 1, 2, 3, 4, 5, 6, 7, 8], ['Buildings & machines', 'Roofs & barn paint', 'Shadows', 'Grain, hay & sunflowers', 'Crops, trees & hedges', 'People & animals', 'Water', 'Soil, tracks & fences', 'Blossom & flowers']),
+        // The gravel is most of the drawing, so it gets the second pen. Shadows on it are more rake lines, so they share its pen until blue has one.
+        temple: scene([
+            [INK, INK, INK, INK, INK, INK, INK, INK, INK],
+            [INK, GOLD, INK, INK, GOLD, INK, INK, INK, INK],
+            [INK, GOLD, GREEN, GREEN, GOLD, INK, INK, INK, INK],
+            [INK, GOLD, GREEN, RED, GOLD, INK, INK, INK, INK],
+            [INK, GOLD, GREEN, RED, BLUE, BLUE, BLUE, INK, INK],
+            [INK, GOLD, GREEN, RED, BLUE, BLUE, BLUE, PURPLE, INK],
+            [INK, GOLD, GREEN, RED, BLUE, CYAN, CYAN, PURPLE, INK],
+            [INK, GOLD, GREEN, RED, BLUE, CYAN, CYAN, PURPLE, BROWN],
+        ], [0, 1, 2, 3, 4, 5, 6, 7, 8], ['Walls, stone & outlines', 'Raked gravel', 'Moss, pines & bamboo', 'Maples, bridge & koi', 'Shadows', 'Roof tiles', 'Water', 'People', 'Timber & trunks']),
     };
 
     // The designs below number their inks in the design's own order instead of naming pens,
@@ -212,6 +225,16 @@
         [0, 1, 2, 3, 4, 5, 6, 0],
         [0, 1, 2, 3, 4, 5, 6, 7],
     ], ['Lattice shells', 'Inner shells', 'Pore walls', 'Spines', 'Bells & helmets', 'Discs', 'Bristles & beams', 'Figure numbers']);
+    P.scenes.exploded = inOrder('exploded', [
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 1, 1, 0],
+        [0, 0, 0, 0, 0, 1, 2, 0],
+        [0, 0, 3, 0, 0, 1, 2, 0],
+        [0, 4, 3, 0, 0, 1, 2, 0],
+        [0, 4, 3, 5, 0, 1, 2, 0],
+        [0, 4, 3, 5, 6, 1, 2, 0],
+        [0, 4, 3, 5, 6, 1, 2, 7],
+    ], ['Housings & covers', 'Moving parts', 'Fasteners', 'Bearings, seals & springs', 'Threads & knurling', 'Center lines', 'Part numbers & leaders', 'Lettering']);
     // Roles past the pen count fold back onto earlier accents, so the pen count never changes the geometry
     const FOLD = [0, 0, 1, 1, 2, 2, 2, 3];
     const fold = (role, n) => { while (role >= n) role = FOLD[role]; return role; };
