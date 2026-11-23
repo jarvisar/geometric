@@ -31,6 +31,7 @@
         scale: 100, rotate: 0, offsetX: 0, offsetY: 0, clip: 'rect', frame: false, framePen: 0, frameInset: 0,
         size: 100, posX: 0, posY: 0, pen: -1, hidden: false,
         cover: 'none', gap: 1, inside: -1, shapes: 'all', minShape: 5, inset: 1.5, shapeVary: 'seed',
+        wrap: 'none', inner: 40, arc: 360, repeats: 1, segments: 8, tab: 0,
     });
     settings.LAYER_KEYS = Object.keys(settings.layerComp());
     settings.defaults = () => ({
@@ -63,7 +64,7 @@
         }
     }
     // Which of the regions below a layer draws in: all, every other one, or one kind of them
-    const shapes = (v, name) => { if (typeof v !== 'string' || !/^(all|alternate|kind:1?\d)$/.test(v)) fail(name); return v; };
+    const shapes = (v, name) => { if (typeof v !== 'string' || !/^(all|alternate|center|kind:1?\d)$/.test(v)) fail(name); return v; };
     const layerComp = {
         scale: number(10, 300), rotate: number(-180, 180), offsetX: number(-150, 150), offsetY: number(-150, 150),
         clip: choice(['rect', 'circle', 'hexagon', 'diamond']), frame: boolean, framePen: number(0, 7, true),
@@ -71,6 +72,9 @@
         pen: number(-1, 7, true), hidden: boolean, cover: choice(['none', 'lines', 'outline', 'area']), gap: number(0.2, 10),
         inside: number(-1, settings.MAX_LAYERS - 1, true), shapes, minShape: number(1, 100), inset: number(0, 10),
         shapeVary: choice(['seed', 'params', 'none']),
+        wrap: choice(['none', 'polar', 'kaleido']), inner: number(0, 90), arc: number(30, 360),
+        repeats: number(1, 24, true), segments: (v, name) => { number(2, 24, true)(v, name); if (v % 2) fail(name); return v; },
+        tab: number(0, 20),
     };
     const schemas = {
         paper: {

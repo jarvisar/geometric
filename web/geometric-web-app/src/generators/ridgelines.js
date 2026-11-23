@@ -34,7 +34,8 @@
             { id: 'coherence', label: 'Line coherence', type: 'range', min: 0, max: 1, step: 0.01, value: 0.55, show: p => p.mode !== 'terrain',
                 hint: 'How similar neighboring lines are' },
             { type: 'section', label: 'Layout' },
-            { id: 'lines', label: 'Lines', type: 'range', min: 5, max: 250, step: 1, value: 80, random: [40, 120] },
+            { id: 'lines', label: 'Lines', type: 'range', min: 5, max: 250, step: 1, value: 80, random: [40, 120],
+                hint: 'For a full page. Wrapped under Composition, a ring is shallower and gets fewer lines, in proportion to its depth.' },
             { id: 'padX', label: 'Side padding (mm)', type: 'range', min: 0, max: 80, step: 0.5, value: 30, random: [10, 45] },
             { id: 'padY', label: 'Top/bottom padding (mm)', type: 'range', min: 0, max: 80, step: 0.5, value: 16, random: [5, 30] },
             { id: 'perspective', label: 'Perspective', type: 'range', min: 0, max: 3, step: 0.05, value: 0,
@@ -75,17 +76,20 @@
 
         generate(p, ctx) {
             const { width: W, height: H, noise, rng } = ctx;
-            const N = Math.max(2, Math.round(p.lines));
-            const x0 = Math.min(p.padX, W / 2 - 1), x1 = W - x0;
+            // Wrapped round a center the ends meet, so there's no side padding, and a ring is much
+            // shallower than a page: the lines, their padding, and their height scale with its depth
+            const f = ctx.wrap ? Math.min(1, H / ctx.wrap.page[1]) : 1;
+            const N = Math.max(2, Math.round(p.lines * f));
+            const x0 = ctx.wrap ? 0 : Math.min(p.padX, W / 2 - 1), x1 = W - x0;
             const L = x1 - x0, cx = (x0 + x1) / 2;
             const nx = Math.min(4000, Math.max(2, Math.ceil(L / p.res) + 1));
             const dx = L / (nx - 1);
-            const A = p.amplitude;
+            const A = p.amplitude * Math.sqrt(f);
             const k = p.perspective;
 
             // Baselines: line 0 is the front (bottom). With perspective the gaps
             // shrink towards the back and so do amplitude and horizontal scale.
-            const top = Math.min(p.padY, H / 3);
+            const top = Math.min(p.padY * f, H / 3);
             const yFront = H - top;
             // leave room for the back row's peaks, but never let the back pass the front
             // (the back row's peaks are shrunk by perspective, so need less room)

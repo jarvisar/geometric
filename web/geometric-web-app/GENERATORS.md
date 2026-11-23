@@ -90,6 +90,17 @@ return { layers, regions: [{ circle: [cx, cy, r], kind: 0 }, { poly: [[x, y], ..
   that fill the page (fields, tilings, packings). Design sizes such as spacing
   or cell size are then real millimeters, which matters for pen width.
 
+`Wrap` under Composition draws a design into a strip as long as the middle of
+the ring and as deep as the ring, then bends it round. The strip is often six
+or more times wider than it is tall, a segment of a kaleidoscope can be a few
+millimeters wide, and a strip can be several meters long on big paper with a
+large inner radius. Then `ctx.wrap` is set, with `ctx.wrap.page`, the
+`[width, height]` the design would fill unwrapped. A design that sizes itself
+to the page, like a scene fitting its camera, should size from `ctx.wrap.page`
+and still draw into `ctx.width` by `ctx.height`. Otherwise it zooms out to fit
+a thin strip and builds far more than shows. The left and right edges of the
+strip meet round the ring, so side padding only leaves a gap there.
+
 ## ctx
 
 | field | |

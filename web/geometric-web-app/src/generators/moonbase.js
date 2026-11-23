@@ -1798,7 +1798,8 @@
             { type: 'section', label: 'Pens' }, { id: 'pens' },
         ],
         generate(p, ctx) {
-            const { width: W, height: H } = ctx, k = 1.55 * p.scale * Math.min(W / 180, H / 250);
+            // a wrapped layer's strip is sized like the page it's on, not zoomed out to fit
+            const { width: W, height: H } = ctx, [PW, PH] = ctx.wrap ? ctx.wrap.page : [W, H], k = 1.55 * p.scale * Math.min(PW / 180, PH / 250);
             const cam = makeCamera(p.yaw, p.elev, k, W, H, 0, 0), S = new Scene(cam, W, H), mars = onMars(p);
             // The wind blows at a slant to the view, toward the viewer or away.
             // Dunes, streaks and rotors all follow it. Square across the view a

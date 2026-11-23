@@ -167,6 +167,7 @@
         const S = {
             seed: s.seed, paperW: s.paper.w, paperH: s.paper.h, margin: s.paper.margin,
             scale: c.scale, rotate: c.rotate, offsetX: c.offsetX, offsetY: c.offsetY, clip: c.clip,
+            wrap: c.wrap, inner: c.inner, arc: c.arc, repeats: c.repeats, segments: c.segments, tab: c.tab,
             frame: c.frame, framePen: c.framePen, frameInset: c.frameInset, opt: s.opt,
             size: c.size, posX: c.posX, posY: c.posY, pen: c.pen, hidden: c.hidden,
             // Only overlap removal depends on pen width. Otherwise a width change is just a redraw.
@@ -445,6 +446,7 @@
         renderStats();
         renderPenUsage();
         renderLayerNote();
+        renderWrapNotes();
         beginTransition(prev);
         draw();
         scheduleSave();
@@ -1221,11 +1223,22 @@
             {
                 // the selected layer's placement
                 id: 'comp', title: 'Composition', target: activeLayer, badge: () => (layerCount() > 1 ? `Layer ${activeIndex() + 1}` : ''), controls: [
+                    { key: 'comp.wrap', label: 'Wrap', type: 'select', options: [['none', 'None'], ['polar', 'Polar'], ['kaleido', 'Kaleidoscope']],
+                        note: el('div', { class: 'wrap-note', id: 'wrapNote', hidden: true }, el('p', { class: 'out-note', id: 'wrapNoteText' })),
+                        hint: 'Polar bends the design round a center: across becomes the angle, and the top goes on the outside. In a full ring the side edges meet in a seam at the bottom, which Rotation° turns. Kaleidoscope mirrors every other segment, so it has no seam. Scale %, Rotation°, and the offsets move the whole ring. Works best with designs that fill the page, like tiles, fields, and scenes.' },
+                    { key: 'comp.inner', label: 'Inner radius %', type: 'range', min: 0, max: 90, step: 1, show: wrapped,
+                        hint: 'Leaves the middle empty, where lines would crowd together. To fill it, add a layer and set its Draw in to this layer and its Shapes to Center.' },
+                    { key: 'comp.arc', label: 'Arc°', type: 'range', min: 30, max: 360, step: 1, show: wrapped, note: el('p', { class: 'out-note', id: 'coneNote', hidden: true }),
+                        hint: 'Below 360 the design fills a fan instead of a ring. Cut it out along the frame and join the straight edges to make a cone, like a lampshade.' },
+                    { key: 'comp.repeats', label: 'Repeats', type: 'range', min: 1, max: 24, step: 1, show: L => L.comp.wrap === 'polar',
+                        hint: 'Copies of the design round the ring.' },
+                    { key: 'comp.segments', label: 'Segments', type: 'range', min: 2, max: 24, step: 2, show: L => L.comp.wrap === 'kaleido',
+                        hint: 'Segments round the ring. Every other one is mirrored, so they meet without a seam.' },
                     { key: 'comp.scale', label: 'Scale %', type: 'range', min: 10, max: 300, step: 1 },
                     { key: 'comp.rotate', label: 'Rotation°', type: 'range', min: -180, max: 180, step: 0.5 },
                     { key: 'comp.offsetX', label: 'Offset X (mm)', type: 'range', min: -150, max: 150, step: 0.5 },
                     { key: 'comp.offsetY', label: 'Offset Y (mm)', type: 'range', min: -150, max: 150, step: 0.5 },
-                    { key: 'comp.clip', label: 'Crop to', type: 'select', show: L => !inShapes(L),
+                    { key: 'comp.clip', label: 'Crop to', type: 'select', show: L => !inShapes(L) && !wrapped(L),
                         options: [['rect', 'Rectangle (margins)'], ['circle', 'Circle'], ['hexagon', 'Hexagon'], ['diamond', 'Diamond']] },
                     { key: 'comp.size', label: 'Crop size %', type: 'range', min: 10, max: 100, step: 1, show: L => !inShapes(L),
                         hint: 'Shrinks the crop to part of the drawing area, keeping its proportions. The design fills the smaller crop.' },
@@ -1234,6 +1247,9 @@
                     { key: 'comp.frame', label: inShapes() ? 'Outline each shape' : 'Draw frame', type: 'checkbox' },
                     { key: 'comp.framePen', label: 'Frame pen', type: 'select', options: penOptions(), show: L => L.comp.frame },
                     { key: 'comp.frameInset', label: 'Second frame line (mm in)', type: 'range', min: 0, max: 12, step: 0.5, show: L => L.comp.frame },
+                    { key: 'comp.tab', label: 'Glue tab (mm)', type: 'range', min: 0, max: 20, step: 0.5,
+                        show: L => L.comp.frame && wrapped(L) && L.comp.arc < 360 && !inShapes(L),
+                        hint: 'Adds a flap along one straight edge of the fan, to glue under the other edge when it rolls into a cone. The frame folds along that edge.' },
                 ],
             },
             {
@@ -1312,12 +1328,23 @@
                     if (sec.badge) summary.querySelector('.badge').textContent = sec.badge();
                     applyEffect(q.effect || 'generate', live);
                     if (!live) commit();
-                    if (q.key === 'comp.size' || q.key === 'comp.clip') renderLayerNote();
+                    if (['comp.size', 'comp.clip', 'comp.wrap'].includes(q.key)) renderLayerNote();
+                    if (q.key === 'comp.wrap') renderLayers();
+                    if (q.key.startsWith('comp.')) renderWrapNotes();
                 });
                 if (q.show) row.showFn = q.show;
                 row.dataset.key = q.key;
                 rows.push(row);
                 body.append(row);
+                if (q.note) {
+                    // filled in by renderWrapNotes, and hidden with its control
+                    const shown = q.show || (() => true), text = q.note.matches('p') ? q.note : q.note.querySelector('p');
+                    q.note.showFn = v => shown(v) && !!text.textContent;
+                    for (const input of row.querySelectorAll('input, select')) {
+                        input.setAttribute('aria-describedby', [input.getAttribute('aria-describedby'), text.id].filter(Boolean).join(' '));
+                    }
+                    body.append(q.note);
+                }
             }
             if (sec.note) body.append(sec.note);
             updateVisibility(body, target());
@@ -1327,6 +1354,76 @@
         renderStats();
         // the pen list has to be on the page first, it's looked up by id
         renderPenUsage();
+        renderWrapNotes();
+    }
+
+    // The ring of layer i in the last drawing, if that drawing was made for the layer that is
+    // layer i now. Layers move and get deleted before the next drawing is ready.
+    let ringsFor = { key: null, ids: [] };
+    function ringOf(i) {
+        if (!result?.rings) return null;
+        if (ringsFor.key !== resultKey) {
+            let ids = [];
+            try {
+                const [gen, , S] = JSON.parse(resultKey);
+                ids = [[gen, S.seed], ...(S.layers || []).map(L => [L.gen, L.seed])].map(x => x.join(':'));
+            } catch (e) { /* no key yet */ }
+            ringsFor = { key: resultKey, ids };
+        }
+        const L = layerAt(i);
+        return ringsFor.ids[i] === `${L.gen}:${L.seed}` ? result.rings[i] : null;
+    }
+
+    // Notes for the selected layer under Wrap (what keeps the drawing from filling the ring, or a
+    // layer above that lost the center it draws in) and under Arc° (the cone a fan makes)
+    function renderWrapNotes() {
+        const box = $('#wrapNote'), cone = $('#coneNote');
+        if (!box || !cone) return;
+        const i = activeIndex(), L = activeLayer(), c = L.comp, ring = wrapped(L) ? ringOf(i) : null;
+        const mm = v => `${fmtMM(v)} mm`;
+
+        let text = '', fix = null;
+        const guest = state.layers.findIndex((G, k) => k + 1 > i && G.comp.inside === i && (G.comp.shapes === 'center' || !PG.byId[L.gen].regionKinds));
+        if (guest >= 0 && !PG.hasCenter(c)) {
+            text = `Layer ${guest + 2} draws in the center of this layer, which needs ${wrapped(L) ? 'an Inner radius % above 0' : 'Wrap set to Polar or Kaleidoscope'}.`;
+        } else if (ring && !ring.cover) {
+            text = c.wrap === 'kaleido' ? 'Nothing fits in segments this narrow. Lower Segments or Inner radius %.' : 'Nothing fits in a ring this thin. Lower Inner radius % or Repeats.';
+        } else if (ring && ring.cover < 0.6) {
+            // one object in the middle of the strip: more copies take it all the way round
+            const key = c.wrap === 'kaleido' ? 'segments' : 'repeats', now = c[key];
+            const n = key === 'segments' ? Math.min(24, 2 * Math.round(now / ring.cover / 2)) : Math.min(24, Math.round(now / ring.cover));
+            if (n > now) {
+                text = 'The design covers only part of the ring.';
+                fix = { key, n, label: key === 'segments' ? `Use ${n} segments` : `Repeat it ${n} times` };
+            }
+        }
+        box.querySelector('p').textContent = text;
+        box.querySelector('button')?.remove();
+        if (fix) {
+            const btn = el('button', { class: 'btn', type: 'button', text: fix.label });
+            btn.addEventListener('click', () => {
+                c[fix.key] = fix.n;
+                $(`[data-sec="comp"] [data-key="comp.${fix.key}"]`)?.sync?.();
+                requestGenerate();
+                commit();
+                announce(`${fix.key === 'segments' ? 'Segments' : 'Repeats'} set to ${fix.n}`);
+                // the button goes once the ring is full
+                $(`[data-sec="comp"] [data-key="comp.${fix.key}"] input[type=number]`)?.focus();
+            });
+            box.append(btn);
+        }
+        box.hidden = !text;
+
+        let about = '';
+        if (ring && c.arc < 360 && ring.arc < 360) {
+            const a = (ring.arc * Math.PI) / 180, base = (a * ring.r1) / Math.PI, top = (a * ring.r0) / Math.PI;
+            const tall = Math.sqrt(Math.max(0, (ring.r1 - ring.r0) ** 2 - ((base - top) / 2) ** 2));
+            about = top > 0.05 ? `Cone: ${mm(base)} across at the base, ${mm(top)} across at the top, and ${mm(tall)} tall.` : `Cone: ${mm(base)} across and ${mm(tall)} tall.`;
+            if (ring.cut) about += ' Part of the fan is cut off. Lower Scale % or move it with Offset X (mm) and Offset Y (mm).';
+            else if (!c.frame) about += ' Turn on Draw frame to plot the cutting line.';
+        }
+        cone.textContent = about;
+        cone.hidden = !about || !!$('[data-sec="comp"] [data-key="comp.arc"]')?.hidden;
     }
 
     function applyEffect(effect, live) {
@@ -1537,16 +1634,20 @@
 
     const designsWithShapes = () => PG.generators.filter(g => g.regionKinds).map(g => g.name);
     const inShapes = (L = activeLayer()) => L !== state && L.comp.inside >= 0;
+    const wrapped = (L = activeLayer()) => PG.wrapped(L.comp);
 
     // Shape kinds a design names for these params, like Thin rhombs and Thick rhombs
     function shapeKinds(i) {
         const L = layerAt(i), def = PG.byId[L.gen];
         return def.regionKinds ? def.regionKinds(currentParams(def, L)) || [] : [];
     }
+    // A layer's design has shapes, or it's wrapped with an empty center
+    const hasShapes = i => !!PG.byId[layerAt(i).gen].regionKinds || PG.hasCenter(layerAt(i).comp);
 
     function layerMeta(i) {
         const c = layerAt(i).comp, out = [];
         if (i > 0 && c.inside >= 0 && c.inside < i) out.push(`In layer ${c.inside + 1}`);
+        if (PG.wrapped(c)) out.push(c.wrap === 'kaleido' ? 'Kaleidoscope' : 'Polar');
         if (i > 0 && c.cover !== 'none') out.push('Covers below');
         if (c.pen >= 0) out.push(`Pen ${c.pen + 1}`);
         if (c.hidden) out.push('Hidden');
@@ -1750,13 +1851,14 @@
             i > 0 && {
                 key: 'inside', label: 'Draw in', type: 'select',
                 options: [[-1, 'Whole drawing area'], ...Array.from({ length: i }, (_, j) => {
-                    const shapes = !!PG.byId[layerAt(j).gen].regionKinds;
+                    const shapes = hasShapes(j);
                     return [j, `Shapes of layer ${j + 1}, ${layerName(j)}${shapes ? '' : ' (no shapes)'}`, !shapes && c.inside !== j];
                 })],
-                hint: `Draws this design once in each shape of a lower layer. Designs with shapes: ${withShapes.slice(0, -1).join(', ')}, and ${withShapes.at(-1)}.`,
+                hint: `Draws this design once in each shape of a lower layer. Designs with shapes: ${withShapes.slice(0, -1).join(', ')}, and ${withShapes.at(-1)}. A layer wrapped with an inner radius also has its empty center.`,
             },
             { key: 'shapes', label: 'Shapes', type: 'select', show: () => inShapes(),
-                options: [['all', 'All shapes'], ['alternate', 'Every other shape'], ...kinds.map((k, n) => [`kind:${n}`, k])] },
+                options: [['all', 'All shapes'], ['alternate', 'Every other shape'], ...kinds.map((k, n) => [`kind:${n}`, k]),
+                    ...(c.inside >= 0 && (PG.hasCenter(layerAt(c.inside).comp) || c.shapes === 'center') ? [['center', 'Center']] : [])] },
             { key: 'shapeVary', label: 'Each shape', type: 'select', show: () => inShapes(),
                 options: [['seed', 'New seed per shape'], ['params', 'Random parameters per shape'], ['none', 'Identical']] },
             { key: 'inset', label: 'Inset (mm)', type: 'range', min: 0, max: 10, step: 0.1, show: () => inShapes(),
@@ -1813,11 +1915,14 @@
         let text = '';
         if (inShapes()) {
             const host = PG.byId[layerAt(c.inside).gen];
-            if (!host.regionKinds) text = `${host.name} has no shapes to draw in, so this layer draws nothing.`;
-            else if (info?.noShapes) text = `Layer ${c.inside + 1} has no shapes on the paper, so this layer draws nothing.`;
+            if (!hasShapes(c.inside) || (c.shapes === 'center' && !PG.hasCenter(layerAt(c.inside).comp))) {
+                text = c.shapes === 'center' || wrapped(layerAt(c.inside))
+                    ? `Layer ${c.inside + 1} has no center, so this layer draws nothing. Under Composition, set its Wrap and an Inner radius % above 0.`
+                    : `${host.name} has no shapes to draw in, so this layer draws nothing.`;
+            } else if (info?.noShapes) text = `Layer ${c.inside + 1} has no shapes on the paper, so this layer draws nothing.`;
             else if (info && info.regions && !info.shapes) text = 'None of the shapes are wide enough. Lower Smallest shape or Inset, or choose other Shapes.';
             else if (info && info.used < info.shapes) text = `Drawn in the ${info.used} largest of ${info.shapes} shapes, which keeps generating quick.`;
-        } else if (i > 0 && c.cover === 'area' && !(c.size < 100) && c.clip === 'rect') {
+        } else if (i > 0 && c.cover === 'area' && !(c.size < 100) && c.clip === 'rect' && !wrapped()) {
             text = 'While this layer fills the drawing area, Inside its area hides every layer below it. Lower Crop size under Composition.';
         }
         note.textContent = text;

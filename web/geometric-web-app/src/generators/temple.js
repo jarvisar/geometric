@@ -1812,7 +1812,7 @@
         // The patch of ground the page shows at the default view size. The garden
         // is the same size on any page: its far and near corners just fit an
         // upright one, with the corners to either side off the page.
-        const k0 = viewScale(T.W, T.H, SIZE0), U0 = T.W / k0, V0 = T.H / (k0 * SE0);
+        const k0 = viewScale(T.PW, T.PH, SIZE0), U0 = T.PW / k0, V0 = T.PH / (k0 * SE0);
         const total = rng.range(110, 120), skew = rng.range(-0.06, 0.06);
         const A = (total * (0.5 + skew)) / 2, B = (total * (0.5 - skew)) / 2;
         const mirror = p.side === 'right';
@@ -2089,7 +2089,7 @@
     // the back, and a pagoda and a bell tower either side of it
     function planCourt(T, seed) {
         const { p } = T, rng = new PG.RNG(hash(seed, 1)), own = (...k) => new PG.RNG(hash(seed, ...k));
-        const k0 = viewScale(T.W, T.H, SIZE0), U0 = T.W / k0, V0 = T.H / (k0 * SE0);
+        const k0 = viewScale(T.PW, T.PH, SIZE0), U0 = T.PW / k0, V0 = T.PH / (k0 * SE0);
         // a long court, about as wide as an upright page shows at the default view
         const A = rng.range(16.5, 18), B = rng.range(27, 30), mirror = p.side === 'right';
         const W2 = (a, b) => [a, b], R2 = r => r.slice();
@@ -2629,7 +2629,9 @@
 
         generate(p, ctx) {
             const { width: W, height: H } = ctx, seed = ctx.seed | 0;
-            const k = viewScale(W, H, p.size);
+            // a wrapped layer's strip is sized like the page it's on, not zoomed out to fit
+            const [PW, PH] = ctx.wrap ? ctx.wrap.page : [W, H];
+            const k = viewScale(PW, PH, p.size);
             // a temple court is seen from the front, turned a little, where the other gardens are seen across a corner
             const cam = makeCamera(p.garden === 'court' ? p.yaw - 36 : p.yaw, p.elev, k, W, H, 0, 0);
             const S = new Scene(cam, W, H);
@@ -2637,7 +2639,7 @@
             const cot = 1 / Math.tan(geo.rad(p.sun)), sd = unit([0.85 * cam.rx - 0.4 * cam.fx, 0.85 * cam.ry - 0.4 * cam.fy, 0]);
             const sun = [sd[0] * cot, sd[1] * cot], toSun = unit([-sun[0], -sun[1], 1]);
             const T = {
-                S, cam, p, k, W, H, seed,
+                S, cam, p, k, W, H, PW, PH, seed,
                 detail: p.detail,
                 sees: n => cam.facing(n[0], n[1], n[2]),
                 segs: r => segments(r, k),

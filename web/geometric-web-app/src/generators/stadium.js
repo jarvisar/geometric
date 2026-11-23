@@ -3030,7 +3030,8 @@
             for (const l of fit.lights) pts.push([l.x, l.y, l.h * 1.14], [l.x, l.y, 0]);
             for (const t of fit.towers) pts.push([t.x, t.y, t.h + 7], [t.x, t.y, 0]);
             for (const q of fit.tall) pts.push(q);
-            const view = fitCamera(p, pts, W, H), k = view.k;
+            // a wrapped layer's strip is sized like the page it's on, not zoomed out to fit
+            const view = fitCamera(p, pts, ...(ctx.wrap ? ctx.wrap.page : [W, H])), k = view.k;
             const cam = makeCamera(p.yaw, p.elev, k, W, H, view.cx, view.cy);
             const S = new Scene(cam, W, H);
             const cot = 1 / Math.tan(geo.rad(p.sun));

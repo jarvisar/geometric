@@ -479,6 +479,8 @@
         regions.forEach((r, index) => {
             if (which === 'alternate' && index % 2) return;
             if (kind >= 0 && r.kind !== kind) return;
+            // the empty center of a wrapped layer
+            if (which === 'center' && r.kind !== 'center') return;
             // nothing wider than its box fits inside, which rules out most of a long list cheaply
             let across;
             if (r.circle) across = 2 * r.circle[2];
@@ -495,6 +497,109 @@
                 .sort((a, b) => a.index - b.index);
         }
         return { picked, found };
+    };
+
+    // ---------------------------------------------------------------- rings
+
+    // Segment a-b against the half-plane where n . (p - c) >= 0
+    function halfHit(ax, ay, bx, by, cx, cy, n, out) {
+        const s0 = n[0] * (ax - cx) + n[1] * (ay - cy), ds = n[0] * (bx - ax) + n[1] * (by - ay);
+        if (Math.abs(ds) < 1e-15) { if (s0 >= 0) out.push(0, 1); return; }
+        const t = -s0 / ds;
+        if (ds > 0) { if (t < 1) out.push(Math.max(0, t), 1); } else if (t > 0) out.push(0, Math.min(1, t));
+    }
+
+    const hitsOf = shape => shape.hits || ((ax, ay, bx, by, out) => {
+        const t = shape.clipSeg(ax, ay, bx, by);
+        if (t && t[1] > t[0]) out.push(t[0], t[1]);
+    });
+
+    // The area of a wrapped layer: the ring from radius r0 to r1 round (cx, cy), or the part of
+    // it from angle a0 through arc, cut to `within` (the cell or the region the layer is in).
+    // Angles go clockwise from straight up. Besides inside, dist, and hits it gives the outlines
+    // to frame, and frameInset(d) for the second frame line.
+    L.ringShape = function (cx, cy, r0, r1, a0, arc, within) {
+        const full = arc >= PG.TAU - 1e-9, a1 = a0 + arc;
+        // inward normals of the straight edges
+        const nA = [Math.cos(a0), Math.sin(a0)], nB = [-Math.cos(a1), -Math.sin(a1)];
+        const edge = a => [cx + r0 * Math.sin(a), cy - r0 * Math.cos(a), cx + r1 * Math.sin(a), cy - r1 * Math.cos(a)];
+        const eA = edge(a0), eB = edge(a1);
+        // Signed distance to the outline, > 0 inside. Outside it's only a lower bound.
+        const dist = (x, y) => {
+            const r = Math.hypot(x - cx, y - cy), radial = Math.min(r1 - r, r0 > 0 ? r - r0 : Infinity);
+            let d = radial;
+            if (!full) {
+                const turn = ((Math.atan2(x - cx, cy - y) - a0) % PG.TAU + PG.TAU) % PG.TAU;
+                const e = Math.sqrt(Math.min(segDist2(x, y, ...eA), segDist2(x, y, ...eB)));
+                d = turn <= arc + 1e-12 ? Math.min(radial, e) : radial < 0 ? Math.min(radial, -e) : -e;
+            }
+            return Math.min(d, within.dist(x, y));
+        };
+        const inHits = hitsOf(within);
+        const hits = (ax, ay, bx, by, out) => {
+            const iv = [];
+            diskHit(ax, ay, bx, by, cx, cy, r1, iv);
+            if (!iv.length) return;
+            let keep = merged(iv, false);
+            if (r0 > 0) {
+                const hole = [];
+                diskHit(ax, ay, bx, by, cx, cy, r0, hole);
+                if (hole.length) keep = subtract(keep, merged(hole, false));
+            }
+            if (!full && keep.length) {
+                const a = [], b = [];
+                halfHit(ax, ay, bx, by, cx, cy, nA, a);
+                halfHit(ax, ay, bx, by, cx, cy, nB, b);
+                keep = intersect(keep, arc <= Math.PI ? intersect(merged(a, false), merged(b, false)) : merged(a.concat(b), false));
+            }
+            if (!keep.length) return;
+            const c = [];
+            inHits(ax, ay, bx, by, c);
+            keep = c.length ? intersect(keep, merged(c, false)) : [];
+            for (const t of keep) out.push(t);
+        };
+        const at = (r, a) => [cx + r * Math.sin(a), cy - r * Math.cos(a)];
+        const arcPts = (r, from, to) => geo.arc(cx, cy, r, from - Math.PI / 2, to - Math.PI / 2, 0, 0.005);
+        // The outline moved in by d: arcs at r1 - d and r0 + d, and the straight edges moved over
+        // by d, which meet at a point when the arc is too narrow to reach the inner circle.
+        const rings = (d = 0) => {
+            const o = r1 - d, i = r0 + d;
+            if (!(o > 1e-6) || (r0 > 0 && o <= i + 1e-6)) return [];
+            if (full) return [arcPts(o, 0, PG.TAU), ...(r0 > 0 ? [arcPts(i, PG.TAU, 0)] : [])];
+            if (!d) {
+                const outer = arcPts(r1, a0, a1);
+                return [r0 > 0 ? [...outer, ...arcPts(r0, a1, a0), outer[0]] : [...outer, [cx, cy], outer[0]]];
+            }
+            if (!(o > d)) return [];
+            const so = Math.asin(d / o);
+            if (arc - 2 * so <= 1e-6) return [];
+            const outer = arcPts(o, a0 + so, a1 - so);
+            const si = r0 > 0 ? Math.asin(d / i) : Math.PI / 2, span = arc - 2 * si;
+            let inner;
+            if (span > 1e-6) inner = arcPts(i, a1 - si, a0 + si);
+            // at 180 degrees round the center the moved edges are one line
+            else if (span > -1e-6 && !(r0 > 0)) inner = [];
+            else {
+                // the moved edges cross on the middle line before they reach the inner circle
+                const apex = d / Math.sin(arc / 2);
+                if (!(arc < Math.PI) || apex >= o) return [];
+                inner = [at(apex, a0 + arc / 2)];
+            }
+            return [[...outer, ...inner, outer[0]]];
+        };
+        const cut = paths => L.split(paths, inHits, true);
+        const outlines = () => cut(rings());
+        const box = bounds(full ? [at(r1, 0), at(r1, Math.PI / 2), at(r1, Math.PI), at(r1, -Math.PI / 2)] : rings()[0] || [[cx, cy]]);
+        return {
+            type: 'ring', cx, cy, r0, r1, a0, arc,
+            box: { x: box.minX, y: box.minY, w: box.w, h: box.h },
+            inside: (x, y) => dist(x, y) >= -1e-7,
+            dist, hits,
+            clipPaths: paths => L.split(paths, hits, true),
+            outline: () => outlines()[0] || [],
+            outlines, frameLines: outlines,
+            frameInset: d => cut(rings(d)),
+        };
     };
 
     // ---------------------------------------------------------------- covering
@@ -524,9 +629,10 @@
         // The inside of a drawing area or region, plus clearance r round its outline.
         area(shape, r) {
             // a region shape knows its own inside, including any region it's within
-            if (shape.hits && !(r > 0)) {
+            if (shape.hits && (!(r > 0) || shape.type === 'ring')) {
                 const b = shape.box;
                 this.solids.push({ box: { minX: b.x, minY: b.y, maxX: b.x + b.w, maxY: b.y + b.h }, hit: shape.hits });
+                if (r > 0) this.lines(shape.outlines(), r);
                 return this;
             }
             if (shape.type === 'circle') {

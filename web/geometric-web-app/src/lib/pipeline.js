@@ -167,6 +167,7 @@
     // PG.stack.regionShape). With wantRegions the design's own regions come back too, placed
     // like its lines.
     function placeCell(def, params, S, extra, x, y, w, h, seed, area, wantRegions) {
+        if (PG.wrapped(S)) return placeWrapped(def, params, S, extra, x, y, w, h, seed, area, wantRegions);
         const shape = area ? area.shape : PG.makeShape(S.clip, x, y, w, h);
         const rot = geo.rad(S.rotate || 0);
         const scale = (S.scale || 100) / 100;
@@ -223,6 +224,7 @@
             images: extra.images || {},
         };
         if (wantRegions) ctx.wantRegions = true;
+        if (S.strip) ctx.wrap = S.strip;
 
         const t0 = performance.now();
         const raw = def.generate(params, ctx);
@@ -287,6 +289,185 @@
             }
         }
         return { layers, shape, genMs, regions };
+    }
+
+    // ------------------------------------------------------------------
+    // Wrap. 'polar' bends a design round a center: across it becomes the angle, clockwise from
+    // the left end, and down it the distance from the center, its top on the outside.
+    // 'kaleido' does the same in wedges with every other one mirrored, so they meet without
+    // a seam. The design is drawn into a strip as long as the middle circle of the ring (or of
+    // one wedge) and as deep as the ring, so it keeps its proportions halfway out and its sizes
+    // in millimeters, like line spacing, hold there. Scale, rotation, and offset then move the
+    // whole ring, and the ring is the crop.
+    // ------------------------------------------------------------------
+    PG.wrapped = S => !!S && (S.wrap === 'polar' || S.wrap === 'kaleido');
+
+    function wrapOf(S) {
+        const kaleido = S.wrap === 'kaleido';
+        const deg = geo.clamp(+(S.arc ?? 360) || 360, 30, 360), arc = geo.rad(deg);
+        // wedges come in mirrored pairs
+        const n = kaleido ? 2 * geo.clamp(Math.ceil((S.segments ?? 8) / 2) || 1, 1, 12) : geo.clamp(S.repeats | 0 || 1, 1, 24);
+        // a glue tab only goes on a fan's frame
+        const tab = S.frame && deg < 360 ? geo.clamp(+S.tab || 0, 0, 20) : 0;
+        return { kaleido, deg, arc, n, tab, inner: geo.clamp(+(S.inner ?? 40) || 0, 0, 90) / 100, a0: geo.rad(S.rotate || 0) - arc / 2 };
+    }
+
+    // A wrapped layer with an inner radius offers its empty center to the layers drawn in it,
+    // as a shape of kind 'center' next to the design's own
+    PG.hasCenter = S => PG.wrapped(S) && wrapOf(S).inner > 0;
+
+    // Points that bound the ring of radius 1 (and inner radius f) from angle a0 through arc:
+    // the ends of both arcs, where the arcs face straight up, down, or sideways, and the center
+    // of a pie.
+    function sectorPoints(a0, arc, f) {
+        const pts = [], at = (r, a) => pts.push([r * Math.sin(a), -r * Math.cos(a)]);
+        for (const r of f > 0 ? [1, f] : [1]) {
+            at(r, a0);
+            at(r, a0 + arc);
+            for (let k = Math.ceil(a0 / (Math.PI / 2)); (k * Math.PI) / 2 <= a0 + arc; k++) at(r, (k * Math.PI) / 2);
+        }
+        if (!(f > 0)) pts.push([0, 0]);
+        return pts;
+    }
+
+    // Center and radii of the ring in the box (x, y, w, h), or in the largest circle of a region:
+    // as big as fits at Scale 100%, then scaled about the middle and offset. R is the outer radius
+    // at 100%, which sizes the strip.
+    function ringIn(W, S, x, y, w, h, area) {
+        const pts = sectorPoints(W.a0, W.arc, W.inner);
+        let b = geo.bbox([pts]), mx = (b.minX + b.maxX) / 2, my = (b.minY + b.maxY) / 2;
+        let R, bx, by;
+        if (!area && W.tab > 0) {
+            // the glue tab is in millimeters, so its size against the fan depends on the fit
+            R = Math.min(w / b.w, h / b.h);
+            for (let i = 0; i < 6; i++) {
+                b = geo.bbox([pts.concat(glueTab(W, 0, 0, W.inner, 1, W.tab / R))]);
+                R = Math.min(w / b.w, h / b.h);
+            }
+            mx = (b.minX + b.maxX) / 2;
+            my = (b.minY + b.maxY) / 2;
+            bx = x + w / 2;
+            by = y + h / 2;
+        } else if (area && area.shape.fitCircle) {
+            let far = 0;
+            for (const q of pts) far = Math.max(far, Math.hypot(q[0] - mx, q[1] - my));
+            for (const r of [1, W.inner]) {
+                for (let i = 0; i <= 96; i++) {
+                    const a = W.a0 + (W.arc * i) / 96;
+                    far = Math.max(far, Math.hypot(r * Math.sin(a) - mx, -r * Math.cos(a) - my));
+                }
+            }
+            [bx, by] = area.shape.fitCircle;
+            R = area.shape.fitCircle[2] / far;
+        } else {
+            R = Math.min(w / b.w, h / b.h);
+            bx = x + w / 2;
+            by = y + h / 2;
+        }
+        const k = (S.scale || 100) / 100;
+        return { R, r1: R * k, r0: R * k * W.inner, cx: bx - mx * R * k + (S.offsetX || 0), cy: by - my * R * k + (S.offsetY || 0) };
+    }
+
+    // The glue tab of a fan: a flap t mm wide along its last straight edge, outside it, from
+    // radius r0 to r1 round (cx, cy), with its ends cut at 45 degrees. An open path, since the
+    // fan's outline closes it along the fold.
+    function glueTab(W, cx, cy, r0, r1, t) {
+        const a = W.a0 + W.arc, c = Math.min(t, (r1 - r0) / 2);
+        const at = (r, d) => [cx + r * Math.sin(a) + d * Math.cos(a), cy - r * Math.cos(a) + d * Math.sin(a)];
+        return [at(r0, 0), at(r0 + c, t), at(r1 - c, t), at(r1, 0)];
+    }
+
+    // A box (x, y, w, h) reaching past a rect shape or another box
+    function outside(b, c) {
+        const [x0, y0, x1, y1] = c.box ? [c.box.x, c.box.y, c.box.x + c.box.w, c.box.y + c.box.h] : [c.x0, c.y0, c.x1, c.y1];
+        return b.x < x0 - 0.05 || b.y < y0 - 0.05 || b.x + b.w > x1 + 0.05 || b.y + b.h > y1 + 0.05;
+    }
+
+    // Bends paths from the strip (0..SW across, 0..T down) into wedge k of the ring. Segments are
+    // split so the curve they become stays within 0.01 mm of its chords.
+    function bender(W, ring, SW, T) {
+        const { cx, cy, r0, r1 } = ring, wedge = W.arc / W.n;
+        const radius = v => r1 - (v / T) * (r1 - r0);
+        return (path, k) => {
+            const flip = W.kaleido && k % 2 === 1, base = W.a0 + k * wedge;
+            const pt = (u, v) => {
+                const a = base + (flip ? 1 - u / SW : u / SW) * wedge, r = radius(v);
+                return [cx + r * Math.sin(a), cy - r * Math.cos(a)];
+            };
+            const out = [pt(path[0][0], path[0][1])];
+            for (let i = 1; i < path.length; i++) {
+                const x0 = path[i - 1][0], y0 = path[i - 1][1], x1 = path[i][0], y1 = path[i][1];
+                const turn = (Math.abs(x1 - x0) / SW) * wedge, r = Math.max(radius(y0), radius(y1));
+                const n = turn > 0 && r > 0 ? Math.min(2000, Math.ceil(turn / Math.sqrt(0.08 / r))) : 1;
+                for (let j = 1; j <= n; j++) out.push(pt(x0 + ((x1 - x0) * j) / n, y0 + ((y1 - y0) * j) / n));
+            }
+            return out;
+        };
+    }
+
+    function placeWrapped(def, params, S, extra, x, y, w, h, seed, area, wantRegions) {
+        const W = wrapOf(S);
+        const clip = area ? area.shape : PG.makeShape('rect', x, y, w, h);
+        const ring = ringIn(W, S, x, y, w, h, area);
+        const shape = PG.stack.ringShape(ring.cx, ring.cy, ring.r0, ring.r1, W.a0, W.arc, clip);
+        const T = ring.R * (1 - W.inner), SW = (W.arc / W.n) * ring.R * ((1 + W.inner) / 2);
+        // For the notes about the ring: its size, whether the crop cuts it, and how much of the
+        // strip across the design covers (one object in the middle covers little of it)
+        const tab = W.tab > 0 && !area ? glueTab(W, ring.cx, ring.cy, ring.r0, ring.r1, W.tab) : null;
+        const tb = tab && geo.bbox([tab]), box = tb ? { x: Math.min(shape.box.x, tb.minX), y: Math.min(shape.box.y, tb.minY) } : shape.box;
+        if (tb) Object.assign(box, { w: Math.max(shape.box.x + shape.box.w, tb.maxX) - box.x, h: Math.max(shape.box.y + shape.box.h, tb.maxY) - box.y });
+        const info = { r0: ring.r0, r1: ring.r1, arc: W.deg, strip: [SW, T], cut: outside(box, clip), cover: 0 };
+        if (!(T > 0.05 && SW > 0.05)) return { layers: [], shape, genMs: 0, regions: wantRegions ? [] : null, ring: info };
+
+        // ctx.wrap tells the design it's in a strip, and the page it would otherwise fill, so
+        // designs that size themselves to the page don't zoom out to fit a thin strip
+        const flat = Object.assign({}, S, { wrap: 'none', scale: 100, rotate: 0, offsetX: 0, offsetY: 0, clip: 'rect', frame: false, pen: -1, strip: { page: [w, h] } });
+        const strip = placeCell(def, params, flat, extra, 0, 0, SW, T, seed, null, wantRegions && !!def.regionKinds);
+        let x0 = Infinity, x1 = -Infinity;
+        for (const l of strip.layers) for (const p of l.paths) for (const q of p) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; }
+        info.cover = x1 > x0 ? Math.min(1, (x1 - x0) / SW) : 0;
+        const bend = bender(W, ring, SW, T);
+        const ks = Array.from({ length: W.n }, (_, k) => k);
+        let layers = strip.layers.map(l => ({ pen: l.pen, paths: ks.flatMap(k => l.paths.map(p => bend(p, k))) }));
+        let regions = null;
+        if (wantRegions) {
+            regions = [];
+            // the center first, so its seed stays put when the design's own shapes change
+            if (ring.r0 > 1e-6) {
+                regions.push(W.arc >= PG.TAU - 1e-9 ? { circle: [ring.cx, ring.cy, ring.r0], kind: 'center' }
+                    : { poly: [[ring.cx, ring.cy], ...geo.arc(ring.cx, ring.cy, ring.r0, W.a0 - Math.PI / 2, W.a0 + W.arc - Math.PI / 2, 0, 0.01)], kind: 'center' });
+            }
+            for (const k of ks) {
+                for (const r of strip.regions || []) {
+                    const poly = r.circle ? geo.ngon(r.circle[0], r.circle[1], r.circle[2], Math.max(12, Math.min(64, Math.ceil(r.circle[2] * 3)))) : r.poly;
+                    const bent = bend([...poly, poly[0]], k);
+                    bent.pop();
+                    regions.push({ poly: bent, kind: r.kind });
+                }
+            }
+        }
+
+        layers = layers.map(l => ({ pen: l.pen, paths: clip.clipPaths ? clip.clipPaths(l.paths) : PG.clipPaths(l.paths, clip) }));
+        if (regions) regions = regions.map(r => PG.stack.clipRegion(r, clip)).filter(Boolean);
+        if (S.pen >= 0 && layers.length) layers = [{ pen: S.pen % PG.MAX_PENS, paths: layers.flatMap(l => l.paths) }];
+        if (S.frame) {
+            const fp = (S.framePen || 0) % PG.MAX_PENS;
+            let layer = layers.find(l => l.pen === fp);
+            if (!layer) { layer = { pen: fp, paths: [] }; layers.push(layer); }
+            const add = paths => { for (const p of paths) if (p.length > 1) layer.paths.push(p); };
+            if (area) {
+                // in the shapes of another layer the frame outlines each shape, as it does unwrapped
+                const rings = s => (s.frameLines ? s.frameLines() : [s.outline()]);
+                add(rings(clip));
+                const inner = S.frameInset > 0 && PG.stack.inset(clip.region, S.frameInset);
+                if (inner) add(rings(PG.stack.regionShape(inner)));
+            } else {
+                add(shape.frameLines());
+                if (S.frameInset > 0) add(shape.frameInset(S.frameInset));
+                if (tab) add(clip.clipPaths ? clip.clipPaths([tab]) : PG.clipPaths([tab], clip));
+            }
+        }
+        return { layers, shape, genMs: strip.genMs, regions, ring: info };
     }
 
     // ------------------------------------------------------------------
@@ -378,8 +559,10 @@
                     }
                     if (cell.regions) for (const r of cell.regions) regions.push(r);
                     if (e.cover === 'area') {
-                        const solid = PG.stack.inset(region, reach);
-                        if (solid) covers.push([PG.stack.regionShape(solid), 0]);
+                        // a wrapped layer covers its ring, and leaves the rest of the shape and the hole
+                        const solid = !PG.wrapped(e.place) && PG.stack.inset(region, reach);
+                        if (PG.wrapped(e.place)) covers.push([cell.shape, Math.max(0.2, Math.min(e.gap, e.inset - 0.2))]);
+                        else if (solid) covers.push([PG.stack.regionShape(solid), 0]);
                     }
                 }
                 out = { layers: [...byPen].map(([pen, paths]) => ({ pen, paths })), regions, covers };
@@ -397,8 +580,14 @@
                     // a moved area can run past the cell, which still bounds everything
                     layers = layers.map(l => ({ pen: l.pen, paths: PG.clipPaths(l.paths, cellRect) }));
                     if (regions) regions = regions.map(r => PG.stack.clipRegion(r, cellRect)).filter(Boolean);
+                    if (cell.ring && outside(cell.shape.box, cellRect)) cell.ring.cut = true;
                 }
-                if (i === 0 || a || (e.place.clip || 'rect') !== (stack[0].place.clip || 'rect')) outlines.push(cell.shape.outline());
+                // the outline of this layer's area, unless it's the same as the bottom layer's
+                const crop = P => (PG.wrapped(P) ? 'wrap' : P.clip || 'rect');
+                if (i === 0 || a || PG.wrapped(e.place) || crop(e.place) !== crop(stack[0].place)) {
+                    for (const o of cell.shape.outlines ? cell.shape.outlines() : [cell.shape.outline()]) outlines.push(o);
+                }
+                if (cell.ring && !info[i].ring) info[i].ring = cell.ring;
                 out = { layers, regions, covers: [[cell.shape, Math.max(0.2, e.gap)]] };
             }
             if (!e.hidden && i > 0 && e.cover !== 'none') {
@@ -548,6 +737,8 @@
         if (o.overlap) res.overlap = overlap;
         if (motion) res.motion = motion;
         if (stack.length > 1) res.layerInfo = info;
+        // the first cell's ring of each wrapped layer, for the size of the cone it rolls into
+        if (info.some(x => x.ring)) res.rings = info.map(x => x.ring || null);
         return res;
     };
 

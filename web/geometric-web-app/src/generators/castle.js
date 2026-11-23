@@ -3815,7 +3815,8 @@
         generate(p, ctx) {
             const { width: W, height: H } = ctx, seed = ctx.seed | 0;
             const town = plan(p, new PG.RNG(hash(seed, 1)), character(p, new PG.RNG(hash(seed, 5))));
-            const view = fitCamera(p, town, W, H), k = view.k;
+            // a wrapped layer's strip is sized like the page it's on, not zoomed out to fit
+            const view = fitCamera(p, town, ...(ctx.wrap ? ctx.wrap.page : [W, H])), k = view.k;
             const cam = makeCamera(p.yaw, p.elev, k, W, H, view.cx, view.cy);
             const S = new Scene(cam, W, H);
             const cot = 1 / Math.tan(geo.rad(p.sun));

@@ -90,10 +90,13 @@ No build step and no dependencies: open `src/index.html` in a browser, or run
 
 Any design can also be laid out as a **grid** on one sheet. Each cell gets its own seed or its own random parameters, or one parameter sweeps from cell to cell.
 
+Any design can be **wrapped** around a center. Across the design becomes the angle and down becomes the distance from the center, so tiles, mazes, and fields turn into rosettes and scenes into rings of buildings. Kaleidoscope does the same in mirrored segments. A fan cut out along its frame rolls into a cone, like a lampshade.
+
 A sheet can hold up to six **layers**, each a design of its own, drawn bottom to top.
 A layer can draw in the shapes of a lower one: the circles of Circle Packing and
-Apollonian Gasket, the cells of Voronoi and Subdivision, or the tiles of Penrose
-Tiling, Hyperbolic Tiling, Truchet, and Whirls. It's drawn once per shape, each with
+Apollonian Gasket, the cells of Voronoi and Subdivision, the tiles of Penrose
+Tiling, Hyperbolic Tiling, Truchet, and Whirls, or the empty center of a wrapped
+layer. It's drawn once per shape, each with
 its own seed, and can pick one kind of shape, like the thick rhombs of a Penrose
 tiling or the blank cells of a Subdivision.
 
@@ -110,6 +113,33 @@ it makes a sampler sheet.
    hexagon or diamond, and optionally draw a (double) frame. `Crop size %` makes
    the crop smaller than the drawing area and `Crop position` moves it. With
    layers, these settings belong to the selected layer.
+   `Wrap`, at the top of the section, bends the design around a center. `Polar`
+   makes the left edge of the design meet its right edge, with its top on the
+   outside. In a full ring they meet in a seam at the bottom, which `Rotation°`
+   turns. `Kaleidoscope` does the same in segments with every other one mirrored,
+   so they meet without a seam. The design is drawn into a strip as long as the
+   middle circle of the ring and as deep as the ring, so at `Scale %` 100 it
+   keeps its proportions and millimeter sizes halfway out. It's squeezed toward
+   the center and spread toward the outside. Scenes keep the scale they have on
+   the page.
+   * `Inner radius %` leaves the middle empty, where lines would crowd together.
+     To fill it, add a layer and set its `Draw in` to the wrapped layer and its
+     `Shapes` to `Center`.
+   * `Arc°` below 360 makes a fan. Turn on `Draw frame` for a cutting line, cut
+     it out, and join the straight edges to make a cone, like a lampshade. The
+     note under `Arc°` gives the size of the cone and says when part of the fan
+     is cut off. `Glue tab (mm)`, under `Draw frame`, adds a flap along one
+     straight edge to glue under the other.
+   * `Repeats` (Polar) puts several copies round the ring. `Segments`
+     (Kaleidoscope, 2 to 24) is always even.
+   * `Scale %`, `Rotation°`, and `Offset` resize, turn, and move the whole ring,
+     like they do the design unwrapped. `Crop size %` fits the ring in a smaller
+     area instead, at full size. The ring is the crop, so `Crop to` is hidden.
+   Wrapping works best with designs that fill the page, like tiles, fields, and
+   scenes. A curve, or a design that draws one object in the middle like Black
+   Hole, covers only part of the ring. The note under `Wrap` then offers enough
+   repeats to go all the way round. It also says when nothing fits, which can
+   happen with many repeats or a high inner radius.
 3. **Pens**: up to eight pens. Designs with a color split put each part on its own pen.
    Set pen widths to match your pens: the preview draws true-to-scale
    line widths, so you can judge ink density before committing. Hide a pen to

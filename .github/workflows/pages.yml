@@ -22,11 +22,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -73,5 +70,15 @@ jobs:
         with:
           path: _site
 
+  # Keep deploy in its own job. Re-running a job that also uploads adds a second github-pages
+  # artifact to the run, which deploy-pages rejects, so a failed deploy could only be fixed by a
+  # new run. Deploying right after the upload can also fail before the artifact is listed.
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4

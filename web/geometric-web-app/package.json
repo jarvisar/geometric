@@ -26,6 +26,7 @@
     "check:boundaries": "node scripts/check-boundaries.js",
     "check:overlap": "node scripts/check-overlap.js",
     "check:layers": "node scripts/check-layers.js",
+    "check:wrap": "node scripts/check-wrap.js",
     "check:exports": "node scripts/check-exports.js",
     "smoke:exports": "node scripts/drive.js scripts/exports.steps.js shots/exports",
     "smoke": "node scripts/drive.js scripts/smoke.steps.js shots",
@@ -44,6 +45,7 @@
     "smoke:a11y": "node scripts/drive.js scripts/a11y.steps.js shots/a11y",
     "smoke:edgecases": "node scripts/drive.js scripts/edgecases.steps.js shots/edgecases",
     "smoke:layers": "node scripts/drive.js scripts/layers.steps.js shots/layers",
+    "smoke:wrap": "node scripts/drive.js scripts/wrap.steps.js shots/wrap 1300 1160",
     "sheet": "node scripts/shot.js dev/sheet.html \"variants=2&size=220\" shots/sheet.png 1100 6000"
   },
   "devDependencies": {

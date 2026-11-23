@@ -3938,7 +3938,8 @@
         generate(p, ctx) {
             const { width: W, height: H } = ctx, seed = ctx.seed | 0;
             const se = Math.sin(geo.rad(p.elev)), ce = Math.cos(geo.rad(p.elev));
-            const k = W / p.size;
+            // a wrapped layer's strip is sized like the page it's on, not zoomed out to fit
+            const k = (ctx.wrap ? ctx.wrap.page[0] : W) / p.size;
             const c0 = makeCamera(p.yaw, p.elev, k, W, H, 0, 0), r = [c0.rx, c0.ry], f = [c0.fx, c0.fy];
             const U = W / k, V = H / (k * se);
             // plan u runs across the page and v away from us, from the bottom edge
